@@ -222,6 +222,8 @@ jobs:
         mkdir build
         cd build
         
+        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
+        
         cmake -G "Ninja" \
           -DCMAKE_C_COMPILER=${ROCM_PATH}/llvm/bin/clang \
           -DCMAKE_CXX_COMPILER=${ROCM_PATH}/llvm/bin/clang++ \
@@ -237,6 +239,9 @@ jobs:
           -DGGML_STATIC=OFF \
           -DGGML_OPENMP=OFF \
           -DCMAKE_PREFIX_PATH=${ROCM_PATH} \
+          -DCMAKE_C_FLAGS="$CORE_FLAGS" \
+          -DCMAKE_CXX_FLAGS="$CORE_FLAGS" \
+          -DCMAKE_HIP_FLAGS="$CORE_FLAGS" \
           ..
           
         cmake --build . --config Release --parallel $(nproc)
