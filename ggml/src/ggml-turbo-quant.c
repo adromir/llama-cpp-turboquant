@@ -687,6 +687,12 @@ static const float TQ3_0_SIGNS[32] = {
 #define TQ_BLOCK_SIZE 32
 #define TQ_INV_SQRT32 0.17677669529663688f  /* 1/sqrt(32) */
 
+#ifdef _MSC_VER
+#define TQ_ALIGNED(x) __declspec(align(x))
+#else
+#define TQ_ALIGNED(x) __attribute__((aligned(x)))
+#endif
+
 /* Forward RHT: sign flips -> WHT butterfly -> normalize */
 static void tq3_0_rht_forward(float * buf) {
     for (int i = 0; i < TQ_BLOCK_SIZE; i++) buf[i] *= TQ3_0_SIGNS[i];
@@ -761,7 +767,7 @@ void quantize_row_tq3_1s_ref(const float * GGML_RESTRICT x, block_tq3_1s * GGML_
         block_tq3_1s * blk = &y[block];
 
         /* 1. Forward RHT */
-        float buf[TQ_BLOCK_SIZE];
+        TQ_ALIGNED(32) float buf[TQ_BLOCK_SIZE];
         memcpy(buf, src_blk, TQ_BLOCK_SIZE * sizeof(float));
         tq3_0_rht_forward(buf);
 
@@ -911,7 +917,7 @@ void quantize_row_tq4_1s_ref(const float * GGML_RESTRICT x, block_tq4_1s * GGML_
         block_tq4_1s * blk = &y[block];
 
         /* 1. Forward RHT */
-        float buf[TQ_BLOCK_SIZE];
+        TQ_ALIGNED(32) float buf[TQ_BLOCK_SIZE];
         memcpy(buf, src_blk, TQ_BLOCK_SIZE * sizeof(float));
         tq3_0_rht_forward(buf);
 
@@ -996,9 +1002,9 @@ void dequantize_row_tq4_1s(const block_tq4_1s * GGML_RESTRICT x, float * GGML_RE
 
     for (int blk_i = 0; blk_i < nb; blk_i++) {
         float d0 = GGML_FP16_TO_FP32(x[blk_i].d0);
-        float d1 = GGML_FP16_TO_FP32(x[blk_i].d1);
+        const float d1 = GGML_FP16_TO_FP32(x[blk_i].d1);
 
-        float buf[32];
+        TQ_ALIGNED(32) TQ_ALIGNED(32) float buf[TQ_BLOCK_SIZE];
         for (int j = 0; j < 32; j++) {
             uint8_t idx = (x[blk_i].qs[j / 2] >> ((j & 1) * 4)) & 0xF;
             float d = (j < 16) ? d0 : d1;
