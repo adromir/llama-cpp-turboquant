@@ -1,0 +1,209 @@
+name: Build ROCm Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for the release (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # ROCm 7.1 is incompatible with VS 2025 <cmath> headers (_CLANG_BUILTIN2 conflicts)
+    runs-on: windows-2022
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Restore ROCm Install Cache
+      id: cache-rocm-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: C:\Program Files\AMD\ROCm\7.1
+        key: rocm-installed-7.1.1-windows-v2
+
+    - name: Download and Install ROCm
+      if: steps.cache-rocm-restore.outputs.cache-hit != 'true'
+      run: |
+        Write-Host "Downloading installer..."
+        Invoke-WebRequest -Uri https://download.amd.com/developer/eula/rocm-hub/AMD-Software-PRO-Edition-26.Q1-Win11-For-HIP.exe -OutFile rocm.exe
+        
+        Write-Host "Extracting AMD PRO Edition installer to bypass hardware checks..."
+        7z x rocm.exe -oamd_installer -y
+        
+        Write-Host "Installing ROCm and HIP SDK components..."
+        # Find all MSIs related to the compiler, HIP runtime, and math libraries
+        $msiFiles = Get-ChildItem -Path amd_installer -Filter *.msi -Recurse | Where-Object {
+            $_.Name -match "rocm|hip|llvm|hsa|comgr|rocblas|hipblas|dev"
+        }
+        
+        # rocm-core must be installed before other components
+        $coreMsi = $msiFiles | Where-Object { $_.Name -match "rocm-core" }
+        $otherMsis = $msiFiles | Where-Object { $_.Name -notmatch "rocm-core" }
+        $orderedMsis = @($coreMsi) + @($otherMsis)
+        
+        foreach ($msi in $orderedMsis) {
+            Write-Host "Installing $($msi.Name)..."
+            $proc = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
+            if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+                Write-Host "Warning: $($msi.Name) returned exit code $($proc.ExitCode)"
+            }
+        }
+        
+        if (-not (Test-Path "C:\Program Files\AMD\ROCm\7.1\bin\clang.exe")) {
+            Write-Error "ERROR: clang.exe was still not found! The MSI installation failed."
+            exit 1
+        }
+        
+        # Cleanup extracted files to save disk space
+        Remove-Item rocm.exe -Force
+        Remove-Item amd_installer -Recurse -Force
+
+    - name: Save ROCm Install Cache
+      if: steps.cache-rocm-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: C:\Program Files\AMD\ROCm\7.1
+        key: rocm-installed-7.1.1-windows-v2
+
+    - name: Restore OpenSSL Cache
+      id: cache-openssl-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          C:\Program Files\OpenSSL-Win64
+          C:\Program Files\OpenSSL
+        key: openssl-windows
+
+    - name: Install Dependencies
+      run: |
+        choco install ninja -y
+        if ('${{ steps.cache-openssl-restore.outputs.cache-hit }}' -ne 'true') {
+            choco install openssl -y
+        }
+
+    - name: Save OpenSSL Cache
+      if: steps.cache-openssl-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          C:\Program Files\OpenSSL-Win64
+          C:\Program Files\OpenSSL
+        key: openssl-windows
+
+    - name: Install ccache
+      run: choco install ccache --no-progress
+
+    - name: Restore ccache
+      uses: actions/cache/restore@v4
+      with:
+        path: .ccache
+        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-rocm-ccache-
+
+    - name: Build llama.cpp
+      env:
+        CCACHE_DIR: ${{ github.workspace }}\.ccache
+        CCACHE_COMPILERCHECK: string:rocm-7.1
+        CCACHE_BASEDIR: ${{ github.workspace }}
+      run: |
+        ccache -z
+        $fso = New-Object -ComObject Scripting.FileSystemObject
+        $RocmPath = $fso.GetFolder("C:\Program Files\AMD\ROCm\7.1").ShortPath.Replace('\', '/')
+        if (Test-Path "C:\Program Files\OpenSSL-Win64") {
+            $OpenSslPath = $fso.GetFolder("C:\Program Files\OpenSSL-Win64").ShortPath.Replace('\', '/')
+        } elseif (Test-Path "C:\Program Files\OpenSSL") {
+            $OpenSslPath = $fso.GetFolder("C:\Program Files\OpenSSL").ShortPath.Replace('\', '/')
+        } else {
+            Write-Error "OpenSSL installation directory not found!"
+            exit 1
+        }
+        
+        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f"
+        
+        $env:HIP_PATH = $RocmPath
+        $env:ROCM_PATH = $RocmPath
+
+        mkdir build
+        cd build
+        
+        $CMakeArgs = @(
+          "-G", "Ninja",
+          "-DCMAKE_C_COMPILER=$RocmPath/bin/clang.exe",
+          "-DCMAKE_CXX_COMPILER=$RocmPath/bin/clang++.exe",
+          "-DCMAKE_HIP_COMPILER=$RocmPath/bin/clang++.exe",
+          "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+          "-DCMAKE_HIP_COMPILER_LAUNCHER=ccache",
+          "-DCMAKE_HIP_COMPILER_ROCM_ROOT=$RocmPath",
+          "-DGGML_HIP=ON",
+          "-DGPU_TARGETS=gfx900;gfx906;gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx1102;gfx1200;gfx1201",
+          "-DCMAKE_BUILD_TYPE=Release",
+          "-DBUILD_SHARED_LIBS=ON",
+          "-DGGML_STATIC=OFF",
+          "-DGGML_OPENMP=OFF",
+          "-DCMAKE_RC_COMPILER=rc",
+          "-DCMAKE_PREFIX_PATH=$RocmPath",
+          "-DOPENSSL_ROOT_DIR=$OpenSslPath",
+          "-DOPENSSL_CRYPTO_LIBRARY=$OpenSslPath/lib/VC/x64/MD/libcrypto.lib",
+          "-DOPENSSL_SSL_LIBRARY=$OpenSslPath/lib/VC/x64/MD/libssl.lib",
+          "-DLIB_EAY=$OpenSslPath/lib/VC/x64/MD/libcrypto.lib",
+          "-DSSL_EAY=$OpenSslPath/lib/VC/x64/MD/libssl.lib",
+          "-DCMAKE_C_FLAGS=$CoreFlags",
+          "-DCMAKE_CXX_FLAGS=$CoreFlags",
+          "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr"
+        )
+        
+        & cmake $CMakeArgs ..
+          
+        & cmake --build . --config Release --parallel 32
+        
+        ccache -s
+
+    - name: Save ccache directly after build
+      uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: .ccache
+        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+
+    - name: Archive build output
+      run: |
+        Copy-Item "C:\Program Files\AMD\ROCm\7.1\bin\rocblas.dll" -Destination build\bin\
+        Copy-Item "C:\Program Files\AMD\ROCm\7.1\bin\libhipblaslt.dll" -Destination build\bin\
+        Copy-Item "C:\Program Files\AMD\ROCm\7.1\bin\libhipblas.dll" -Destination build\bin\
+        Compress-Archive -Path build\bin\* -DestinationPath llama-rocm-windows.zip
+
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llama-rocm-windows-zip
+        path: llama-rocm-windows.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download Build Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: llama-rocm-windows-zip
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.tag_name }}
+        files: llama-rocm-windows.zip
+        body: "Includes required AMD ROCm DLLs (rocblas.dll, libhipblaslt.dll, libhipblas.dll) for convenience. These are MIT-licensed open-source components from AMD."
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
