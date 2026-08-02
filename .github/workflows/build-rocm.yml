@@ -187,6 +187,8 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     container: rocm/dev-ubuntu-22.04:7.2.4
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     
     steps:
     - name: Checkout repository
@@ -195,7 +197,8 @@ jobs:
     - name: Install Dependencies
       run: |
         apt-get update
-        apt-get install -y cmake ninja-build ccache libcurl4-openssl-dev zip git
+        apt-get install -y cmake ninja-build ccache libcurl4-openssl-dev zip git hipblas-dev rocblas-dev rocm-libs
+        git config --global --add safe.directory '*'
 
     - name: Restore ccache
       uses: actions/cache/restore@v4
@@ -266,6 +269,8 @@ jobs:
   release:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
     - name: Download Windows Artifact
       uses: actions/download-artifact@v4
