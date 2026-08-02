@@ -1,4 +1,4 @@
-name: Build ROCm Windows
+name: Build ROCm (Windows & Linux)
 
 on:
   workflow_dispatch:
@@ -12,8 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    # ROCm 7.2 is incompatible with VS 2025 <cmath> headers (_CLANG_BUILTIN2 conflicts)
+  build-windows:
     runs-on: windows-2022
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
@@ -39,12 +38,10 @@ jobs:
         7z x rocm.exe -oamd_installer -y
         
         Write-Host "Installing ROCm and HIP SDK components..."
-        # Find all MSIs related to the compiler, HIP runtime, and math libraries
         $msiFiles = Get-ChildItem -Path amd_installer -Filter *.msi -Recurse | Where-Object {
             $_.Name -match "rocm|hip|llvm|hsa|comgr|rocblas|hipblas|dev"
         }
         
-        # rocm-core must be installed before other components
         $coreMsi = $msiFiles | Where-Object { $_.Name -match "rocm-core" }
         $otherMsis = $msiFiles | Where-Object { $_.Name -notmatch "rocm-core" }
         $orderedMsis = @($coreMsi) + @($otherMsis)
@@ -62,7 +59,6 @@ jobs:
             exit 1
         }
         
-        # Cleanup extracted files to save disk space
         Remove-Item rocm.exe -Force
         Remove-Item amd_installer -Recurse -Force
 
@@ -177,9 +173,9 @@ jobs:
 
     - name: Archive build output
       run: |
-        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\rocblas.dll" -Destination build\bin\
-        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\libhipblaslt.dll" -Destination build\bin\
-        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\libhipblas.dll" -Destination build\bin\
+        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\rocblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\libhipblaslt.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Compress-Archive -Path build\bin\* -DestinationPath llama-rocm-windows.zip
 
     - name: Upload Build Artifact
@@ -188,21 +184,107 @@ jobs:
         name: llama-rocm-windows-zip
         path: llama-rocm-windows.zip
 
+  build-linux:
+    runs-on: ubuntu-latest
+    container: rocm/dev-ubuntu-22.04:7.2.4
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        apt-get update
+        apt-get install -y cmake ninja-build ccache libcurl4-openssl-dev zip git
+
+    - name: Restore ccache
+      uses: actions/cache/restore@v4
+      with:
+        path: .ccache
+        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-rocm-ccache-
+
+    - name: Build llama.cpp
+      env:
+        CCACHE_DIR: ${{ github.workspace }}/.ccache
+        CCACHE_COMPILERCHECK: string:rocm-7.2.4
+        CCACHE_BASEDIR: ${{ github.workspace }}
+      run: |
+        ccache -z
+        
+        export ROCM_PATH=/opt/rocm
+        export HIP_PATH=/opt/rocm
+        
+        mkdir build
+        cd build
+        
+        cmake -G "Ninja" \
+          -DCMAKE_C_COMPILER=${ROCM_PATH}/bin/clang \
+          -DCMAKE_CXX_COMPILER=${ROCM_PATH}/bin/clang++ \
+          -DCMAKE_HIP_COMPILER=${ROCM_PATH}/bin/clang++ \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_HIP_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_HIP_COMPILER_ROCM_ROOT=${ROCM_PATH} \
+          -DGGML_HIP=ON \
+          -DGPU_TARGETS="gfx900;gfx906;gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx1102;gfx1200;gfx1201" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_SHARED_LIBS=ON \
+          -DGGML_STATIC=OFF \
+          -DGGML_OPENMP=OFF \
+          -DCMAKE_PREFIX_PATH=${ROCM_PATH} \
+          ..
+          
+        cmake --build . --config Release --parallel $(nproc)
+        
+        ccache -s
+
+    - name: Archive build output
+      run: |
+        cp /opt/rocm/lib/librocblas.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/libhipblaslt.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/libhipblas.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/libamdhip64.so* build/bin/ 2>/dev/null || true
+        
+        cd build/bin
+        zip -r ../../llama-rocm-linux.zip ./*
+
+    - name: Save ccache directly after build
+      uses: actions/cache/save@v4
+      if: always()
+      with:
+        path: .ccache
+        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: llama-rocm-linux-zip
+        path: llama-rocm-linux.zip
+
   release:
-    needs: build
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
-    - name: Download Build Artifact
+    - name: Download Windows Artifact
       uses: actions/download-artifact@v4
       with:
         name: llama-rocm-windows-zip
+        
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: llama-rocm-linux-zip
         
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.event.inputs.tag_name }}
-        files: llama-rocm-windows.zip
-        body: "Includes required AMD ROCm DLLs (rocblas.dll, libhipblaslt.dll, libhipblas.dll) for convenience. These are MIT-licensed open-source components from AMD."
+        files: |
+          llama-rocm-windows.zip
+          llama-rocm-linux.zip
+        body: "Includes unified ROCm builds for Windows and Linux. Packages include required AMD ROCm libraries (rocblas, hipblaslt, hipblas) for convenience. These are MIT-licensed open-source components from AMD."
         draft: false
         prerelease: false
       env:
