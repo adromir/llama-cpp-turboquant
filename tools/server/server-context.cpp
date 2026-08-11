@@ -3558,15 +3558,21 @@ private:
                         }
                     } // end of SLOT_STATE_STARTED
 
-                    if (slot.prompt_checkpoint_restored && n_tokens_prev > 0) {
-                        return;
-                    }
-
                     if (!slot.can_split()) {
                         // cannot fit the prompt in the current batch - will try next iter
                         if (batch.size() + slot.task->n_tokens() > n_batch) {
                             return;
                         }
+                    }
+
+                    // A restored-checkpoint slot is unstable when co-batched with other
+                    // active slots (turbo/CUDA path). Give it its own batch: if other slots
+                    // already contributed to this batch, defer — next update_slots() it starts
+                    // empty and fills a FULL batch instead of one token per iteration.
+                    // (Replaces an in-loop per-token `break` that crippled restored-prefix
+                    //  prompt processing to decode speed ~40 tok/s; see feature/turboquant fix.)
+                    if (slot.prompt_checkpoint_restored && n_tokens_prev > 0) {
+                        return;
                     }
 
                     const int64_t t_now = ggml_time_us();
@@ -3703,12 +3709,8 @@ private:
                             }
                         }
 
-                        // a restored checkpoint leaves a short prompt suffix to evaluate; keep it
-                        // in small batches (the CUDA path is not stable when it is evaluated
-                        // concurrently with other active slots)
-                        if (slot.prompt_checkpoint_restored) {
-                            break;
-                        }
+                        // NOTE: the restored-checkpoint suffix is now filled as a full batch
+                        // (isolation handled by the pre-loop guard above), not one token/iter.
                     }
 
                     // the number of tokens added to the batch for the current slot

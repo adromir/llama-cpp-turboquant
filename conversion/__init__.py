@@ -56,6 +56,9 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "Qwen3DSparkModel": "qwen",
     "DeepseekV4ForCausalLM": "deepseek",
     "DFlashLagunaForCausalLM": "laguna",
+
+    "DeepseekV4DSparkModel": "deepseek",
+
     "DistilBertForMaskedLM": "bert",
     "DistilBertForSequenceClassification": "bert",
     "DistilBertModel": "bert",
@@ -181,6 +184,8 @@ TEXT_MODEL_MAP: dict[str, str] = {
     "Olmo3ForCausalLM": "olmo",
     "OlmoForCausalLM": "olmo",
     "OlmoeForCausalLM": "olmo",
+    "MuseGlimmerAssistantModel": "muse_glimmer",
+    "MuseGlimmerForConditionalGeneration": "muse_glimmer",
     "OpenELMForCausalLM": "openelm",
     "OrionForCausalLM": "orion",
     "PLMForCausalLM": "plm",
@@ -295,6 +300,7 @@ MMPROJ_MODEL_MAP: dict[str, str] = {
     "MiniCPMV4_6ForConditionalGeneration": "minicpm",
     "Mistral3ForConditionalGeneration": "llava",
     "NemotronH_Nano_VL_V2": "nemotron",
+    "MuseGlimmerForConditionalGeneration": "muse_glimmer",
     "PaddleOCRVisionModel": "ernie",
     "Phi4ForCausalLMV": "phi",
     "Qwen2AudioForConditionalGeneration": "ultravox",
