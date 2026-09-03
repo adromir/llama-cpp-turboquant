@@ -36,3 +36,26 @@ void ggml_cuda_moe_cache_mmv_fused(
     int64_t slot_stride_bytes, int64_t n_hits, int64_t act_rows,
     float up_min, float up_max, float gate_min, float gate_max,
     cudaStream_t stream);
+
+void ggml_cuda_op_ssm_gate_beta(
+    ggml_backend_cuda_context & ctx,
+    const ggml_tensor * src0_alpha, const ggml_tensor * src0_beta, const ggml_tensor * src1,
+    const ggml_tensor * dt, const ggml_tensor * ssm_a,
+    ggml_tensor * dst_gate, ggml_tensor * dst_beta);
+
+void ggml_cuda_op_ssm_conv_l2_gatebeta(
+    ggml_backend_cuda_context & ctx,
+    const ggml_tensor * conv_input, const ggml_tensor * conv_w,
+    const ggml_tensor * src0_alpha, const ggml_tensor * src0_beta, const ggml_tensor * src1,
+    const ggml_tensor * dt, const ggml_tensor * ssm_a,
+    ggml_tensor * q_norm, ggml_tensor * k_norm, ggml_tensor * v_raw,
+    ggml_tensor * dst_gate, ggml_tensor * dst_beta,
+    const int head_k_dim, const int n_qk_heads,
+    const int head_v_dim, const int n_v_heads, const float eps);
+
+void ggml_cuda_op_shexp_down_gate(
+    ggml_backend_cuda_context & ctx,
+    const ggml_tensor * w_down, const ggml_tensor * swiglu,
+    const ggml_tensor * w_gate, const ggml_tensor * x_gate,
+    const ggml_tensor * moe_out, const ggml_tensor * ffn_residual,
+    ggml_tensor * dst);
