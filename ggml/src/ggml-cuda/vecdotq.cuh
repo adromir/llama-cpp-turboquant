@@ -410,7 +410,7 @@ static __device__ __forceinline__ float vec_dot_mxfp4_q8_1(
 #endif
 
 #ifndef GGML_ROCMFP6_FAST_SIGNMAG_PACK
-#define GGML_ROCMFP6_FAST_SIGNMAG_PACK 0
+#define GGML_ROCMFP6_FAST_SIGNMAG_PACK 1
 #endif
 #ifndef GGML_ROCMFP6_MMVQ_HALF_BLOCK_SPLIT
 #define GGML_ROCMFP6_MMVQ_HALF_BLOCK_SPLIT 1
@@ -467,8 +467,8 @@ static __device__ __forceinline__ int rocmfpx_pack4_fp2_vec_cuda(const uint8_t p
 }
 
 static __device__ __forceinline__ int rocmfpx_decode_fp6_code_vec_cuda(const uint32_t code) {
-    const int mag = (int) (code & 31u);
-    return (code & 32u) ? -(mag == 0 ? 32 : mag) : mag;
+    const int val = (code & 31u) ? (int)(code & 31u) : (int)(code & 32u);
+    return (code & 32u) ? -val : val;
 }
 
 static __device__ __forceinline__ int rocmfpx_pack4_fp6_bits24_vec_cuda(const uint32_t bits24) {
@@ -481,34 +481,26 @@ static __device__ __forceinline__ int rocmfpx_pack4_fp6_bits24_vec_cuda(const ui
 }
 
 static __device__ __forceinline__ int rocmfpx_pack4_fp3_vec_cuda(const uint8_t * qs, const int base) {
+    const int quad = base >> 2;
+    const int start_byte = (quad >> 1) * 3 + (quad & 1);
+    const int bit_shift = (quad & 1) ? 4 : 0;
+    uint16_t raw;
+    memcpy(&raw, qs + start_byte, sizeof(raw));
+    const uint32_t b12 = (raw >> bit_shift) & 0xFFFu;
     const char4 v = make_char4(
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(rocmfpx_get_bits_vec_cuda(qs, (base + 0)*3, 3)),
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(rocmfpx_get_bits_vec_cuda(qs, (base + 1)*3, 3)),
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(rocmfpx_get_bits_vec_cuda(qs, (base + 2)*3, 3)),
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(rocmfpx_get_bits_vec_cuda(qs, (base + 3)*3, 3)));
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(b12 & 7u),
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((b12 >> 3) & 7u),
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((b12 >> 6) & 7u),
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((b12 >> 9) & 7u));
     return *((const int *) &v);
 }
 
 static __device__ __forceinline__ int rocmfpx_pack4_fp6_vec_cuda(const uint8_t * qs, const int base) {
 #if GGML_ROCMFP6_FAST_SIGNMAG_PACK
-    uint32_t qs0, qs1, qs2, qs3, qs4, qs5;
-    memcpy(&qs0, qs +  0, 4);
-    memcpy(&qs1, qs +  4, 4);
-    memcpy(&qs2, qs +  8, 4);
-    memcpy(&qs3, qs + 12, 4);
-    memcpy(&qs4, qs + 16, 4);
-    memcpy(&qs5, qs + 20, 4);
-
-    const uint32_t words[7] = { qs0, qs1, qs2, qs3, qs4, qs5, 0 };
-    const int start_bit = 6 * base;
-    const int reg_idx = start_bit >> 5;
-    const int reg_shift = start_bit & 31;
-    const uint32_t val_low  = words[reg_idx];
-    const uint32_t val_high = words[reg_idx + 1];
-    const uint32_t bits24 = (reg_shift == 0) ? (val_low & 0xFFFFFFu) :
-        (((val_low >> reg_shift) | (val_high << (32 - reg_shift))) & 0xFFFFFFu);
-
-    return rocmfpx_pack4_fp6_bits24_vec_cuda(bits24);
+    const int start_byte = (base >> 2) * 3;
+    uint32_t raw;
+    memcpy(&raw, qs + start_byte, sizeof(raw));
+    return rocmfpx_pack4_fp6_bits24_vec_cuda(raw & 0xFFFFFFu);
 #else
     const char4 v = make_char4(
         (int8_t) rocmfpx_decode_fp6_code_vec_cuda(rocmfpx_get_bits_vec_cuda(qs, (base + 0)*6, 6)),

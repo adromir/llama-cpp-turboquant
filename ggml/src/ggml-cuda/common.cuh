@@ -413,6 +413,28 @@ static constexpr __device__ int ggml_cuda_get_max_cpy_bytes() {
 #endif // GGML_USE_HIP
 }
 
+// Streaming / non-temporal load helper: maps to __builtin_nontemporal_load (GLC/SLC bypass) on HIP
+// and __ldcs on NVIDIA Volta/Turing/Ampere+ to bypass L1 cache for streaming KV-cache reads.
+template <typename T>
+static __device__ __forceinline__ T ggml_cuda_ldcs(const T * ptr) {
+#if defined(GGML_USE_HIP)
+    return __builtin_nontemporal_load(ptr);
+#elif !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    return __ldcs(ptr);
+#else
+    return *ptr;
+#endif
+}
+
+#if defined(GGML_USE_HIP)
+static __device__ __forceinline__ half ggml_cuda_ldcs(const half * ptr) {
+    const uint16_t val = __builtin_nontemporal_load((const uint16_t *) ptr);
+    half h;
+    memcpy(&h, &val, sizeof(h));
+    return h;
+}
+#endif
+
 
 [[noreturn]]
 static __device__ void no_device_code(
