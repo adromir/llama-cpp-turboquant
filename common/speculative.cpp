@@ -940,6 +940,11 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
     // draft-dspark: the draft carries a Markov head and uses an anchor-first block layout
     const bool is_dspark;
 
+    // draft-dflash2: lattice walk via candidate selector instead of sampling
+    bool    is_dflash2     = false;
+    bool    is_mrope       = false;
+    int32_t selector_top_k = 0;
+
     const int32_t * target_layer_ids   = nullptr; // model_dft's extract layer indices
     uint32_t        target_layer_ids_n = 0;
     int32_t         n_layer_tgt        = 0;       // extract id == n_layer_tgt -> pre-final-norm state (nextn)
@@ -964,6 +969,9 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
         target_layer_ids_n = llama_model_target_layer_ids_n(model_dft);
         GGML_ASSERT(target_layer_ids_n > 0 && "DFlash model has no target_layer_ids");
 
+        selector_top_k = llama_model_dflash_selector_top_k(model_dft);
+        is_dflash2     = selector_top_k > 0;
+
         n_embd_tgt    = llama_model_n_embd(model_tgt);
         n_embd_dec    = llama_model_n_embd(model_dft);
         n_embd_enc    = (int32_t) target_layer_ids_n * n_embd_tgt;
@@ -980,7 +988,8 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
 
         LOG_INF("%s: adding speculative implementation '%s'\n", __func__, common_speculative_type_to_str(type).c_str());
         LOG_INF("%s: - n_max=%d, n_min=%d, p_min=%.2f\n", __func__, this->params.n_max, this->params.n_min, this->params.p_min);
-        LOG_INF("%s: - block_size=%d, mask_token_id=%d, n_extract=%u\n", __func__, block_size, mask_token_id, target_layer_ids_n);
+        LOG_INF("%s: - block_size=%d, mask_token_id=%d, n_extract=%u, selector_top_k=%d\n", __func__,
+                block_size, mask_token_id, target_layer_ids_n, selector_top_k);
 
         // DFlash input is [id_last, <mask> * (block_size-1)]: in-place denoising yields at most
         // block_size-1 draft tokens, DSpark yield a full block_size draft tokens
@@ -994,6 +1003,13 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
 
         batch        = llama_batch_init(llama_n_batch(ctx_dft), 0,          n_seq);
         batch_inject = llama_batch_init(llama_n_batch(ctx_dft), n_embd_dec, n_seq);
+
+        // embd batches on an M-RoPE draft need 4 position rows per token
+        is_mrope = llama_model_rope_type(model_dft) == LLAMA_ROPE_TYPE_MROPE;
+        if (is_mrope) {
+            free(batch_inject.pos);
+            batch_inject.pos = (llama_pos *) malloc(sizeof(llama_pos) * 4 * llama_n_batch(ctx_dft));
+        }
 
         smpls.resize(n_seq);
         for (auto & s : smpls) {
@@ -1016,7 +1032,7 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
             }
         }
 
-        llama_set_embeddings_nextn(ctx_dft, true, /*masked*/ true);
+        llama_set_embeddings_nextn(ctx_dft, true, /*masked*/ !is_dflash2);
 
         // generic DFlash drafts with non-causal block attention; Laguna drafters
         // are trained with a causal noise block
@@ -1147,11 +1163,24 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
                 }
 
                 // fuse extracted features through DFlash encoder
+                // M-RoPE drafts read 4 position rows per token from embd batches, so pass them explicitly
+                std::vector<llama_pos> enc_pos;
+                if (is_mrope) {
+                    enc_pos.resize((size_t) 4 * n_chunk);
+                    for (int32_t i = 0; i < n_chunk; ++i) {
+                        const llama_pos p = batch_in.pos[i_batch_beg[seq_id] + offset + i];
+                        enc_pos[0 * n_chunk + i] = p;
+                        enc_pos[1 * n_chunk + i] = p;
+                        enc_pos[2 * n_chunk + i] = p;
+                        enc_pos[3 * n_chunk + i] = 0;
+                    }
+                }
+
                 llama_batch enc_batch = {
                     /*.n_tokens =*/ n_chunk,
                     /*.token    =*/ nullptr,
                     /*.embd     =*/ features_buf.data(),
-                    /*.pos      =*/ nullptr,
+                    /*.pos      =*/ is_mrope ? enc_pos.data() : nullptr,
                     /*.n_seq_id =*/ nullptr,
                     /*.seq_id   =*/ nullptr,
                     /*.logits   =*/ nullptr,
@@ -1172,7 +1201,13 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
                 std::memcpy(batch_inject.embd, inp_g, (size_t) n_chunk * n_embd_dec * sizeof(float));
 
                 for (int32_t i = 0; i < n_chunk; ++i) {
-                    batch_inject.pos[i]       = batch_in.pos[i_batch_beg[seq_id] + offset + i];
+                    const llama_pos p = batch_in.pos[i_batch_beg[seq_id] + offset + i];
+                    batch_inject.pos[i] = p;
+                    if (is_mrope) {
+                        batch_inject.pos[1 * n_chunk + i] = p;
+                        batch_inject.pos[2 * n_chunk + i] = p;
+                        batch_inject.pos[3 * n_chunk + i] = 0;
+                    }
                     batch_inject.n_seq_id[i]  = 1;
                     batch_inject.seq_id[i][0] = seq_id;
                     batch_inject.logits[i]    = false;
@@ -1221,7 +1256,7 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
             i_block_beg[seq_id] = batch.n_tokens;
             n_block    [seq_id] = n_block_tokens;
             for (int32_t i = 0; i < n_block_tokens; ++i) {
-                common_batch_add(batch, i == 0 ? dp.id_last : mask_token_id, n + i, { seq_id }, true);
+                common_batch_add(batch, i == 0 ? dp.id_last : mask_token_id, n + i, { seq_id }, !is_dflash2);
             }
         }
 
@@ -1248,6 +1283,36 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
             auto * smpl = smpls[seq_id].get();
 
             auto & result = *dp.result;
+
+            if (is_dflash2) {
+                const float * lattice = llama_get_embeddings_nextn(ctx_dft);
+                GGML_ASSERT(lattice && "DFlash2 selector produced no lattice");
+
+                int32_t predecessor = 0;
+                for (int32_t i = 1; i < n_block_tokens; ++i) {
+                    const float * row = lattice + (size_t) (beg + i) * n_embd_dec;
+                    const float * scores = row + selector_top_k + (size_t) predecessor * selector_top_k;
+
+                    predecessor = (int32_t) std::distance(scores,
+                            std::max_element(scores, scores + selector_top_k));
+                    if (params.p_min > 0.0f) {
+                        // softmax(scores) at the argmax, i.e. 1 / sum(exp(s_k - s_max))
+                        float sum = 0.0f;
+                        for (int32_t k = 0; k < selector_top_k; ++k) {
+                            sum += std::exp(scores[k] - scores[predecessor]);
+                        }
+                        if (1.0f / sum < params.p_min) {
+                            break;
+                        }
+                    }
+                    result.push_back((llama_token) row[predecessor]);
+                }
+
+                if (result.size() < (size_t) params.n_min) {
+                    result.clear();
+                }
+                continue;
+            }
 
             if (is_dspark) {
                 // DSpark predicts the next token from position 0 and optionally truncates
