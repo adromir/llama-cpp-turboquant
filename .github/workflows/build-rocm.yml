@@ -16,6 +16,10 @@ jobs:
     runs-on: windows-2022
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      HIP_PATH: C:\TheRock\build
+      HIP_DEVICE_LIB_PATH: C:\TheRock\build\lib\llvm\amdgcn\bitcode
+      HIP_PLATFORM: amd
+      LLVM_PATH: C:\TheRock\build\lib\llvm
 
     steps:
     - name: Checkout repository
@@ -25,49 +29,32 @@ jobs:
       id: cache-rocm-restore
       uses: actions/cache/restore@v4
       with:
-        path: C:\Program Files\AMD\ROCm\7.2
-        key: rocm-installed-7.2.3-windows-v1
+        path: C:\TheRock\build
+        key: rocm-installed-10.0.0-windows-v1
 
     - name: Download and Install ROCm
       if: steps.cache-rocm-restore.outputs.cache-hit != 'true'
       run: |
-        Write-Host "Downloading installer..."
-        Invoke-WebRequest -Uri https://download.amd.com/developer/eula/rocm-hub/AMD-Software-PRO-Edition-26.Q3-Win11-For-HIP.exe.exe -OutFile rocm.exe
+        Write-Host "Downloading ROCm 10.0.0 TheRock Windows tarball..."
+        New-Item -ItemType Directory -Force -Path C:\TheRock\build | Out-Null
+        Invoke-WebRequest -Uri https://stable.repo.amd.com/rocm/core/tarball/therock-dist-windows-gfx120X-all-10.0.0.tar.gz -OutFile therock.tar.gz
         
-        Write-Host "Extracting AMD PRO Edition installer to bypass hardware checks..."
-        7z x rocm.exe -oamd_installer -y
+        Write-Host "Extracting tarball to C:\TheRock\build..."
+        tar -xzf therock.tar.gz -C C:\TheRock\build --strip-components=1
         
-        Write-Host "Installing ROCm and HIP SDK components..."
-        $msiFiles = Get-ChildItem -Path amd_installer -Filter *.msi -Recurse | Where-Object {
-            $_.Name -match "rocm|hip|llvm|hsa|comgr|rocblas|hipblas|dev"
-        }
-        
-        $coreMsi = $msiFiles | Where-Object { $_.Name -match "rocm-core" }
-        $otherMsis = $msiFiles | Where-Object { $_.Name -notmatch "rocm-core" }
-        $orderedMsis = @($coreMsi) + @($otherMsis)
-        
-        foreach ($msi in $orderedMsis) {
-            Write-Host "Installing $($msi.Name)..."
-            $proc = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
-            if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-                Write-Host "Warning: $($msi.Name) returned exit code $($proc.ExitCode)"
-            }
-        }
-        
-        if (-not (Test-Path "C:\Program Files\AMD\ROCm\7.2\bin\clang.exe")) {
-            Write-Error "ERROR: clang.exe was still not found! The MSI installation failed."
+        if (-not (Test-Path "C:\TheRock\build\lib\llvm\bin\clang.exe")) {
+            Write-Error "ERROR: clang.exe was not found in C:\TheRock\build\lib\llvm\bin! Extraction failed."
             exit 1
         }
         
-        Remove-Item rocm.exe -Force
-        Remove-Item amd_installer -Recurse -Force
+        Remove-Item therock.tar.gz -Force
 
     - name: Save ROCm Install Cache
       if: steps.cache-rocm-restore.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
       with:
-        path: C:\Program Files\AMD\ROCm\7.2
-        key: rocm-installed-7.2.3-windows-v1
+        path: C:\TheRock\build
+        key: rocm-installed-10.0.0-windows-v1
 
     - name: Restore OpenSSL Cache
       id: cache-openssl-restore
@@ -108,12 +95,14 @@ jobs:
     - name: Build llama.cpp
       env:
         CCACHE_DIR: ${{ github.workspace }}\.ccache
-        CCACHE_COMPILERCHECK: string:rocm-7.2
+        CCACHE_COMPILERCHECK: string:rocm-10.0.0
         CCACHE_BASEDIR: ${{ github.workspace }}
       run: |
         ccache -z
         $fso = New-Object -ComObject Scripting.FileSystemObject
-        $RocmPath = $fso.GetFolder("C:\Program Files\AMD\ROCm\7.2").ShortPath.Replace('\', '/')
+        $RocmPath = "C:/TheRock/build"
+        $ClangBin = "$RocmPath/lib/llvm/bin"
+        
         if (Test-Path "C:\Program Files\OpenSSL-Win64") {
             $OpenSslPath = $fso.GetFolder("C:\Program Files\OpenSSL-Win64").ShortPath.Replace('\', '/')
         } elseif (Test-Path "C:\Program Files\OpenSSL") {
@@ -121,6 +110,19 @@ jobs:
         } else {
             Write-Error "OpenSSL installation directory not found!"
             exit 1
+        }
+        
+        # Resolve Resource Compiler
+        $RcCompiler = $null
+        if (Test-Path "$ClangBin/llvm-rc.exe") {
+            $RcCompiler = "$ClangBin/llvm-rc.exe"
+        } elseif (Test-Path "$RocmPath/bin/llvm-rc.exe") {
+            $RcCompiler = "$RocmPath/bin/llvm-rc.exe"
+        } else {
+            $SdkRc = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Filter "rc.exe" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "\\x64\\rc.exe$" } | Select-Object -First 1
+            if ($SdkRc) {
+                $RcCompiler = $SdkRc.FullName.Replace('\', '/')
+            }
         }
         
         $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
@@ -133,9 +135,10 @@ jobs:
         
         $CMakeArgs = @(
           "-G", "Ninja",
-          "-DCMAKE_C_COMPILER=$RocmPath/bin/clang.exe",
-          "-DCMAKE_CXX_COMPILER=$RocmPath/bin/clang++.exe",
-          "-DCMAKE_HIP_COMPILER=$RocmPath/bin/clang++.exe",
+          "-DCMAKE_C_COMPILER=$ClangBin/clang.exe",
+          "-DCMAKE_CXX_COMPILER=$ClangBin/clang++.exe",
+          "-DCMAKE_ASM_COMPILER=$ClangBin/clang.exe",
+          "-DCMAKE_HIP_COMPILER=$ClangBin/clang++.exe",
           "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
           "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
           "-DCMAKE_HIP_COMPILER_LAUNCHER=ccache",
@@ -146,8 +149,7 @@ jobs:
           "-DBUILD_SHARED_LIBS=ON",
           "-DGGML_STATIC=OFF",
           "-DGGML_OPENMP=OFF",
-          "-DCMAKE_RC_COMPILER=$RocmPath/bin/llvm-rc.exe",
-          "-DCMAKE_PREFIX_PATH=$RocmPath",
+          "-DCMAKE_PREFIX_PATH=$RocmPath;$RocmPath/lib/cmake",
           "-DOPENSSL_ROOT_DIR=$OpenSslPath",
           "-DOPENSSL_CRYPTO_LIBRARY=$OpenSslPath/lib/VC/x64/MD/libcrypto.lib",
           "-DOPENSSL_SSL_LIBRARY=$OpenSslPath/lib/VC/x64/MD/libssl.lib",
@@ -157,6 +159,10 @@ jobs:
           "-DCMAKE_CXX_FLAGS=$CoreFlags",
           "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr"
         )
+        
+        if ($RcCompiler) {
+            $CMakeArgs += "-DCMAKE_RC_COMPILER=$RcCompiler"
+        }
         
         & cmake $CMakeArgs ..
           
@@ -173,9 +179,11 @@ jobs:
 
     - name: Archive build output
       run: |
-        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\rocblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
-        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\libhipblaslt.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
-        Copy-Item "C:\Program Files\AMD\ROCm\7.2\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\rocblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\libhipblaslt.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\hipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\amdhip64*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Compress-Archive -Path build\bin\* -DestinationPath llama-rocm-windows.zip
 
     - name: Upload Build Artifact
@@ -185,20 +193,52 @@ jobs:
         path: llama-rocm-windows.zip
 
   build-linux:
-    runs-on: ubuntu-latest
-    container: rocm/dev-ubuntu-22.04:7.2.4
+    runs-on: ubuntu-24.04
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+      ROCM_PATH: /opt/rocm
+      HIP_PATH: /opt/rocm
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Restore ROCm Install Cache
+      id: cache-rocm-linux-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: /opt/rocm
+        key: rocm-installed-10.0.0-linux-v1
+
+    - name: Download and Install ROCm
+      if: steps.cache-rocm-linux-restore.outputs.cache-hit != 'true'
+      run: |
+        echo "Downloading ROCm 10.0.0 TheRock Linux tarball..."
+        sudo mkdir -p /opt/rocm
+        sudo chown -R $USER:$USER /opt/rocm
+        curl -L -o therock-linux.tar.gz https://stable.repo.amd.com/rocm/core/tarball/therock-dist-linux-gfx120X-all-10.0.0.tar.gz
+        
+        echo "Extracting tarball to /opt/rocm..."
+        tar -xzf therock-linux.tar.gz -C /opt/rocm --strip-components=1
+        
+        if [ ! -f "/opt/rocm/lib/llvm/bin/clang" ]; then
+            echo "ERROR: clang was not found in /opt/rocm/lib/llvm/bin! Extraction failed."
+            exit 1
+        fi
+        
+        rm -f therock-linux.tar.gz
+
+    - name: Save ROCm Install Cache
+      if: steps.cache-rocm-linux-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: /opt/rocm
+        key: rocm-installed-10.0.0-linux-v1
+
     - name: Install Dependencies
       run: |
-        apt-get update
-        apt-get install -y cmake ninja-build ccache libcurl4-openssl-dev zip git hipblas-dev rocblas-dev rocm-libs
-        git config --global --add safe.directory '*'
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build ccache libcurl4-openssl-dev zip git libatomic1 libquadmath0
 
     - name: Restore ccache
       uses: actions/cache/restore@v4
@@ -211,13 +251,15 @@ jobs:
     - name: Build llama.cpp
       env:
         CCACHE_DIR: ${{ github.workspace }}/.ccache
-        CCACHE_COMPILERCHECK: string:rocm-7.2.4
+        CCACHE_COMPILERCHECK: string:rocm-10.0.0
         CCACHE_BASEDIR: ${{ github.workspace }}
       run: |
         ccache -z
         
         export ROCM_PATH=/opt/rocm
         export HIP_PATH=/opt/rocm
+        export PATH=/opt/rocm/lib/llvm/bin:/opt/rocm/bin:$PATH
+        export LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
         
         mkdir build
         cd build
@@ -225,9 +267,10 @@ jobs:
         export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
         
         cmake -G "Ninja" \
-          -DCMAKE_C_COMPILER=${ROCM_PATH}/llvm/bin/clang \
-          -DCMAKE_CXX_COMPILER=${ROCM_PATH}/llvm/bin/clang++ \
-          -DCMAKE_HIP_COMPILER=${ROCM_PATH}/llvm/bin/clang++ \
+          -DCMAKE_C_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang \
+          -DCMAKE_CXX_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang++ \
+          -DCMAKE_ASM_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang \
+          -DCMAKE_HIP_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang++ \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_HIP_COMPILER_LAUNCHER=ccache \
@@ -238,7 +281,7 @@ jobs:
           -DBUILD_SHARED_LIBS=ON \
           -DGGML_STATIC=OFF \
           -DGGML_OPENMP=OFF \
-          -DCMAKE_PREFIX_PATH=${ROCM_PATH} \
+          -DCMAKE_PREFIX_PATH="${ROCM_PATH};${ROCM_PATH}/lib/cmake" \
           -DCMAKE_C_FLAGS="$CORE_FLAGS" \
           -DCMAKE_CXX_FLAGS="$CORE_FLAGS" \
           -DCMAKE_HIP_FLAGS="$CORE_FLAGS" \
@@ -294,7 +337,7 @@ jobs:
         files: |
           llama-rocm-windows.zip
           llama-rocm-linux.zip
-        body: "Includes unified ROCm builds for Windows and Linux. Packages include required AMD ROCm libraries (rocblas, hipblaslt, hipblas) for convenience. These are MIT-licensed open-source components from AMD."
+        body: "Includes unified ROCm 10.0.0 (TheRock) builds for Windows and Linux. Packages include required AMD ROCm runtime libraries (rocblas, hipblaslt, hipblas, amdhip64) for convenience. These are MIT-licensed open-source components from AMD."
         draft: false
         prerelease: false
       env:
