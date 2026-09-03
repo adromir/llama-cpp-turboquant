@@ -116,3 +116,10 @@ __device__ __forceinline__ float ggml_cuda_op_swiglu_oai_single(float x, float g
     out_glu = out_glu * (1.0f + g);
     return out_glu;
 }
+
+__device__ __forceinline__ float ggml_cuda_op_swiglu_clamp_single(float gate, float up, float limit) {
+    gate = fminf(gate, limit);
+    up = fmaxf(fminf(up, limit), -limit);
+
+    return ggml_cuda_op_silu_single(gate) * up;
+}
