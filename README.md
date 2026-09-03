@@ -127,6 +127,7 @@ llama-cli -m model.gguf -ngl 99 -c 65536 --cache-type-k turbo2 --cache-type-v tu
 
 ### 3. Quantize Models to ROCmFPX
 
+#### Direct CLI
 ```bash
 # Standard ROCmFP4 quantization:
 llama-quantize model-f32.gguf model-q4_rocmfp4.gguf Q4_0_ROCMFP4
@@ -137,6 +138,30 @@ llama-quantize model-f32.gguf model-q4_fast.gguf Q4_0_ROCMFP4_FAST
 # Agent-optimized recipe (coherent tool-calling with boosted attention layers):
 llama-quantize model-f32.gguf model-q4_lean.gguf Q4_0_ROCMFP4_LEAN
 ```
+
+#### Automated Helper Scripts (Windows & Linux)
+We provide automated helper scripts to quantize with pre-tuned agent/speed profiles and requantize existing K-quants:
+
+- **Windows (PowerShell)**:
+  ```powershell
+  # Quantize BF16 to ROCmFP4 with agent profile:
+  .\scripts\quantize-rocmfpx-agent.ps1 -Src model-f16.gguf -Out model-fp4-agent.gguf -Format rocmfp4 -Profile agent
+
+  # Fast decode layout on Strix / RDNA:
+  .\scripts\quantize-rocmfpx-agent.ps1 -Src model-f16.gguf -Out model-fp4-fast.gguf -Format rocmfp4 -Profile fast
+
+  # Requantize an existing Q4_K_M or Q8_0 model without original BF16:
+  .\scripts\quantize-rocmfpx-from-kquant.ps1 -Src model-Q4_K_M.gguf -Out model-Q3_0_ROCMFPX.gguf
+  ```
+
+- **Linux (Bash)**:
+  ```bash
+  # Quantize BF16 to ROCmFP4 agent preset:
+  FORMAT=rocmfp4 PROFILE=agent SRC=model-f16.gguf OUT=model-fp4-agent.gguf ./scripts/quantize-rocmfpx-agent.sh
+
+  # Requantize an existing K-quant:
+  SRC=model-Q4_K_M.gguf OUT=model-Q3_0_ROCMFPX.gguf PRESET=Q3_0_ROCMFPX ./scripts/quantize-rocmfpx-from-kquant.sh
+  ```
 
 ---
 
