@@ -379,5 +379,32 @@ static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_conf
     CASE(GGML_TYPE_NVFP4, 256, 1, 128, 112, GGML_CUDA_MMQ_SRAM_LAYOUT_NVFP4, MMQ_ITER_K, true, false);
     CASE(GGML_TYPE_NVFP4, 256, 1, 128, 128, GGML_CUDA_MMQ_SRAM_LAYOUT_NVFP4, MMQ_ITER_K, true, false);
 
+#define CASE_ROCMFP_AMPERE(T, LAYOUT) \
+    CASE(T, 256, 1, 128,   8, LAYOUT, MMQ_ITER_K, true, true); \
+    CASE(T, 256, 1, 128,  16, LAYOUT, MMQ_ITER_K, true, true); \
+    CASE(T, 256, 1, 128,  32, LAYOUT, MMQ_ITER_K, true, true); \
+    CASE(T, 256, 1, 128,  64, LAYOUT, MMQ_ITER_K, true, true); \
+    CASE(T, 256, 1, 128, 128, LAYOUT, MMQ_ITER_K, true, true); \
+    CASE(T, 256, 1, 128,   8, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  16, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  24, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  32, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  40, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  48, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  64, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  80, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128,  96, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128, 112, LAYOUT, MMQ_ITER_K, true, false); \
+    CASE(T, 256, 1, 128, 128, LAYOUT, MMQ_ITER_K, true, false)
+
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q4_0_ROCMFP4,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q4_0_ROCMFP4_FAST, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0);
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q4_0_ROCMI4,       GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0);
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q3_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q2_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q6_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_AMPERE(GGML_TYPE_Q8_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0);
+#undef CASE_ROCMFP_AMPERE
+
     return ggml_cuda_mmq_config(GGML_TYPE_COUNT, 256, 1, 128, 64, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0, 256, false, true);
 }

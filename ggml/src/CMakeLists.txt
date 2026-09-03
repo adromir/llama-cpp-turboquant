@@ -207,6 +207,10 @@ add_library(ggml-base
             ggml-quants.c
             ggml-quants.h
             ggml-turbo-quant.c
+            ../rocmfp4/rocmfp4.c
+            ../rocmfp4/rocmfp4.h
+            ../rocmfpx/rocmfpx.c
+            ../rocmfpx/rocmfpx.h
             gguf.cpp)
 
 set_target_properties(ggml-base PROPERTIES
@@ -214,7 +218,8 @@ set_target_properties(ggml-base PROPERTIES
     SOVERSION ${GGML_VERSION_MAJOR}
 )
 
-target_include_directories(ggml-base PRIVATE .)
+target_include_directories(ggml-base PRIVATE . ../rocmfp4 ../rocmfpx)
+target_include_directories(ggml-base PUBLIC ../rocmfp4 ../rocmfpx)
 if (GGML_BACKEND_DL)
     target_compile_definitions(ggml-base PUBLIC GGML_BACKEND_DL)
 endif()

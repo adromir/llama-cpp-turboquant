@@ -13,6 +13,7 @@
 #include <regex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 // result of parsing --tensor-type option
 // (changes to this struct must be reflected in tools/quantize/quantize.cpp)
@@ -421,6 +422,13 @@ static ggml_type tensor_type_fallback(quantize_state_impl & qs, const ggml_tenso
             case GGML_TYPE_Q3_K:
             case GGML_TYPE_TQ1_0:
             case GGML_TYPE_TQ2_0:   return_type = GGML_TYPE_Q4_0;   break;
+            case GGML_TYPE_Q4_0_ROCMFP4:
+            case GGML_TYPE_Q4_0_ROCMFP4_FAST: return_type = GGML_TYPE_Q4_0; break;
+            case GGML_TYPE_Q3_0_ROCMFPX:
+            case GGML_TYPE_Q2_0_ROCMFPX:
+            case GGML_TYPE_Q6_0_ROCMFPX:
+            case GGML_TYPE_Q8_0_ROCMFPX: return_type = GGML_TYPE_Q8_0; break;
+            case GGML_TYPE_Q4_0_ROCMI4: return_type = GGML_TYPE_Q4_0; break;
             case GGML_TYPE_Q4_K:    return_type = GGML_TYPE_Q5_0;   break;
             case GGML_TYPE_Q5_K:    return_type = GGML_TYPE_Q5_1;   break;
             case GGML_TYPE_Q6_K:    return_type = GGML_TYPE_Q8_0;   break;
@@ -462,6 +470,118 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
         return i_layer < n_layers/8 || i_layer >= 7*n_layers/8 || (i_layer - n_layers/8)%3 == 2;
     };
     const int n_expert = std::max(1, (int)qs.model.hparams.n_expert);
+    auto rocmfpx_is_q3_agent = [] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q3_0_ROCMFPX_AGENT;
+    };
+    auto rocmfpx_is_q6_agent = [] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT;
+    };
+    auto rocmfpx_is_q6_agent_lean = [] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT_LEAN;
+    };
+    auto rocmfpx_is_q6_lean = [] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_LEAN ||
+               ftype == LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT_LEAN;
+    };
+    auto rocmfpx_is_q8_agent = [] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q8_0_ROCMFPX_AGENT;
+    };
+    auto rocmfpx_is_q3_family = [&] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q3_0_ROCMFPX || rocmfpx_is_q3_agent(ftype);
+    };
+    auto rocmfpx_is_q6_family = [&] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX ||
+               rocmfpx_is_q6_agent(ftype) ||
+               rocmfpx_is_q6_lean(ftype);
+    };
+    auto rocmfpx_is_q8_family = [&] (llama_ftype ftype) {
+        return ftype == LLAMA_FTYPE_MOSTLY_Q8_0_ROCMFPX || rocmfpx_is_q8_agent(ftype);
+    };
+    auto rocmfpx_is_family = [&] (llama_ftype ftype) {
+        return rocmfpx_is_q3_family(ftype) || rocmfpx_is_q6_family(ftype) || rocmfpx_is_q8_family(ftype);
+    };
+    auto rocmfpx_sensitive_tensor_type = [&] (llama_ftype ftype) {
+        switch (ftype) {
+            case LLAMA_FTYPE_MOSTLY_Q3_0_ROCMFPX: return GGML_TYPE_Q4_0_ROCMFP4_FAST;
+            case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX: return GGML_TYPE_Q6_0_ROCMFPX;
+            case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_LEAN: return GGML_TYPE_Q6_0_ROCMFPX;
+            case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT_LEAN: return GGML_TYPE_Q6_K;
+            case LLAMA_FTYPE_MOSTLY_Q8_0_ROCMFPX: return GGML_TYPE_Q8_0_ROCMFPX;
+            default:
+                if (rocmfpx_is_q3_agent(ftype)) {
+                    return GGML_TYPE_Q6_0_ROCMFPX;
+                }
+                if (rocmfpx_is_q6_agent(ftype)) {
+                    return GGML_TYPE_Q8_0_ROCMFPX;
+                }
+                if (rocmfpx_is_q8_agent(ftype)) {
+                    return GGML_TYPE_Q8_0;
+                }
+                return GGML_TYPE_COUNT;
+        }
+    };
+    auto rocmfpx_q3_needs_down_boost = [&](int i_layer, int n_layer, llama_ftype ftype) -> bool {
+        if (rocmfpx_is_q3_agent(ftype)) {
+            return i_layer < n_layer/8 || use_more_bits(i_layer, n_layer) || i_layer >= n_layer/2;
+        }
+        return i_layer < n_layer/16 || use_more_bits(i_layer, n_layer) || i_layer >= (2*n_layer)/3;
+    };
+    auto rocmfpx_q3_attn_kv_type = [&](int i_layer, int n_layer, llama_ftype ftype) -> ggml_type {
+        if (rocmfpx_is_q3_agent(ftype)) {
+            return i_layer < n_layer/2 ? GGML_TYPE_Q6_K : GGML_TYPE_Q5_K;
+        }
+        return i_layer < n_layer/2 ? GGML_TYPE_Q5_K : GGML_TYPE_Q4_K;
+    };
+    auto rocmfpx_q6_needs_down_boost = [&](int i_layer, int n_layer, llama_ftype ftype) -> bool {
+        if (rocmfpx_is_q6_agent_lean(ftype)) {
+            return i_layer < n_layer/16 || i_layer >= 15*n_layer/16;
+        }
+        if (rocmfpx_is_q6_lean(ftype)) {
+            return false;
+        }
+        if (rocmfpx_is_q6_agent(ftype)) {
+            return i_layer < n_layer/8 || i_layer >= 3*n_layer/4 || use_more_bits(i_layer, n_layer);
+        }
+        return i_layer < n_layer/16;
+    };
+    auto rocmfpx_q6_needs_attn_boost = [&](int i_layer, int n_layer, llama_ftype ftype) -> bool {
+        if (rocmfpx_is_q6_agent_lean(ftype)) {
+            return i_layer < n_layer/16;
+        }
+        if (rocmfpx_is_q6_lean(ftype)) {
+            return false;
+        }
+        if (rocmfpx_is_q6_agent(ftype)) {
+            return i_layer < n_layer/8 || use_more_bits(i_layer, n_layer);
+        }
+        return i_layer < n_layer/16;
+    };
+    auto rocmfpx_q8_needs_attn_boost = [&](int i_layer, int n_layer, llama_ftype ftype) -> bool {
+        if (rocmfpx_is_q8_agent(ftype)) {
+            return i_layer < n_layer/8 || use_more_bits(i_layer, n_layer) || i_layer >= n_layer/2;
+        }
+        return false;
+    };
+    auto rocmfpx_q8_needs_down_boost = [&](int i_layer, int n_layer, llama_ftype ftype) -> bool {
+        if (rocmfpx_is_q8_agent(ftype)) {
+            return i_layer < n_layer/8 || i_layer >= 3*n_layer/4 || use_more_bits(i_layer, n_layer);
+        }
+        return false;
+    };
+    auto layer_from_name = [&](const std::string & tensor_name, int n_layer) -> std::pair<int, int> {
+        int i_layer = 0;
+        if (sscanf(tensor_name.c_str(), "blk.%d.", &i_layer) == 1) {
+            return { i_layer, n_layer };
+        }
+        static std::mutex warn_mtx;
+        static std::unordered_set<std::string> warned;
+        std::lock_guard<std::mutex> lock(warn_mtx);
+        if (warned.emplace(tensor_name).second) {
+            LLAMA_LOG_WARN("%s: could not parse layer index from tensor '%s', assuming layer 0\n",
+                __func__, tensor_name.c_str());
+        }
+        return { 0, n_layer };
+    };
     auto layer_info = [n_expert] (int i_layer, int n_layer, const char * name) {
         if (n_expert > 1) {
             // Believe it or not, "experts" in the FFN of Mixtral-8x7B are not consecutive, but occasionally randomly
@@ -487,7 +607,25 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
             const int64_t nx = tensor->ne[0];
             const int64_t qk_k = ggml_blck_size(new_type);
 
-            if (ftype == LLAMA_FTYPE_MOSTLY_MXFP4_MOE) {
+            if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST) {
+                new_type = GGML_TYPE_Q4_0_ROCMFP4_FAST;
+            }
+            else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_COHERENT ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST_COHERENT ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) {
+                new_type = category == tensor_category::TOKEN_EMBD ?
+                    ((ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN ||
+                      ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) ? GGML_TYPE_Q5_K : GGML_TYPE_Q6_K) :
+                    ((ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST_COHERENT ||
+                      ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX ||
+                      ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) ? GGML_TYPE_Q4_0_ROCMFP4_FAST : GGML_TYPE_Q4_0_ROCMFP4);
+            }
+            else if (ggml_type rocmfpx_type = rocmfpx_sensitive_tensor_type(ftype); rocmfpx_type < GGML_TYPE_COUNT) {
+                new_type = rocmfpx_type;
+            }
+            else if (ftype == LLAMA_FTYPE_MOSTLY_MXFP4_MOE) {
                 new_type = GGML_TYPE_Q8_0;
             }
             else if (arch == LLM_ARCH_FALCON || nx % qk_k != 0) {
@@ -515,7 +653,18 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
         if (qs.params->token_embedding_type < GGML_TYPE_COUNT) {
             new_type = qs.params->token_embedding_type;
         } else {
-            if (ftype == LLAMA_FTYPE_MOSTLY_IQ2_XXS || ftype == LLAMA_FTYPE_MOSTLY_IQ2_XS ||
+            if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_COHERENT ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST_COHERENT ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX ||
+                ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) {
+                new_type = (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN ||
+                            ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) ? GGML_TYPE_Q5_K : GGML_TYPE_Q6_K;
+            }
+            else if (ggml_type rocmfpx_type = rocmfpx_sensitive_tensor_type(ftype); rocmfpx_type < GGML_TYPE_COUNT) {
+                new_type = rocmfpx_type;
+            }
+            else if (ftype == LLAMA_FTYPE_MOSTLY_IQ2_XXS || ftype == LLAMA_FTYPE_MOSTLY_IQ2_XS ||
                 ftype == LLAMA_FTYPE_MOSTLY_IQ1_S   || ftype == LLAMA_FTYPE_MOSTLY_IQ1_M) {
                 new_type = GGML_TYPE_Q2_K;
             }
@@ -564,7 +713,30 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
             }
         }
     } else if (category_is_attn_v(category)) {
-        if      (ftype == LLAMA_FTYPE_MOSTLY_Q2_K) {
+        if (rocmfpx_is_q3_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            new_type = rocmfpx_q3_attn_kv_type(info.first, info.second, ftype);
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q6_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = rocmfpx_is_q6_agent_lean(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q8_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX ||
+            ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) {
+            new_type = GGML_TYPE_Q4_0_ROCMFP4;
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4) {
+            new_type = GGML_TYPE_Q5_K;
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q2_K) {
             new_type = qs.model.hparams.n_gqa() >= 4 ? GGML_TYPE_Q4_K : GGML_TYPE_Q3_K;
         }
         else if (ftype == LLAMA_FTYPE_MOSTLY_Q2_K_S && qs.model.hparams.n_gqa() >= 4) {
@@ -602,9 +774,27 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
         }
         ++qs.i_attention_wv;
     } else if (category == tensor_category::ATTENTION_K) {
-        if (qs.model.hparams.n_expert == 8) {
-            // for the 8-expert model, bumping this to Q8_0 trades just ~128MB
-            // TODO: explore better strategies
+        if (rocmfpx_is_q3_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            new_type = rocmfpx_q3_attn_kv_type(info.first, info.second, ftype);
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q6_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = rocmfpx_is_q6_agent_lean(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q8_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX ||
+            ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN) {
+            new_type = GGML_TYPE_Q4_0_ROCMFP4;
+        }
+        else if (qs.model.hparams.n_expert == 8 && !rocmfpx_is_family(ftype)) {
             new_type = GGML_TYPE_Q8_0;
         }
         else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS) {
@@ -614,7 +804,22 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
             new_type = GGML_TYPE_IQ2_S;
         }
     } else if (category == tensor_category::ATTENTION_Q) {
-        if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS) {
+        if (rocmfpx_is_q3_family(ftype)) {
+            new_type = rocmfpx_is_q3_agent(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q5_K;
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q6_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = rocmfpx_is_q6_agent_lean(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q8_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS) {
             new_type = GGML_TYPE_IQ3_XXS;
         }
         else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XXS) {
@@ -623,7 +828,25 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
     } else if (category == tensor_category::FFN_DOWN) {
         auto info = layer_info(qs.i_ffn_down, qs.n_ffn_down, name.c_str());
         int i_layer = info.first, n_layer = info.second;
-        if      (ftype == LLAMA_FTYPE_MOSTLY_Q2_K) new_type = GGML_TYPE_Q3_K;
+        if (rocmfpx_is_q3_family(ftype)) {
+            if (rocmfpx_q3_needs_down_boost(i_layer, n_layer, ftype)) {
+                new_type = rocmfpx_is_q3_agent(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q5_K;
+            }
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            if (rocmfpx_q6_needs_down_boost(i_layer, n_layer, ftype)) {
+                new_type = rocmfpx_is_q6_agent_lean(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            if (rocmfpx_q8_needs_down_boost(i_layer, n_layer, ftype)) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4) {
+            new_type = (n_layer > 0 && i_layer >= (2 * n_layer) / 3) ? GGML_TYPE_Q5_K : GGML_TYPE_Q6_K;
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q2_K) new_type = GGML_TYPE_Q3_K;
         else if (ftype == LLAMA_FTYPE_MOSTLY_Q2_K_S) {
             if (i_layer < n_layer/8) new_type = GGML_TYPE_Q4_K;
         }
@@ -666,7 +889,25 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
         }
         ++qs.i_ffn_down;
     } else if (category == tensor_category::ATTENTION_OUTPUT) {
-        if (arch != LLM_ARCH_FALCON) {
+        if (rocmfpx_is_q3_family(ftype)) {
+            new_type = rocmfpx_is_q3_agent(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q5_K;
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q6_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = rocmfpx_is_q6_agent_lean(ftype) ? GGML_TYPE_Q6_K : GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            auto info = layer_from_name(name, qs.model.hparams.n_layer());
+            if (rocmfpx_q8_needs_attn_boost(info.first, info.second, ftype)) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4) {
+            new_type = GGML_TYPE_Q5_K;
+        }
+        else if (arch != LLM_ARCH_FALCON) {
             if (qs.model.hparams.n_expert == 8) {
                 if (ftype == LLAMA_FTYPE_MOSTLY_Q2_K   || ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS || ftype == LLAMA_FTYPE_MOSTLY_IQ3_XXS ||
                     ftype == LLAMA_FTYPE_MOSTLY_Q3_K_S || ftype == LLAMA_FTYPE_MOSTLY_Q3_K_M  || ftype == LLAMA_FTYPE_MOSTLY_IQ4_NL  ||
@@ -686,7 +927,17 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
         }
     }
     else if (category == tensor_category::ATTENTION_QKV) {
-        if (ftype == LLAMA_FTYPE_MOSTLY_Q3_K_M || ftype == LLAMA_FTYPE_MOSTLY_Q3_K_L || ftype == LLAMA_FTYPE_MOSTLY_IQ3_M) {
+        if (rocmfpx_is_q3_family(ftype)) {
+            new_type = rocmfpx_is_q3_agent(ftype) ? GGML_TYPE_Q5_K : GGML_TYPE_Q4_K;
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            new_type = rocmfpx_is_q6_agent_lean(ftype) ? GGML_TYPE_Q6_K :
+                (rocmfpx_is_q6_lean(ftype) ? GGML_TYPE_Q6_0_ROCMFPX : GGML_TYPE_Q8_0_ROCMFPX);
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            new_type = GGML_TYPE_Q8_0;
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q3_K_M || ftype == LLAMA_FTYPE_MOSTLY_Q3_K_L || ftype == LLAMA_FTYPE_MOSTLY_IQ3_M) {
             new_type = GGML_TYPE_Q4_K;
         }
         else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_K_M) new_type = GGML_TYPE_Q5_K;
@@ -695,7 +946,28 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
     else if (category == tensor_category::FFN_GATE) {
         auto info = layer_info(qs.i_ffn_gate, qs.n_ffn_gate, name.c_str());
         int i_layer = info.first, n_layer = info.second;
-        if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS && (i_layer >= n_layer/8 && i_layer < 7*n_layer/8)) {
+        if (rocmfpx_is_q3_family(ftype)) {
+            if (rocmfpx_is_q3_agent(ftype) || i_layer < n_layer/16 || use_more_bits(i_layer, n_layer)) {
+                new_type = GGML_TYPE_Q6_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            if (rocmfpx_is_q6_agent_lean(ftype) && use_more_bits(i_layer, n_layer)) {
+                new_type = GGML_TYPE_Q6_K;
+            }
+            else if (rocmfpx_is_q6_agent(ftype) && !rocmfpx_is_q6_lean(ftype) && use_more_bits(i_layer, n_layer)) {
+                new_type = GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            if (rocmfpx_is_q8_agent(ftype) && (i_layer < n_layer/8 || use_more_bits(i_layer, n_layer))) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4 && use_more_bits(i_layer, n_layer)) {
+            new_type = GGML_TYPE_Q5_K;
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS && (i_layer >= n_layer/8 && i_layer < 7*n_layer/8)) {
             new_type = GGML_TYPE_IQ3_XXS;
         }
         ++qs.i_ffn_gate;
@@ -703,7 +975,29 @@ static ggml_type llama_tensor_get_type_impl(quantize_state_impl & qs, ggml_type 
     else if (category == tensor_category::FFN_UP) {
         auto info = layer_info(qs.i_ffn_up, qs.n_ffn_up, name.c_str());
         int i_layer = info.first, n_layer = info.second;
-        if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS && (i_layer >= n_layer/8 && i_layer < 7*n_layer/8)) {
+        if (rocmfpx_is_q3_agent(ftype)) {
+            if (i_layer < n_layer/8 || i_layer >= 3*n_layer/4 || use_more_bits(i_layer, n_layer)) {
+                new_type = GGML_TYPE_Q6_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q6_family(ftype)) {
+            if (rocmfpx_is_q6_agent_lean(ftype) && use_more_bits(i_layer, n_layer)) {
+                new_type = GGML_TYPE_Q6_K;
+            }
+            else if (rocmfpx_is_q6_agent(ftype) && !rocmfpx_is_q6_lean(ftype) && use_more_bits(i_layer, n_layer)) {
+                new_type = GGML_TYPE_Q8_0_ROCMFPX;
+            }
+        }
+        else if (rocmfpx_is_q8_family(ftype)) {
+            if (rocmfpx_is_q8_agent(ftype) && (i_layer < n_layer/8 || use_more_bits(i_layer, n_layer))) {
+                new_type = GGML_TYPE_Q8_0;
+            }
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4) {
+            GGML_UNUSED(i_layer);
+            GGML_UNUSED(n_layer);
+        }
+        else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XS && (i_layer >= n_layer/8 && i_layer < 7*n_layer/8)) {
             new_type = GGML_TYPE_IQ3_XXS;
         }
         ++qs.i_ffn_up;
@@ -861,6 +1155,23 @@ static bool tensor_requires_imatrix(const char * tensor_name, const ggml_type ds
 ggml_type llama_ftype_get_default_type(llama_ftype ftype) {
     switch (ftype) {
         case LLAMA_FTYPE_MOSTLY_Q4_0: return GGML_TYPE_Q4_0;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4: return GGML_TYPE_Q4_0_ROCMFP4;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN: return GGML_TYPE_Q4_0_ROCMFP4;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_COHERENT: return GGML_TYPE_Q4_0_ROCMFP4;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST: return GGML_TYPE_Q4_0_ROCMFP4_FAST;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST_COHERENT: return GGML_TYPE_Q4_0_ROCMFP4_FAST;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX: return GGML_TYPE_Q4_0_ROCMFP4_FAST;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN: return GGML_TYPE_Q4_0_ROCMFP4_FAST;
+        case LLAMA_FTYPE_MOSTLY_Q3_0_ROCMFPX: return GGML_TYPE_Q3_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q2_0_ROCMFPX: return GGML_TYPE_Q2_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX: return GGML_TYPE_Q6_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_LEAN: return GGML_TYPE_Q6_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q8_0_ROCMFPX: return GGML_TYPE_Q8_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMI4: return GGML_TYPE_Q4_0_ROCMI4;
+        case LLAMA_FTYPE_MOSTLY_Q3_0_ROCMFPX_AGENT: return GGML_TYPE_Q3_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT: return GGML_TYPE_Q6_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT_LEAN: return GGML_TYPE_Q6_0_ROCMFPX;
+        case LLAMA_FTYPE_MOSTLY_Q8_0_ROCMFPX_AGENT: return GGML_TYPE_Q8_0_ROCMFPX;
         case LLAMA_FTYPE_MOSTLY_Q4_1: return GGML_TYPE_Q4_1;
         case LLAMA_FTYPE_MOSTLY_Q5_0: return GGML_TYPE_Q5_0;
         case LLAMA_FTYPE_MOSTLY_Q5_1: return GGML_TYPE_Q5_1;
@@ -928,6 +1239,12 @@ static void init_quantize_state_counters(quantize_state_impl & qs, std::vector<t
 //
 // main quantization driver
 //
+
+static bool llama_tensor_allows_requantize_to_rocmfp4(const ggml_type src_type, const ggml_type dst_type) {
+    const bool src_ok = src_type == GGML_TYPE_NVFP4 || src_type == GGML_TYPE_Q4_0;
+    const bool dst_ok = dst_type == GGML_TYPE_Q4_0_ROCMFP4 || dst_type == GGML_TYPE_Q4_0_ROCMFP4_FAST;
+    return src_ok && dst_ok;
+}
 
 static void llama_model_quantize_impl(const std::string & fname_inp, const std::string & fname_out, const llama_model_quantize_params * params) {
     llama_ftype ftype = params->ftype;
@@ -1281,7 +1598,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     throw std::runtime_error(format("Missing importance matrix for tensor %s in a very low-bit quantization", tensor->name));
                 }
 
-                if (ggml_is_quantized(tensor->type) && !params->allow_requantize) {
+                if (ggml_is_quantized(tensor->type) && !params->allow_requantize &&
+                    !llama_tensor_allows_requantize_to_rocmfp4(tensor->type, new_type)) {
                     throw std::runtime_error(format("requantizing from type %s is disabled", ggml_type_name(tensor->type)));
                 }
 

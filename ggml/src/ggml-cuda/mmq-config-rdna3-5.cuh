@@ -286,5 +286,28 @@ static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_conf
     CASE(GGML_TYPE_NVFP4, 256, 2, 128, 112, GGML_CUDA_MMQ_SRAM_LAYOUT_NVFP4, MMQ_ITER_K, false, false);
     CASE(GGML_TYPE_NVFP4, 256, 2, 128, 128, GGML_CUDA_MMQ_SRAM_LAYOUT_NVFP4, MMQ_ITER_K, false, false);
 
+#define CASE_ROCMFP_RDNA3_5(T, LAYOUT) \
+    CASE(T, 128, 2,  64,  16, LAYOUT, MMQ_ITER_K, false, true); \
+    CASE(T, 128, 2,  64,  32, LAYOUT, MMQ_ITER_K, false, true); \
+    CASE(T, 256, 2, 128,  64, LAYOUT, MMQ_ITER_K, false, true); \
+    CASE(T, 256, 2, 128, 128, LAYOUT, MMQ_ITER_K, false, true); \
+    CASE(T, 128, 2,  64,  16, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 128, 2,  64,  32, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 256, 2, 128,  48, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 256, 2, 128,  64, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 256, 2, 128,  80, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 256, 2, 128,  96, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 256, 2, 128, 112, LAYOUT, MMQ_ITER_K, false, false); \
+    CASE(T, 256, 2, 128, 128, LAYOUT, MMQ_ITER_K, false, false)
+
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q4_0_ROCMFP4,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q4_0_ROCMFP4_FAST, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0);
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q4_0_ROCMI4,       GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0);
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q3_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q2_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q6_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q3_K);
+    CASE_ROCMFP_RDNA3_5(GGML_TYPE_Q8_0_ROCMFPX,      GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0);
+#undef CASE_ROCMFP_RDNA3_5
+
     return ggml_cuda_mmq_config(GGML_TYPE_COUNT, 256, 2, 128, 64, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0, 256, false, true);
 }

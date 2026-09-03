@@ -80,6 +80,28 @@ static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, con
         case GGML_TYPE_NVFP4:
             mul_mat_q_case<GGML_TYPE_NVFP4>(ctx, args, stream);
             break;
+// -----------------------------------------------------------------------
+        case GGML_TYPE_Q4_0_ROCMFP4:
+            mul_mat_q_case<GGML_TYPE_Q4_0_ROCMFP4>(ctx, args, stream);
+            break;
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST:
+            mul_mat_q_case<GGML_TYPE_Q4_0_ROCMFP4_FAST>(ctx, args, stream);
+            break;
+        case GGML_TYPE_Q4_0_ROCMI4:
+            mul_mat_q_case<GGML_TYPE_Q4_0_ROCMI4>(ctx, args, stream);
+            break;
+        case GGML_TYPE_Q3_0_ROCMFPX:
+            mul_mat_q_case<GGML_TYPE_Q3_0_ROCMFPX>(ctx, args, stream);
+            break;
+        case GGML_TYPE_Q2_0_ROCMFPX:
+            mul_mat_q_case<GGML_TYPE_Q2_0_ROCMFPX>(ctx, args, stream);
+            break;
+        case GGML_TYPE_Q6_0_ROCMFPX:
+            mul_mat_q_case<GGML_TYPE_Q6_0_ROCMFPX>(ctx, args, stream);
+            break;
+        case GGML_TYPE_Q8_0_ROCMFPX:
+            mul_mat_q_case<GGML_TYPE_Q8_0_ROCMFPX>(ctx, args, stream);
+            break;
         default:
             GGML_ABORT("fatal error");
             break;

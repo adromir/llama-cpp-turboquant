@@ -113,8 +113,15 @@ else()
         ../ggml-cuda/template-instances/fattn-vec-instance-turbo4_0-turbo3_0.cu
         ../ggml-cuda/template-instances/fattn-vec-instance-turbo3_0-turbo4_0.cu
         ../ggml-cuda/template-instances/fattn-vec-instance-turbo4_0-turbo2_0.cu
-        ../ggml-cuda/template-instances/fattn-vec-instance-turbo2_0-turbo4_0.cu)
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo2_0-turbo4_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q4_0_rocmfp4-q4_0_rocmfp4.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q4_0_rocmfp4_fast-q4_0_rocmfp4_fast.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q3_0_rocmfpx-q3_0_rocmfpx.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q6_0_rocmfpx-q6_0_rocmfpx.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q8_0_rocmfpx-q8_0_rocmfpx.cu)
 endif()
+
+list(APPEND GGML_SOURCES_ROCM ../../rocmfp4/rocmfp4_hip.cu)
 
 ggml_add_backend_library(ggml-hip
                          ${GGML_HEADERS_ROCM}
