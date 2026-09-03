@@ -23,6 +23,7 @@ static void moe_cache_register_stub(const void * owner) {
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <condition_variable>
@@ -54,6 +55,27 @@ static constexpr int    moe_cache_pool_slots_min              = 64;
 static constexpr size_t moe_cache_slab_bytes_auto_min         = 1ull << 30;
 static constexpr int    moe_cache_node_rows_max               = 64;
 static constexpr size_t moe_cache_overlap_bytes_per_token     = 8u << 20;
+
+// Adaptive cpu-overlap calibration (see moe_cache_calibration_on_enter/leave):
+// only runs while overlap_cpu_rows is left automatic. Candidate -1 means
+// "use the existing byte-budget formula below" and is tried first, so a
+// session that never runs enough single-token decode scopes to finish
+// calibrating (e.g. every unit test, or a prefill-only run) behaves exactly
+// as before this change. Candidates are tried in order, each over a window
+// of real decode scopes; whichever measures the lowest average wall time
+// wins and is locked in for the rest of the session.
+static constexpr int    moe_cache_calib_candidates[]           = { -1, 0, 1, 2, 4, 8 };
+static constexpr int    moe_cache_calib_candidate_count        = 6;
+// Absorbs one-time cold-start cost (CUDA kernel JIT, page cache fill, thread/
+// frequency governor settling) before any candidate timing counts -- this
+// dwarfs the row-count effect being measured if skipped.
+static constexpr int    moe_cache_calib_global_warmup_scopes   = 64;
+// Round-robin sweep: each candidate gets `rounds` short trials rather than
+// one long block, so residual drift after warm-up spreads evenly instead of
+// biasing whichever candidate happens to run first.
+static constexpr int    moe_cache_calib_rounds                 = 3;
+static constexpr int    moe_cache_calib_round_warmup_scopes    = 1;
+static constexpr int    moe_cache_calib_round_measured_scopes  = 4;
 
 enum class moe_cache_slot_state : uint8_t {
     free,
@@ -87,6 +109,9 @@ struct moe_cache_slot {
     int prev = -1;
     int next = -1;
     int readers = 0;
+    // Resident hit count since the slot was populated. Used by the heat-aware
+    // eviction policy to keep frequently-used experts resident.
+    uint32_t uses = 0;
     moe_cache_slot_state state = moe_cache_slot_state::free;
 };
 
@@ -148,6 +173,7 @@ struct moe_cache_config {
     int admit_after = 2;
     bool admit_after_explicit = false;
     int readmit_after = 8;
+    int hot_uses = 4;
     int queue_max = 128;
     size_t queue_mb = 512;
     int stats_every = 0;
@@ -218,6 +244,9 @@ struct moe_cache_device {
     long long fills = 0;
     long long fill_failures = 0;
     long long evictions = 0;
+    // Evictions that sacrificed a hot (frequently-used) expert because every
+    // eligible slot was hot. A steady zero means hot experts stay resident.
+    long long heat_evictions = 0;
     long long insert_skips = 0;
     long long admission_skips = 0;
     long long dispatch_failures = 0;
@@ -264,6 +293,37 @@ struct moe_cache_session {
         int references = 0;
     };
     std::unordered_map<const void *, active_source> active_sources;
+
+    // Adaptive cpu-overlap calibration state, guarded by `mu` (same lock
+    // session_enter/session_leave/moe_cache_plan already hold). Unused
+    // whenever overlap_cpu_rows is explicitly configured.
+    //
+    // Two-phase: a long unmeasured global warm-up first (CUDA kernel JIT,
+    // page cache fill, thread/frequency governor settling all cost far more
+    // than the row-count effect being measured, so they must fully drain
+    // before any timing counts), then a round-robin sweep -- one short trial
+    // per candidate per round, cycling through all candidates several times
+    // and averaging each candidate's trials across rounds -- rather than one
+    // long block per candidate, so any *residual* drift after warm-up is
+    // spread evenly across every candidate instead of biasing whichever one
+    // happened to run first.
+    bool     calib_started            = false;
+    bool     calib_done               = false;
+    bool     calib_global_warmup_done = false;
+    int      calib_global_warmup_seen = 0;
+    int      calib_round              = 0;
+    int      calib_slot               = 0; // rotated by calib_round; see moe_cache_calibration_on_leave
+    int      calib_current_rows       = -1; // what moe_cache_overlap_rows() should use right now (-1 = formula)
+    int      calib_scopes_seen        = 0;
+    double   calib_time_sum_ms        = 0.0;
+    int      calib_time_count         = 0;
+    double   calib_candidate_sum_ms[moe_cache_calib_candidate_count]  = {};
+    int      calib_candidate_samples[moe_cache_calib_candidate_count] = {};
+    int      calib_best_rows          = -1;
+    double   calib_best_avg_ms        = -1.0;
+    std::chrono::steady_clock::time_point calib_scope_start{};
+    int64_t  calib_scope_max_tokens = 0;
+    int      calib_scope_nodes      = 0;
 };
 
 struct moe_cache_pin {
@@ -580,6 +640,9 @@ static moe_cache_config moe_cache_read_config() {
     if (moe_cache_env_i64("GGML_CUDA_MOE_CACHE_THROTTLE", 1, 1024, value)) {
         config.readmit_after = (int)value;
     }
+    if (moe_cache_env_i64("GGML_CUDA_MOE_CACHE_HOT_USES", 0, 1 << 30, value)) {
+        config.hot_uses = (int)value;
+    }
     if (moe_cache_env_i64("GGML_CUDA_MOE_CACHE_QUEUE", 1, 65536, value)) {
         config.queue_max = (int)value;
     }
@@ -754,6 +817,7 @@ static void moe_cache_slot_reset(moe_cache_pool & pool, int index, bool add_to_f
     slot.key = {};
     slot.generation++;
     slot.readers = 0;
+    slot.uses = 0;
     slot.state = moe_cache_slot_state::free;
     slot.prev = -1;
     slot.next = -1;
@@ -810,7 +874,7 @@ static bool moe_cache_grow_device(
         const size_t old_capacity = capacity;
         if (!moe_cache_cuda_ok(
                     device, cudaFree(*pointer), "scratch replacement free", true)) {
-            cudaFree(fresh);
+            (void)cudaFree(fresh);
             return false;
         }
         moe_cache_budget_reallocation(device, old_capacity, requested);
@@ -1010,7 +1074,7 @@ static bool moe_cache_grow_host(
         return false;
     }
     if (*pointer) {
-        cudaFreeHost(*pointer);
+        (void)cudaFreeHost(*pointer);
     }
     *pointer = fresh;
     capacity = requested;
@@ -1069,7 +1133,7 @@ static void moe_cache_worker(moe_cache_session * session, moe_cache_device * dev
             cudaError_t alloc_error = cudaMallocHost((void **)&fresh, job.bytes);
             if (alloc_error == cudaSuccess) {
                 if (stage) {
-                    cudaFreeHost(stage);
+                    (void)cudaFreeHost(stage);
                 }
                 stage = fresh;
                 stage_capacity = job.bytes;
@@ -1143,11 +1207,11 @@ static void moe_cache_worker(moe_cache_session * session, moe_cache_device * dev
     }
 
     if (stream) {
-        cudaStreamSynchronize(stream);
-        cudaStreamDestroy(stream);
+        (void)cudaStreamSynchronize(stream);
+        (void)cudaStreamDestroy(stream);
     }
     if (stage) {
-        cudaFreeHost(stage);
+        (void)cudaFreeHost(stage);
     }
 }
 
@@ -1264,7 +1328,7 @@ static bool moe_cache_allocate_pool(
 
     std::unique_ptr<moe_cache_pool> pool(new (std::nothrow) moe_cache_pool());
     if (!pool) {
-        cudaFree(slab);
+        (void)cudaFree(slab);
         moe_cache_budget_allocation(device, allocated, false);
         return false;
     }
@@ -1282,7 +1346,7 @@ static bool moe_cache_allocate_pool(
         }
         device.pools.push_back(std::move(pool));
     } catch (...) {
-        cudaFree(slab);
+        (void)cudaFree(slab);
         moe_cache_budget_allocation(device, allocated, false);
         return false;
     }
@@ -1291,7 +1355,7 @@ static bool moe_cache_allocate_pool(
     device.allocated_bytes += allocated;
 
     if (!moe_cache_start_worker(session, device)) {
-        cudaFree(device.pools.back()->slab);
+        (void)cudaFree(device.pools.back()->slab);
         moe_cache_budget_allocation(device, allocated, false);
         device.pools.back()->slab = nullptr;
         device.pools.pop_back();
@@ -1459,11 +1523,11 @@ static void moe_cache_log_stats(moe_cache_device & device) {
         used += pool.n_slots - pool.free_slots.size();
     }
     const long long total = device.hits + device.misses;
-    MOE_CACHE_LOG("[moe-cache] CUDA%d hits=%lld/%lld (%.1f%%) used=%zu/%zu enqueued=%lld filled=%lld fill-fail=%lld evictions=%lld skips=%lld admission=%lld queue=%zu jobs/%zu MiB dispatch-fail=%lld collect-fail=%lld act-dedup=%lld cpu-overlap=%lld fusion=%lld/%lld pairs=%lld/%lld/%lld/%lld fusion-attempts=%lld fusion-nodes=%lld bypass=%lld\n",
+    MOE_CACHE_LOG("[moe-cache] CUDA%d hits=%lld/%lld (%.1f%%) used=%zu/%zu enqueued=%lld filled=%lld fill-fail=%lld evictions=%lld heat=%lld skips=%lld admission=%lld queue=%zu jobs/%zu MiB dispatch-fail=%lld collect-fail=%lld act-dedup=%lld cpu-overlap=%lld fusion=%lld/%lld pairs=%lld/%lld/%lld/%lld fusion-attempts=%lld fusion-nodes=%lld bypass=%lld\n",
             device.physical, device.hits, total,
             total ? 100.0 * (double)device.hits / (double)total : 0.0,
             used, slots, device.inserts, device.fills, device.fill_failures,
-            device.evictions, device.insert_skips,
+            device.evictions, device.heat_evictions, device.insert_skips,
             device.admission_skips, device.queue.size(), device.queued_bytes >> 20,
             device.dispatch_failures, device.collect_failures,
             device.activation_dedup, device.overlap_rows,
@@ -1490,7 +1554,7 @@ static void moe_cache_log_configuration(moe_cache_session & session) {
             std::to_string(session.config.readmit_after) + "-replace"
         : "1-complete/" + std::to_string(session.config.admit_after) +
             "-partial/" + std::to_string(session.config.readmit_after) + "-replace";
-    MOE_CACHE_LOG("[moe-cache] configured: mode=%s devices=%zu budget=%s reserve=%zu MiB min-slab=%zu MiB min-expert=%zu KiB max-batch=%d admit=%s cpu-overlap=%s fills=%s\n",
+    MOE_CACHE_LOG("[moe-cache] configured: mode=%s devices=%zu budget=%s reserve=%zu MiB min-slab=%zu MiB min-expert=%zu KiB max-batch=%d admit=%s hot=%d cpu-overlap=%s fills=%s\n",
             session.config.automatic ? "auto" : "on",
             session.devices.size(), budget.c_str(),
             session.config.reserve_mb,
@@ -1498,6 +1562,7 @@ static void moe_cache_log_configuration(moe_cache_session & session) {
             session.config.min_expert_bytes >> 10,
             session.config.max_batch,
             admission.c_str(),
+            session.config.hot_uses,
             overlap_cpu_rows.c_str(),
             session.config.serial_fill ? "serial" : "parallel");
 }
@@ -1646,41 +1711,41 @@ static void moe_cache_cancel_queue_locked(
 static void moe_cache_free_device(moe_cache_device & device) {
     ggml_cuda_set_device(device.logical);
     if (device.compute_stream) {
-        cudaStreamSynchronize(device.compute_stream);
+        (void)cudaStreamSynchronize(device.compute_stream);
     }
     for (auto & pool_ptr : device.pools) {
         if (pool_ptr->slab) {
-            cudaFree(pool_ptr->slab);
+            (void)cudaFree(pool_ptr->slab);
             moe_cache_budget_allocation(
                     device, (size_t)pool_ptr->n_slots * pool_ptr->expert_size, false);
             pool_ptr->slab = nullptr;
         }
     }
     if (device.d_input) {
-        cudaFree(device.d_input);
+        (void)cudaFree(device.d_input);
         moe_cache_budget_allocation(device, device.d_input_cap, false);
         device.d_input = nullptr;
     }
     if (device.d_act_q8) {
-        cudaFree(device.d_act_q8);
+        (void)cudaFree(device.d_act_q8);
         moe_cache_budget_allocation(device, device.act_q8_cap, false);
         device.d_act_q8 = nullptr;
     }
     if (device.d_out) {
-        cudaFree(device.d_out);
+        (void)cudaFree(device.d_out);
         moe_cache_budget_allocation(device, device.d_out_cap, false);
         device.d_out = nullptr;
     }
     if (device.h_input) {
-        cudaFreeHost(device.h_input);
+        (void)cudaFreeHost(device.h_input);
         device.h_input = nullptr;
     }
     if (device.h_out) {
-        cudaFreeHost(device.h_out);
+        (void)cudaFreeHost(device.h_out);
         device.h_out = nullptr;
     }
     if (device.compute_stream) {
-        cudaStreamDestroy(device.compute_stream);
+        (void)cudaStreamDestroy(device.compute_stream);
         device.compute_stream = nullptr;
     }
     device.pools.clear();
@@ -1738,6 +1803,120 @@ static void moe_cache_session_destroy(void * opaque) {
     delete session;
 }
 
+// Which real candidate index the current (calib_slot, calib_round) trial
+// refers to. Rotating by calib_round means candidate 0 doesn't always go
+// first within a round, so any residual (post-warm-up) drift across a round
+// lands on a different candidate each time instead of always the same one.
+static int moe_cache_calibration_candidate_index(const moe_cache_session & session) {
+    return (session.calib_slot + session.calib_round) % moe_cache_calib_candidate_count;
+}
+
+// Called under session.mu at the start of every scope (one
+// ggml_backend_sched_compute_splits call, i.e. one decode step during
+// generation) while overlap_cpu_rows is left automatic. Starts calibration
+// on the first call and stamps the scope start time; per-node scope stats
+// are accumulated by moe_cache_plan().
+static void moe_cache_calibration_on_enter(moe_cache_session & session) {
+    if (session.config.overlap_cpu_rows >= 0 || session.calib_done) {
+        return;
+    }
+    if (!session.calib_started) {
+        session.calib_started            = true;
+        session.calib_global_warmup_done = false;
+        session.calib_global_warmup_seen = 0;
+        session.calib_round              = 0;
+        session.calib_slot               = 0;
+        session.calib_scopes_seen        = 0;
+        session.calib_time_sum_ms        = 0.0;
+        session.calib_time_count         = 0;
+        for (int i = 0; i < moe_cache_calib_candidate_count; i++) {
+            session.calib_candidate_sum_ms[i]  = 0.0;
+            session.calib_candidate_samples[i] = 0;
+        }
+        session.calib_best_rows    = -1;
+        session.calib_best_avg_ms  = -1.0;
+        session.calib_current_rows = -1; // formula, for the duration of the global warm-up
+    }
+    session.calib_scope_start      = std::chrono::steady_clock::now();
+    session.calib_scope_max_tokens = 0;
+    session.calib_scope_nodes      = 0;
+}
+
+// Called under session.mu at the end of every scope. Only scopes that
+// actually dispatched a single-token decode step through the cache count --
+// prefill/batched scopes have very different timing and would corrupt the
+// comparison, so they're silently skipped (calibration just takes longer).
+static void moe_cache_calibration_on_leave(moe_cache_session & session) {
+    if (session.config.overlap_cpu_rows >= 0 || session.calib_done || !session.calib_started) {
+        return;
+    }
+    if (session.calib_scope_nodes <= 0 || session.calib_scope_max_tokens != 1) {
+        return;
+    }
+
+    const double elapsed_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - session.calib_scope_start).count();
+
+    if (!session.calib_global_warmup_done) {
+        session.calib_global_warmup_seen++;
+        if (session.calib_global_warmup_seen < moe_cache_calib_global_warmup_scopes) {
+            return;
+        }
+        session.calib_global_warmup_done = true;
+        session.calib_current_rows = moe_cache_calib_candidates[moe_cache_calibration_candidate_index(session)];
+        MOE_CACHE_LOG("[moe-cache] cpu-overlap calibration: warm-up complete, starting sweep\n");
+        return;
+    }
+
+    session.calib_scopes_seen++;
+    if (session.calib_scopes_seen <= moe_cache_calib_round_warmup_scopes) {
+        return; // per-round settle for this candidate
+    }
+    session.calib_time_sum_ms += elapsed_ms;
+    session.calib_time_count++;
+    if (session.calib_scopes_seen < moe_cache_calib_round_warmup_scopes + moe_cache_calib_round_measured_scopes) {
+        return; // still measuring this (candidate, round) trial
+    }
+
+    const int candidate_index = moe_cache_calibration_candidate_index(session);
+    const int candidate_rows  = moe_cache_calib_candidates[candidate_index];
+    const double avg_ms = session.calib_time_sum_ms / std::max(1, session.calib_time_count);
+    session.calib_candidate_sum_ms[candidate_index]  += avg_ms;
+    session.calib_candidate_samples[candidate_index] += 1;
+    MOE_CACHE_LOG("[moe-cache] cpu-overlap calibration: round=%d candidate=%s avg=%.3f ms/decode\n",
+            session.calib_round,
+            candidate_rows < 0 ? "formula" : std::to_string(candidate_rows).c_str(), avg_ms);
+
+    session.calib_scopes_seen = 0;
+    session.calib_time_sum_ms = 0.0;
+    session.calib_time_count  = 0;
+    session.calib_slot++;
+    if (session.calib_slot >= moe_cache_calib_candidate_count) {
+        session.calib_slot = 0;
+        session.calib_round++;
+    }
+
+    if (session.calib_round >= moe_cache_calib_rounds) {
+        for (int i = 0; i < moe_cache_calib_candidate_count; i++) {
+            if (session.calib_candidate_samples[i] <= 0) {
+                continue;
+            }
+            const double avg = session.calib_candidate_sum_ms[i] / session.calib_candidate_samples[i];
+            if (session.calib_best_avg_ms < 0.0 || avg < session.calib_best_avg_ms) {
+                session.calib_best_avg_ms = avg;
+                session.calib_best_rows   = moe_cache_calib_candidates[i];
+            }
+        }
+        session.calib_current_rows = session.calib_best_rows;
+        session.calib_done = true;
+        MOE_CACHE_LOG("[moe-cache] cpu-overlap calibration complete: rows=%s (%.3f ms/decode avg)\n",
+                session.calib_best_rows < 0 ? "formula" : std::to_string(session.calib_best_rows).c_str(),
+                session.calib_best_avg_ms);
+    } else {
+        session.calib_current_rows = moe_cache_calib_candidates[moe_cache_calibration_candidate_index(session)];
+    }
+}
+
 static void moe_cache_session_enter(void * opaque) {
     if (g_session_suppressed > 0) {
         g_session_suppressed++;
@@ -1786,6 +1965,7 @@ static void moe_cache_session_enter(void * opaque) {
         return;
     }
     session->active_scopes++;
+    moe_cache_calibration_on_enter(*session);
 }
 
 static void moe_cache_session_leave(void * opaque) {
@@ -1806,6 +1986,7 @@ static void moe_cache_session_leave(void * opaque) {
     g_session_stack.erase(std::next(found).base());
     if (active) {
         std::lock_guard<std::mutex> lock(active->mu);
+        moe_cache_calibration_on_leave(*active);
         if (active->active_scopes > 0) {
             active->active_scopes--;
         }
@@ -2142,6 +2323,24 @@ static void * moe_cache_begin(
     return node.release();
 }
 
+// The original automatic policy: bound CPU overlap work by expert bytes,
+// token count, and one quarter of the node. Still used as calibration
+// candidate -1 (see moe_cache_calib_candidates) and as the fallback for any
+// session that never finishes calibrating.
+static int moe_cache_overlap_rows_formula(
+        const moe_cache_node & node, int n_ids, int n_tokens, int top_k) {
+    const size_t work_budget = moe_cache_overlap_bytes_per_token * (size_t) n_tokens;
+    int rows = (int) std::min<size_t>(work_budget / node.expert_size, INT_MAX);
+    rows = std::max(rows, 1);
+    if (top_k >= 8) {
+        rows = std::max(rows, 2);
+    }
+
+    rows = std::min(rows, std::max(1, n_ids / 4));
+    rows = std::min(rows, std::max(2, n_tokens));
+    return std::min(rows, n_ids - 1);
+}
+
 static int moe_cache_overlap_rows(const moe_cache_node & node, int n_ids) {
     const int configured = node.session->config.overlap_cpu_rows;
     if (configured >= 0) {
@@ -2153,17 +2352,12 @@ static int moe_cache_overlap_rows(const moe_cache_node & node, int n_ids) {
 
     const int n_tokens = (int) node.n_tokens;
     const int top_k = n_ids / n_tokens;
-    // Bound CPU work by expert bytes, token count, and one quarter of the node.
-    const size_t work_budget = moe_cache_overlap_bytes_per_token * (size_t) n_tokens;
-    int rows = (int) std::min<size_t>(work_budget / node.expert_size, INT_MAX);
-    rows = std::max(rows, 1);
-    if (top_k >= 8) {
-        rows = std::max(rows, 2);
-    }
 
-    rows = std::min(rows, std::max(1, n_ids / 4));
-    rows = std::min(rows, std::max(2, n_tokens));
-    return std::min(rows, n_ids - 1);
+    const int candidate = node.session->calib_current_rows;
+    if (candidate >= 0) {
+        return std::min(candidate, n_ids - 1);
+    }
+    return moe_cache_overlap_rows_formula(node, n_ids, n_tokens, top_k);
 }
 
 static int moe_cache_lookup_or_queue_locked(
@@ -2211,17 +2405,38 @@ static int moe_cache_lookup_or_queue_locked(
         slot_index = pool.free_slots.back();
         pool.free_slots.pop_back();
     } else {
-        int candidate = pool.lru_head;
-        while (candidate >= 0 && pool.slots[candidate].readers > 0) {
-            candidate = pool.slots[candidate].next;
+        // Prefer the least-recently-used slot whose uses is at or below the hot
+        // threshold, so a frequently-used (hot) expert stays resident.
+        int candidate = -1;
+        int fallback = -1;
+        for (int c = pool.lru_head; c >= 0; c = pool.slots[c].next) {
+            moe_cache_slot & s = pool.slots[c];
+            if (s.readers > 0) {
+                continue;
+            }
+            if (fallback < 0) {
+                fallback = c;
+            }
+            if ((int)s.uses <= session.config.hot_uses) {
+                candidate = c;
+                break;
+            }
+        }
+        if (candidate < 0) {
+            candidate = fallback;
         }
         if (candidate < 0) {
             device.insert_skips++;
             return -1;
         }
         slot_index = candidate;
+        const bool sacrificed_hot =
+            (int)pool.slots[slot_index].uses > session.config.hot_uses;
         moe_cache_slot_reset(pool, slot_index, false);
         device.evictions++;
+        if (sacrificed_hot) {
+            device.heat_evictions++;
+        }
     }
 
     moe_cache_slot & slot = pool.slots[slot_index];
@@ -2277,6 +2492,10 @@ static int moe_cache_plan(
     if (session.stopping) {
         return 0;
     }
+    if (session.calib_started && !session.calib_done) {
+        session.calib_scope_max_tokens = std::max(session.calib_scope_max_tokens, node->n_tokens);
+        session.calib_scope_nodes++;
+    }
     for (int index = 0; index < n_ids; index++) {
         const int32_t expert = ids[index];
         if (expert < 0 || expert >= node->n_expert || device.dead.load()) {
@@ -2294,6 +2513,7 @@ static int moe_cache_plan(
 
         moe_cache_slot & slot = pool.slots[slot_index];
         slot.readers++;
+        slot.uses++;
         moe_cache_lru_remove(pool, slot_index);
         moe_cache_lru_push_back(pool, slot_index);
         node->pins[node->n_pins++] = {&pool, slot_index};
@@ -2531,7 +2751,7 @@ static int moe_cache_dispatch_internal(
     }
 
     if (!ok) {
-        cudaStreamSynchronize(device.compute_stream);
+        (void)cudaStreamSynchronize(device.compute_stream);
         std::lock_guard<std::mutex> lock(session.mu);
         device.dispatch_failures++;
         return 0;
@@ -2586,7 +2806,7 @@ static int moe_cache_collect(
                 device, cudaStreamSynchronize(device.compute_stream),
                 "output synchronization", true);
     } else {
-        cudaStreamSynchronize(device.compute_stream);
+        (void)cudaStreamSynchronize(device.compute_stream);
     }
     node->dispatched = false;
 
@@ -2891,7 +3111,9 @@ static void * moe_cache_fused_begin(
                 moe_cache_slot & up_slot = pool->slots[resident_up[index]];
                 moe_cache_slot & gate_slot = pool->slots[resident_gate[index]];
                 up_slot.readers++;
+                up_slot.uses++;
                 gate_slot.readers++;
+                gate_slot.uses++;
                 moe_cache_lru_remove(*pool, resident_up[index]);
                 moe_cache_lru_push_back(*pool, resident_up[index]);
                 moe_cache_lru_remove(*pool, resident_gate[index]);
@@ -2923,6 +3145,7 @@ static void * moe_cache_fused_begin(
                 if (up_slot >= 0) {
                     moe_cache_slot & slot = pool->slots[up_slot];
                     slot.readers++;
+                    slot.uses++;
                     moe_cache_lru_remove(*pool, up_slot);
                     moe_cache_lru_push_back(*pool, up_slot);
                     selected->hits++;
@@ -2937,6 +3160,7 @@ static void * moe_cache_fused_begin(
                 if (gate_slot >= 0) {
                     moe_cache_slot & slot = pool->slots[gate_slot];
                     slot.readers++;
+                    slot.uses++;
                     moe_cache_lru_remove(*pool, gate_slot);
                     moe_cache_lru_push_back(*pool, gate_slot);
                     selected->hits++;

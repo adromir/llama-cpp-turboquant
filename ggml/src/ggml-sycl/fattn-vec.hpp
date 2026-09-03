@@ -89,8 +89,6 @@ static void flash_attn_ext_vec(const char* __restrict__ Q,
     constexpr int nthreads_KQ_q = (D/4 < warp_size ? D/4 : warp_size);
     constexpr int nthreads_V_q  = (D/4 < warp_size ? D/4 : warp_size);
 
-    constexpr int nthreads_KQ = type_K == GGML_TYPE_F16 ? 128 / cpy_nb : nthreads_KQ_q;
-    constexpr int nthreads_V  = type_V == GGML_TYPE_F16 ? 128 / cpy_nb : nthreads_V_q;
     constexpr bool K_is_turbo = (type_K == GGML_TYPE_TURBO2_0 || type_K == GGML_TYPE_TURBO3_0 || type_K == GGML_TYPE_TURBO4_0);
     constexpr bool V_is_turbo = (type_V == GGML_TYPE_TURBO2_0 || type_V == GGML_TYPE_TURBO3_0 || type_V == GGML_TYPE_TURBO4_0);
     constexpr bool has_turbo = K_is_turbo || V_is_turbo;
@@ -105,7 +103,6 @@ static void flash_attn_ext_vec(const char* __restrict__ Q,
                                     (ncols == 1 && D <= 512 && type_K == GGML_TYPE_TURBO2_0) ? 4 : 0;
     constexpr int lut_stride = n_centroids_lut > 0 ? n_centroids_lut + 1 : 1; // +1 avoids bank conflicts
 
-    constexpr int nthreads    = ggml_sycl_fattn_vec_get_nthreads_device();
     constexpr int nthreads_KQ = K_is_turbo ? 1
                               : (type_K == GGML_TYPE_F16 ? 128 / cpy_nb : nthreads_KQ_q);
 #ifdef GGML_SYCL_F16
@@ -194,11 +191,13 @@ static void flash_attn_ext_vec(const char* __restrict__ Q,
         KQ_sum[j] = 0.0f;
     }
 
+    // With the turbo LUT active the KQ loop reads turbo_lut_ptr from SLM, never Q_reg.
+    constexpr int Q_reg_size = n_centroids_lut > 0 ? 1 : (D/2)/nthreads_KQ;
     // Convert Q to float2 (f16 K) or q8_1 (quantized K) and store in registers:
 #ifdef GGML_SYCL_F16
-    sycl::half2 Q_reg[ncols][(D / 2) / nthreads_KQ] = {{{0.0f, 0.0f}}};  // Will be initialized completely.
+    sycl::half2 Q_reg[ncols][Q_reg_size] = {{{0.0f, 0.0f}}};  // Will be initialized completely.
 #else
-    sycl::float2 Q_reg[ncols][(D/2)/nthreads_KQ] = {{{0.0f, 0.0f}}}; // May be only partially initialized.
+    sycl::float2 Q_reg[ncols][Q_reg_size] = {{{0.0f, 0.0f}}}; // May be only partially initialized.
 #endif // GGML_SYCL_F16
     int    Q_i32[ncols][1 > D/(sizeof(int)*nthreads_KQ) ? 1 : D/(sizeof(int)*nthreads_KQ)];
     sycl::float2 Q_ds[ncols][1 > D / (sizeof(int) * nthreads_KQ) ? 1 : D / (sizeof(int) * nthreads_KQ)];
@@ -259,7 +258,7 @@ static void flash_attn_ext_vec(const char* __restrict__ Q,
 
         item_ct1.barrier(sycl::access::fence_space::local_space);
 
-    } else {
+    } else if constexpr (n_centroids_lut == 0) {
 #ifdef GGML_SYCL_F16
         const sycl::half2 scale_h2 = sycl::half2(scale, scale);
 #pragma unroll
@@ -668,14 +667,20 @@ void ggml_sycl_flash_attn_ext_vec_case_impl(ggml_backend_sycl_context & ctx, ggm
     const auto arch = ggml_sycl_info().devices[ctx.device].hw_info.arch;
     const int nthreads = ggml_sycl_fattn_vec_get_nthreads_device(arch);
     // 256 threads would overflow the 64 KB work-group local memory at D == 512, so keep 128 there.
-    if (D <= 256 && nthreads == 256) {
-        constexpr int nthreads_hw = 256;
-        constexpr int nwarps = nthreads_hw / warp_size;
-        launch_fattn<D, cols_per_block, 1,
-                     flash_attn_ext_vec<D, cols_per_block, type_K, type_V,
-                                        use_logit_softcap, warp_size, nthreads_hw>, warp_size>(
-            ctx, dst, nwarps, nbytes_shared, D, need_f16_K, need_f16_V, false);
-    } else {
+    // if constexpr, not a runtime if: a runtime guard still instantiates the D == 512
+    // 256-thread kernel, and its local memory request fails the whole module build.
+    if constexpr (D <= 256) {
+        if (nthreads == 256) {
+            constexpr int nthreads_hw = 256;
+            constexpr int nwarps = nthreads_hw / warp_size;
+            launch_fattn<D, cols_per_block, 1,
+                         flash_attn_ext_vec<D, cols_per_block, type_K, type_V,
+                                            use_logit_softcap, warp_size, nthreads_hw>, warp_size>(
+                ctx, dst, nwarps, nbytes_shared, D, need_f16_K, need_f16_V, false);
+            return;
+        }
+    }
+    {
         constexpr int nthreads_hw = 128;
         constexpr int nwarps = nthreads_hw / warp_size;
         launch_fattn<D, cols_per_block, 1,

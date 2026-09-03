@@ -150,6 +150,8 @@ endif ()
 
 llama_build(test-recurrent-state-rollback.cpp)
 
+llama_build_and_test(test-gdn-ingredient-replay.cpp LABEL "turbo")
+
 if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     # these tests are disabled on Windows because they use internal functions not exported with LLAMA_API (when building with shared libraries)
     llama_build_and_test(test-sampling.cpp)
@@ -261,6 +263,7 @@ llama_build_and_test(test-arg-parser.cpp)
 llama_build_and_test(test-model-resolution.cpp)
 # the test serves its repos from an httplib server, and the library links it privately
 target_link_libraries(test-model-resolution PRIVATE cpp-httplib)
+llama_build_and_test(test-speculative-adaptive.cpp)
 
 if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
   # TODO: repair known memory leaks

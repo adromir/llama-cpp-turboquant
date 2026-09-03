@@ -172,6 +172,7 @@ enum common_speculative_type {
     COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE,  // standalone draft model speculative decoding
     COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3,  // Eagle3 speculative decoding
     COMMON_SPECULATIVE_TYPE_DRAFT_MTP,     // Multi-token prediction
+    COMMON_SPECULATIVE_TYPE_DRAFT_MTP_ADAPTIVE, // MTP with adaptive draft depth
     COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH,  // DFlash speculative decoding
     COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK,  // DSpark speculative decoding (DFlash + Markov head)
     COMMON_SPECULATIVE_TYPE_NGRAM_SIMPLE,  // simple self-speculative decoding based on n-grams
@@ -324,10 +325,12 @@ struct common_params_model {
 struct common_params_speculative_draft {
     int32_t n_max = 3; // maximum number of tokens to draft during speculative decoding
     int32_t n_min = 0; // minimum number of draft tokens to use for speculative decoding
+    int32_t n_min_adaptive = 3; // minimum adaptive MTP draft depth (also the starting depth)
 
     float p_split = 0.1f; // speculative decoding split probability
     float p_min   = 0.0f; // minimum speculative decoding probability (greedy)
 
+    bool chain = false; // chained drafting: all n_max tokens in one GPU decode (MTP only)
     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
 
     common_params_model mparams;
@@ -391,7 +394,9 @@ struct common_params_speculative {
 
     uint32_t need_n_rs_seq() const {
         bool needs_rs_seq = std::any_of(types.begin(), types.end(), [&](auto t) {
-            return t == COMMON_SPECULATIVE_TYPE_DRAFT_MTP || t == COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3 || t == COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH || t == COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK;
+            return t == COMMON_SPECULATIVE_TYPE_DRAFT_MTP ||
+                   t == COMMON_SPECULATIVE_TYPE_DRAFT_MTP_ADAPTIVE ||
+                   t == COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3 || t == COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH || t == COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK;
         });
 
         return needs_rs_seq ? draft.n_max : 0u;
@@ -467,6 +472,7 @@ struct common_params {
     int32_t n_parallel            =     1; // number of parallel sequences to decode
     int32_t n_sequences           =     1; // number of sequences to decode
     int32_t n_outputs_max         =     0; // max outputs in a batch (0 = n_batch)
+    bool    gdn_replay            = false; // DRC: ingredient-replay rollback for GDN models instead of full K-snapshots [EXPERIMENTAL]
     int32_t grp_attn_n            =     1; // group-attention factor
     int32_t grp_attn_w            =   512; // group-attention width
     int32_t n_print               =    -1; // print token count every n tokens (-1 = disabled)
@@ -493,6 +499,8 @@ struct common_params {
 
     enum llama_split_mode split_mode = LLAMA_SPLIT_MODE_LAYER; // how to split the model across GPUs
     enum llama_load_mode  load_mode  = LLAMA_LOAD_MODE_MMAP; // how to load the model
+
+    enum llama_tensor_read_lazy tensor_read_lazy = LLAMA_TENSOR_READ_LAZY_AUTO; // on-demand reading of tensors marked by the arch
 
     common_cpu_params cpuparams;
     common_cpu_params cpuparams_batch;

@@ -14,6 +14,7 @@ struct llama_cparams {
     uint32_t n_ubatch;
     uint32_t n_seq_max;
     uint32_t n_rs_seq;        // number of recurrent-state snapshots per seq for rollback
+    bool     gdn_replay;      // DRC: ingredient-replay rollback instead of full K-snapshots (opt-in)
     uint32_t n_outputs_max;   // max outputs supported by the context
     int32_t  n_threads;       // number of threads to use for generation
     int32_t  n_threads_batch; // number of threads to use for batch processing
@@ -37,6 +38,7 @@ struct llama_cparams {
     bool embeddings;
     bool embeddings_nextn;        // also extract the hidden state before the final output norm
     bool embeddings_nextn_masked; // extract for only rows where batch.logits != 0
+    bool mtp_chain;               // DECODER_MTP: chain rows in-graph from the first row's inputs
     bool causal_attn;
     bool offload_kqv;
     bool flash_attn;
