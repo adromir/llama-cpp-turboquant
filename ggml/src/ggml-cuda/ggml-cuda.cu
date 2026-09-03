@@ -5149,6 +5149,15 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
         // capture-safe pool for its f16 KV-dequant temp buffers instead of raw cudaMalloc/cudaFree.
         cuda_ctx->fa_f16_use_pool = graph_compatible;
         if (graph_compatible) {
+            // PRE-FILL graphs (the graph key node[0].ne[1] > 1) use varying ubatch
+            // sizes, so each is a separate graph key and CUDA-graph capture never
+            // amortizes: the per-call update_required probe + failed capture is pure
+            // overhead. Measured pp512 is ~6.7% faster with graphs OFF. Only decode
+            // (ne[1]==1, stable shape) benefits from graph replay. Skip the whole
+            // graph path (incl. the update_required probe) for multi-token graphs.
+            if (cgraph->n_nodes > 0 && cgraph->nodes[0]->ne[1] > 1) {
+                use_cuda_graph = false;
+            } else {
             const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
 
             if (!graph->warmup_complete) {
@@ -5171,6 +5180,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
                     cuda_graph_update_required = graph->instance == nullptr;
                 }
             }
+            } // else: not prefill
         }
     }
 #endif // USE_CUDA_GRAPH
