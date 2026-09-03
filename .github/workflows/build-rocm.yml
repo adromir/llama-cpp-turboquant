@@ -7,6 +7,11 @@ on:
         description: 'Tag name for the release (e.g. v1.0.0)'
         required: true
         type: string
+      include_branch_in_tag:
+        description: 'Append branch slug to release tag if not present'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -179,18 +184,26 @@ jobs:
 
     - name: Archive build output
       run: |
+        $branchSlug = ("${{ github.ref_name }}" -replace '[^a-zA-Z0-9._-]', '-') -replace '-+', '-' -replace '^-|-$', ''
+        if (-not $branchSlug) { $branchSlug = "default" }
+        $zipName = "llama-rocm-$branchSlug-windows.zip"
+        Write-Host "Creating archive $zipName for branch ${{ github.ref_name }}..."
+
         Copy-Item "C:\TheRock\build\bin\rocblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        if (Test-Path "C:\TheRock\build\bin\rocblas") {
+            Copy-Item "C:\TheRock\build\bin\rocblas" -Destination build\bin\ -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Copy-Item "C:\TheRock\build\bin\libhipblaslt.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\hipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\amdhip64*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
-        Compress-Archive -Path build\bin\* -DestinationPath llama-rocm-windows.zip
+        Compress-Archive -Path build\bin\* -DestinationPath $zipName
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: llama-rocm-windows-zip
-        path: llama-rocm-windows.zip
+        name: llama-rocm-windows
+        path: llama-rocm-*-windows.zip
 
   build-linux:
     runs-on: ubuntu-24.04
@@ -293,13 +306,19 @@ jobs:
 
     - name: Archive build output
       run: |
+        BRANCH_SLUG=$(echo "${{ github.ref_name }}" | sed -e 's/[^a-zA-Z0-9._-]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')
+        if [ -z "$BRANCH_SLUG" ]; then BRANCH_SLUG="default"; fi
+        ZIP_NAME="llama-rocm-${BRANCH_SLUG}-linux.zip"
+        echo "Creating archive ${ZIP_NAME} for branch ${{ github.ref_name }}..."
+
         cp /opt/rocm/lib/librocblas.so* build/bin/ 2>/dev/null || true
+        cp -r /opt/rocm/lib/rocblas build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblaslt.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblas.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libamdhip64.so* build/bin/ 2>/dev/null || true
-        
+
         cd build/bin
-        zip -r ../../llama-rocm-linux.zip ./*
+        zip -r "../../${ZIP_NAME}" ./*
 
     - name: Save ccache directly after build
       uses: actions/cache/save@v4
@@ -311,8 +330,8 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: llama-rocm-linux-zip
-        path: llama-rocm-linux.zip
+        name: llama-rocm-linux
+        path: llama-rocm-*-linux.zip
 
   release:
     needs: [build-windows, build-linux]
@@ -320,25 +339,56 @@ jobs:
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
+    - name: Determine Release Details
+      id: prep
+      run: |
+        BRANCH_RAW="${{ github.ref_name }}"
+        BRANCH_SLUG=$(echo "$BRANCH_RAW" | sed -e 's/[^a-zA-Z0-9._-]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')
+        if [ -z "$BRANCH_SLUG" ]; then BRANCH_SLUG="default"; fi
+
+        TAG_INPUT="${{ github.event.inputs.tag_name }}"
+        APPEND_BRANCH="${{ github.event.inputs.include_branch_in_tag }}"
+
+        FINAL_TAG="$TAG_INPUT"
+        if [ "$APPEND_BRANCH" = "true" ] && [ "$BRANCH_RAW" != "master" ] && [ "$BRANCH_RAW" != "main" ]; then
+          case "$TAG_INPUT" in
+            *"$BRANCH_SLUG"*) ;;
+            *) FINAL_TAG="${TAG_INPUT}-${BRANCH_SLUG}" ;;
+          esac
+        fi
+
+        echo "branch_slug=$BRANCH_SLUG" >> $GITHUB_OUTPUT
+        echo "final_tag=$FINAL_TAG" >> $GITHUB_OUTPUT
+
     - name: Download Windows Artifact
       uses: actions/download-artifact@v4
       with:
-        name: llama-rocm-windows-zip
-        
+        name: llama-rocm-windows
+
     - name: Download Linux Artifact
       uses: actions/download-artifact@v4
       with:
-        name: llama-rocm-linux-zip
-        
+        name: llama-rocm-linux
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.event.inputs.tag_name }}
+        tag_name: ${{ steps.prep.outputs.final_tag }}
+        name: "llama.cpp ROCm ${{ steps.prep.outputs.final_tag }} [${{ github.ref_name }}]"
         files: |
-          llama-rocm-windows.zip
-          llama-rocm-linux.zip
-        body: "Includes unified ROCm 10.0.0 (TheRock) builds for Windows and Linux. Packages include required AMD ROCm runtime libraries (rocblas, hipblaslt, hipblas, amdhip64) for convenience. These are MIT-licensed open-source components from AMD."
+          llama-rocm-*-windows.zip
+          llama-rocm-*-linux.zip
+        body: |
+          ### Release Information
+          - **Source Branch:** `${{ github.ref_name }}`
+          - **Commit:** `${{ github.sha }}`
+          - **ROCm Core SDK:** 10.0.0 (TheRock)
+          - **Target GPU Architectures:** `gfx900;gfx906;gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx1102;gfx1200;gfx1201`
+
+          ### Description
+          Unified ROCm 10.0.0 (TheRock) release built from branch `${{ github.ref_name }}` for Windows and Linux.
+          Packages include required AMD ROCm runtime libraries (`rocblas`, `hipblaslt`, `hipblas`, `amdhip64`) for out-of-the-box portable execution.
         draft: false
-        prerelease: false
+        prerelease: ${{ github.ref_name != 'master' && github.ref_name != 'main' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
