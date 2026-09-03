@@ -5134,13 +5134,16 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     // is enabled and compatible, i.e. it will actually be captured.
     cuda_ctx->fa_f16_use_pool = false;
 
+    // op timing instruments each node with stream events, which is not possible during capture
+    const bool op_timing = getenv("GGML_CUDA_OP_TIMING") != nullptr;
+
 #ifdef USE_CUDA_GRAPH
     graph_key = ggml_cuda_graph_get_key(cgraph);
 
     ggml_cuda_graph_set_enabled(cuda_ctx, graph_key);
 
     ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
-    if (graph->is_enabled()) {
+    if (!op_timing && graph->is_enabled()) {
         const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
         // [TAG_FA_F16_CUDA_GRAPHS] this graph will be captured -> HIP flash-attention must use the
         // capture-safe pool for its f16 KV-dequant temp buffers instead of raw cudaMalloc/cudaFree.
