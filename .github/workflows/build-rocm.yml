@@ -130,7 +130,7 @@ jobs:
             }
         }
         
-        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
+        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno -flto=thin"
         
         $env:HIP_PATH = $RocmPath
         $env:ROCM_PATH = $RocmPath
@@ -162,7 +162,7 @@ jobs:
           "-DSSL_EAY=$OpenSslPath/lib/VC/x64/MD/libssl.lib",
           "-DCMAKE_C_FLAGS=$CoreFlags",
           "-DCMAKE_CXX_FLAGS=$CoreFlags",
-          "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr"
+          "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr -mllvm -amdgpu-early-inline-all=true"
         )
         
         if ($RcCompiler) {
@@ -277,7 +277,7 @@ jobs:
         mkdir build
         cd build
         
-        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
+        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno -flto=thin"
         
         cmake -G "Ninja" \
           -DCMAKE_C_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang \
@@ -297,7 +297,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${ROCM_PATH};${ROCM_PATH}/lib/cmake" \
           -DCMAKE_C_FLAGS="$CORE_FLAGS" \
           -DCMAKE_CXX_FLAGS="$CORE_FLAGS" \
-          -DCMAKE_HIP_FLAGS="$CORE_FLAGS" \
+          -DCMAKE_HIP_FLAGS="$CORE_FLAGS -mllvm -amdgpu-early-inline-all=true" \
           ..
           
         cmake --build . --config Release --parallel $(nproc)

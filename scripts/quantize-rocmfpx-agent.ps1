@@ -88,6 +88,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Enable unified memory by default for ROCm to avoid VRAM allocation failures
+if (-not $env:GGML_HIP_ENABLE_UNIFIED_MEMORY) {
+    $env:GGML_HIP_ENABLE_UNIFIED_MEMORY = "1"
+}
+
 # Auto-discover llama-quantize.exe
 if (-not $QuantizeBin) {
     $candidates = @(
