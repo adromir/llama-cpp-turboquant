@@ -435,6 +435,32 @@ static __device__ __forceinline__ half ggml_cuda_ldcs(const half * ptr) {
 }
 #endif
 
+// Streaming / non-temporal store helper: maps to __builtin_nontemporal_store (GLC/SLC bypass) on HIP
+// and __stcs on NVIDIA Volta/Turing/Ampere+ to bypass L1/L2 cache pollution for streaming KV-cache writes.
+template <typename T>
+static __device__ __forceinline__ void ggml_cuda_stcs(T * ptr, T val) {
+#if defined(GGML_USE_HIP)
+    __builtin_nontemporal_store(val, ptr);
+#elif !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    __stcs(ptr, val);
+#else
+    *ptr = val;
+#endif
+}
+
+#if defined(GGML_USE_HIP)
+static __device__ __forceinline__ void ggml_cuda_stcs(half * ptr, half val) {
+    uint16_t uval;
+    memcpy(&uval, &val, sizeof(uval));
+    __builtin_nontemporal_store(uval, (uint16_t *) ptr);
+}
+#elif !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+static __device__ __forceinline__ void ggml_cuda_stcs(half * ptr, half val) {
+    __stcs((unsigned short *) ptr, *(const unsigned short *) &val);
+}
+#endif
+
+
 
 [[noreturn]]
 static __device__ void no_device_code(

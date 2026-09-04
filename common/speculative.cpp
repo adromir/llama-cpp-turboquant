@@ -2234,11 +2234,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return;
         }
 
-        // update the adaptive controller only when this implementation produced the
-        // accepted draft; on is_other the stats belong to a different speculator
-        if (adaptive && !is_other) {
+        // feed the adaptive controller on every verification result: our own
+        // drafts with their accepted count, and when another speculator
+        // (ngram-mod) produced the accepted draft, its accepted count but only
+        // when it met the current depth (a genuinely strong round) - weak
+        // ngram wins on novel content are not evidence about the MTP content
+        // and would only drain the bucket, so they are not fed
+        if (adaptive && (!is_other || n_accepted >= adaptive_ctrl[seq_id].n_cur)) {
             const int depth_before = adaptive_ctrl[seq_id].n_cur;
-            adaptive_ctrl[seq_id].update(n_last[seq_id], n_accepted, params.n_max, params.n_min_adaptive);
+            adaptive_ctrl[seq_id].update(n_accepted, params.n_max, params.n_min_adaptive);
             if (adaptive_ctrl[seq_id].n_cur != depth_before) {
                 SPC_DBG("adaptive draft depth seq %d: %d -> %d (n_draft=%d, n_accepted=%d)\n",
                         (int) seq_id, depth_before, adaptive_ctrl[seq_id].n_cur, n_last[seq_id], n_accepted);

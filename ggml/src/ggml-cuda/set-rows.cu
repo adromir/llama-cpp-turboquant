@@ -387,7 +387,7 @@ static __global__ void k_set_rows_turbo3(
         uint8_t contrib = __shfl_sync(0xffffffff, my_low2, (lane & ~3) + k, WARP_SIZE);
         qs_byte |= contrib << (k * 2);
     }
-    if (lane % 4 == 0) blk->qs[qs_byte_idx] = qs_byte;
+    if (lane % 4 == 0) ggml_cuda_stcs(&blk->qs[qs_byte_idx], qs_byte);
 
     // Pack signs: 8 elements per byte, 1 bit each. Gather each 8-lane group's sign bits
     // via a width-32 shuffle so the group is self-contained on wave64 (a __ballot_sync
@@ -399,7 +399,7 @@ static __global__ void k_set_rows_turbo3(
     for (int sb = 0; sb < 8; sb++) {
         signs_byte |= (uint8_t)(__shfl_sync(0xffffffff, my_sign, (lane & ~7) + sb, WARP_SIZE) << sb);
     }
-    if (lane % 8 == 0) blk->signs[global_signs_byte] = signs_byte;
+    if (lane % 8 == 0) ggml_cuda_stcs(&blk->signs[global_signs_byte], signs_byte);
 
     // ---- Step 7: Reconstruction norm (parallel, same pattern as step 2) ----
     const float c = TURBO_CENTROIDS_3BIT[idx];
@@ -421,7 +421,7 @@ static __global__ void k_set_rows_turbo3(
     const float corrected_norm = (recon_norm > 1e-10f) ? grp_norm / recon_norm : grp_norm;
 
     // ---- Step 8: Write corrected norm (one per turbo3 block) ----
-    if (elem_in_block == 0) blk->norm = __float2half(corrected_norm);
+    if (elem_in_block == 0) ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
 
     GGML_UNUSED(ne10);
     GGML_UNUSED(ne13);
@@ -520,7 +520,7 @@ static __global__ void k_set_rows_turbo3_tail(
         uint8_t contrib = __shfl_sync(0xffffffff, my_low2, (lane & ~3) + k, WARP_SIZE);
         qs_byte |= contrib << (k * 2);
     }
-    if (lane % 4 == 0) blk->qs[lane / 4] = qs_byte;
+    if (lane % 4 == 0) ggml_cuda_stcs(&blk->qs[lane / 4], qs_byte);
 
     const uint8_t my_sign = (idx >> 2) & 1;
     const int signs_byte_idx = lane / 8;
@@ -529,7 +529,7 @@ static __global__ void k_set_rows_turbo3_tail(
     for (int sb = 0; sb < 8; sb++) {
         signs_byte |= (uint8_t)(__shfl_sync(0xffffffff, my_sign, (lane & ~7) + sb, WARP_SIZE) << sb);
     }
-    if (lane % 8 == 0) blk->signs[signs_byte_idx] = signs_byte;
+    if (lane % 8 == 0) ggml_cuda_stcs(&blk->signs[signs_byte_idx], signs_byte);
 
     // ---- Reconstruction norm ----
     const float c = TURBO_CENTROIDS_3BIT[idx];
@@ -549,7 +549,7 @@ static __global__ void k_set_rows_turbo3_tail(
     const float recon_norm     = sqrtf(s_recon_sq);
     const float corrected_norm = (recon_norm > 1e-10f) ? grp_norm / recon_norm : grp_norm;
 
-    if (lane == 0) blk->norm = __float2half(corrected_norm);
+    if (lane == 0) ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
 
     GGML_UNUSED(ne10);
     GGML_UNUSED(ne13);
@@ -774,7 +774,7 @@ static __global__ void k_set_rows_turbo2(
         uint8_t contrib = __shfl_sync(0xffffffff, my_bits, (lane & ~3) + k, WARP_SIZE);
         qs_byte |= contrib << (k * 2);
     }
-    if (lane % 4 == 0) blk->qs[elem_in_block / 4] = qs_byte;
+    if (lane % 4 == 0) ggml_cuda_stcs(&blk->qs[elem_in_block / 4], qs_byte);
 
     // No signs packing needed for turbo2
 
@@ -798,7 +798,7 @@ static __global__ void k_set_rows_turbo2(
     const float corrected_norm = (recon_norm > 1e-10f) ? grp_norm / recon_norm : grp_norm;
 
     // ---- Step 8: Write corrected norm (one per turbo2 block) ----
-    if (elem_in_block == 0) blk->norm = __float2half(corrected_norm);
+    if (elem_in_block == 0) ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
 
     GGML_UNUSED(ne10);
     GGML_UNUSED(ne13);
@@ -888,7 +888,7 @@ static __global__ void k_set_rows_turbo2_tail(
         uint8_t contrib = __shfl_sync(0xffffffff, my_bits, (lane & ~3) + k, WARP_SIZE);
         qs_byte |= contrib << (k * 2);
     }
-    if (lane % 4 == 0) blk->qs[lane / 4] = qs_byte;
+    if (lane % 4 == 0) ggml_cuda_stcs(&blk->qs[lane / 4], qs_byte);
 
     // ---- Reconstruction norm ----
     const float c = TURBO_CENTROIDS_2BIT[idx];
@@ -908,7 +908,7 @@ static __global__ void k_set_rows_turbo2_tail(
     const float recon_norm     = sqrtf(s_recon_sq);
     const float corrected_norm = (recon_norm > 1e-10f) ? grp_norm / recon_norm : grp_norm;
 
-    if (lane == 0) blk->norm = __float2half(corrected_norm);
+    if (lane == 0) ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
 
     GGML_UNUSED(ne10);
     GGML_UNUSED(ne13);
@@ -1115,7 +1115,7 @@ static __global__ void k_set_rows_turbo4(
     uint8_t partner_nibble = __shfl_sync(0xffffffff, my_nibble, lane ^ 1, WARP_SIZE);
     if (j % 2 == 0) {
         qs_byte = my_nibble | (partner_nibble << 4);
-        blk->qs[j / 2] = qs_byte;
+        ggml_cuda_stcs(&blk->qs[j / 2], qs_byte);
     }
 
     // ---- Step 7: Reconstruction norm (parallel) ----
@@ -1139,7 +1139,7 @@ static __global__ void k_set_rows_turbo4(
 
     // ---- Step 8: Write corrected norm and zero rnorm (one thread) ----
     if (j == 0) {
-        blk->norm  = __float2half(corrected_norm);
+        ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
     }
 
     GGML_UNUSED(ne10);
