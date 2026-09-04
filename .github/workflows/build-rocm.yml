@@ -67,6 +67,17 @@ jobs:
       with:
         ref: ${{ matrix.branch }}
 
+    - name: Configure Windows Defender Exclusions
+      run: |
+        Write-Host "Configuring Windows Defender exclusions for build directories and processes..."
+        Add-MpPreference -ExclusionPath "${{ github.workspace }}" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionPath "C:\TheRock" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionPath "$env:TEMP" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionProcess "clang.exe" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionProcess "clang++.exe" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionProcess "ninja.exe" -ErrorAction SilentlyContinue
+        Add-MpPreference -ExclusionProcess "lld-link.exe" -ErrorAction SilentlyContinue
+
     - name: Restore ROCm Install Cache
       id: cache-rocm-restore
       uses: actions/cache/restore@v4
@@ -77,9 +88,9 @@ jobs:
     - name: Download and Install ROCm
       if: steps.cache-rocm-restore.outputs.cache-hit != 'true'
       run: |
-        Write-Host "Downloading ROCm 10.0.0 TheRock Windows tarball..."
+        Write-Host "Downloading ROCm 10.0.0 TheRock Windows tarball via curl..."
         New-Item -ItemType Directory -Force -Path C:\TheRock\build | Out-Null
-        Invoke-WebRequest -Uri https://stable.repo.amd.com/rocm/core/tarball/therock-dist-windows-gfx120X-all-10.0.0.tar.gz -OutFile therock.tar.gz
+        curl.exe -L --retry 3 --retry-delay 5 -o therock.tar.gz https://stable.repo.amd.com/rocm/core/tarball/therock-dist-windows-gfx120X-all-10.0.0.tar.gz
         
         Write-Host "Extracting tarball to C:\TheRock\build..."
         tar -xzf therock.tar.gz -C C:\TheRock\build --strip-components=1
@@ -98,33 +109,17 @@ jobs:
         path: C:\TheRock\build
         key: rocm-installed-10.0.0-windows-v1
 
-    - name: Restore OpenSSL Cache
-      id: cache-openssl-restore
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          C:\Program Files\OpenSSL-Win64
-          C:\Program Files\OpenSSL
-        key: openssl-windows
-
-    - name: Install Dependencies
+    - name: Verify Tools and Dependencies
       run: |
-        choco install ninja -y
-        if ('${{ steps.cache-openssl-restore.outputs.cache-hit }}' -ne 'true') {
+        if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            choco install ninja -y
+        }
+        if (-not (Test-Path "C:\Program Files\OpenSSL-Win64") -and -not (Test-Path "C:\Program Files\OpenSSL")) {
             choco install openssl -y
         }
-
-    - name: Save OpenSSL Cache
-      if: steps.cache-openssl-restore.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: |
-          C:\Program Files\OpenSSL-Win64
-          C:\Program Files\OpenSSL
-        key: openssl-windows
-
-    - name: Install ccache
-      run: choco install ccache --no-progress
+        if (-not (Get-Command ccache -ErrorAction SilentlyContinue)) {
+            choco install ccache --no-progress
+        }
 
     - name: Restore ccache
       uses: actions/cache/restore@v4
@@ -167,7 +162,7 @@ jobs:
             }
         }
         
-        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno -flto=thin"
+        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno"
         
         $env:HIP_PATH = $RocmPath
         $env:ROCM_PATH = $RocmPath
@@ -208,7 +203,10 @@ jobs:
         
         & cmake $CMakeArgs ..
           
-        & cmake --build . --config Release --parallel 32
+        $ParallelJobs = [int]$env:NUMBER_OF_PROCESSORS
+        if ($ParallelJobs -lt 1) { $ParallelJobs = 2 }
+        Write-Host "Building with $ParallelJobs parallel jobs (matching runner vCPUs to prevent RAM thrashing)..."
+        & cmake --build . --config Release --parallel $ParallelJobs
         
         ccache -s
 
