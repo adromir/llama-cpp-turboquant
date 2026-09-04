@@ -6453,6 +6453,21 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                 if (src0_type == GGML_TYPE_Q8_0_ROCMFPX && src1_type == GGML_TYPE_F32) {
                     return true;
                 }
+                if (src0_type == GGML_TYPE_Q4_0_ROCMI4 && src1_type == GGML_TYPE_F32) {
+                    return true;
+                }
+                if (src0_type == GGML_TYPE_F32 && src1_type == GGML_TYPE_Q4_0_ROCMI4) {
+                    return true;
+                }
+                if (src0_type == GGML_TYPE_F16 && src1_type == GGML_TYPE_Q4_0_ROCMI4) {
+                    return true;
+                }
+                if (src0_type == GGML_TYPE_BF16 && src1_type == GGML_TYPE_Q4_0_ROCMI4) {
+                    return true;
+                }
+                if (src0_type == GGML_TYPE_Q4_0_ROCMI4 && src1_type == GGML_TYPE_Q4_0_ROCMI4) {
+                    return op->src[0]->ne[0] % QK_ROCMI4 == 0;
+                }
                 if (src0_type == GGML_TYPE_Q4_0_ROCMFP4 && src1_type == GGML_TYPE_Q4_0_ROCMFP4) {
                     return op->src[0]->ne[0] % QK_ROCMFP4 == 0;
                 }
