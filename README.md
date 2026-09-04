@@ -90,6 +90,9 @@ For production agents requiring strict JSON formatting, tool calling, or complex
 
 You can quantize any model from standard BF16/F16 GGUF weights or requantize from existing `Q4_K_M`/`Q8_0` files.
 
+> [!NOTE]
+> The automated quantization helper scripts are maintained on the [`experiment/rdna-boosts`](https://github.com/adromir/llama-cpp-turboquant/tree/experiment/rdna-boosts) branch and are also distributed as standalone zip archives (`llama-rocm-experimental-scripts-windows.zip` and `llama-rocm-experimental-scripts-linux.zip`) in our [Releases](https://github.com/adromir/llama-cpp-turboquant/releases).
+
 ### Method 1: Direct CLI (`llama-quantize`)
 
 `llama-quantize` natively supports both TurboQuant weight types (`tq3_1s`, `tq4_1s`) and ROCmFPX formats:
@@ -248,7 +251,9 @@ This repository maintains two distinct build targets published as separate relea
 Pre-compiled, self-contained zip packages for both **Windows** and **Linux** are available under [Releases](https://github.com/adromir/llama-cpp-turboquant/releases):
 
 - `llama-rocm-vanilla-windows.zip` / `llama-rocm-vanilla-linux.zip`: Stable TurboQuant builds.
-- `llama-rocm-experimental-windows.zip` / `llama-rocm-experimental-linux.zip`: RDNA boosts and experimental feature builds.
+- `llama-rocm-experimental-windows.zip` / `llama-rocm-experimental-linux.zip`: RDNA boosts, ROCmFPX, and experimental feature builds.
+- `llama-rocm-experimental-scripts-windows.zip`: Standalone PowerShell quantization scripts (`quantize-rocmfpx.ps1`, `quantize-rocmfpx-agent.ps1`, etc.) for Windows.
+- `llama-rocm-experimental-scripts-linux.zip`: Standalone Bash quantization scripts (`quantize-rocmfpx-agent.sh`, `quantize-rocmfpx-from-kquant.sh`, etc.) for Linux.
 
 ### Installation
 
