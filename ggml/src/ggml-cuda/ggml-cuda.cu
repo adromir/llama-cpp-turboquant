@@ -2090,7 +2090,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
                 return;
             }
             if (ggml_cuda_should_use_mmq(src0_fast->type, cc, src1->ne[1], /*n_experts =*/ 0)) {
-                ggml_cuda_mul_mat_q(ctx, src0_fast, src1, nullptr, dst, true);
+                ggml_cuda_mul_mat_q(ctx, src0_fast, src1, nullptr, dst, /*fusion=*/nullptr, /*convrot=*/true);
                 return;
             }
         }

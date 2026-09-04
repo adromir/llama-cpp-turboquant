@@ -1359,7 +1359,7 @@ void ggml_cuda_mul_mat_tq4_1s_mmq(ggml_backend_cuda_context & ctx, const ggml_te
     ggml_tensor src1_rot = *src1;
     src1_rot.data = act_buf.get();
 
-    ggml_cuda_mul_mat_q(ctx, src0, &src1_rot, nullptr, dst, false);
+    ggml_cuda_mul_mat_q(ctx, src0, &src1_rot, nullptr, dst);
 }
 
 // Phase 2 (MoE): native MFMA-i8 MMQ prefill for TQ4_1S experts (gfx90a). Same trick as the dense
@@ -1386,5 +1386,5 @@ void ggml_cuda_mul_mat_id_tq4_1s_mmq(ggml_backend_cuda_context & ctx, const ggml
     ggml_tensor src1_rot = *src1;
     src1_rot.data = act_buf.get();
 
-    ggml_cuda_mul_mat_q(ctx, src0, &src1_rot, ids, dst, false);
+    ggml_cuda_mul_mat_q(ctx, src0, &src1_rot, ids, dst);
 }
