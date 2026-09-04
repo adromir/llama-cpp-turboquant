@@ -230,6 +230,9 @@ jobs:
         Copy-Item "C:\TheRock\build\bin\hipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\amdhip64*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        if (Test-Path "scripts") {
+            Copy-Item -Path "scripts" -Destination "build\bin\scripts" -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Compress-Archive -Path build\bin\* -DestinationPath $zipName
 
     - name: Upload Build Artifact
@@ -353,6 +356,9 @@ jobs:
         cp /opt/rocm/lib/libhipblaslt.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblas.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libamdhip64.so* build/bin/ 2>/dev/null || true
+        if [ -d "scripts" ]; then
+            cp -r scripts build/bin/ 2>/dev/null || true
+        fi
 
         cd build/bin
         zip -r "../../${ZIP_NAME}" ./*
@@ -414,6 +420,12 @@ jobs:
       with:
         name: llama-rocm-${{ matrix.flavor }}-linux
 
+    - name: Package Scripts Archive
+      if: matrix.flavor == 'experimental'
+      run: |
+        echo "Packaging helper scripts for experimental release..."
+        zip -r llama-rocm-experimental-scripts.zip scripts/
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
@@ -422,6 +434,7 @@ jobs:
         files: |
           llama-rocm-${{ matrix.flavor }}-windows.zip
           llama-rocm-${{ matrix.flavor }}-linux.zip
+          ${{ matrix.flavor == 'experimental' && 'llama-rocm-experimental-scripts.zip' || '' }}
         body: |
           ### Release Information
           - **Flavor:** `${{ steps.prep.outputs.flavor_title }}`
@@ -435,6 +448,7 @@ jobs:
 
           Unified ROCm 10.0.0 (TheRock) release built for Windows and Linux.
           Packages include required AMD ROCm runtime libraries (`rocblas`, `hipblaslt`, `hipblas`, `amdhip64`) for portable out-of-the-box execution.
+          ${{ matrix.flavor == 'experimental' && '- **Scripts Bundle:** `llama-rocm-experimental-scripts.zip` contains all ROCmFPX and TurboQuant quantization scripts (PowerShell & Bash).' || '' }}
         draft: false
         prerelease: ${{ matrix.flavor == 'experimental' }}
       env:
