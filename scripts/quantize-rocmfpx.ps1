@@ -14,11 +14,11 @@
 #>
 
 param(
-    [Parameter(Mandatory=$true, Position=0)]
-    [string]$Source,
+    [Parameter(Position=0)]
+    [string]$Source = "",
 
-    [Parameter(Mandatory=$true, Position=1)]
-    [string]$Output,
+    [Parameter(Position=1)]
+    [string]$Output = "",
 
     [Parameter(Position=2)]
     [ValidateSet(
@@ -41,11 +41,23 @@ param(
     [switch]$AllowRequantize,
 
     [Parameter()]
+    [switch]$Gui,
+
+    [Parameter()]
     [int]$Threads = 0,
 
     [Parameter()]
     [string]$QuantizeBin = ""
 )
+
+# Launch WPF GUI if requested or if no source model was specified
+if ($Gui -or [string]::IsNullOrWhiteSpace($Source)) {
+    $guiScript = Join-Path $PSScriptRoot "quantize-rocmfpx-gui.ps1"
+    if (Test-Path $guiScript) {
+        & $guiScript -InitialSource $Source -InitialPreset $Preset
+        exit $LASTEXITCODE
+    }
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -80,7 +92,16 @@ if (-not (Test-Path $Source)) {
     exit 1
 }
 
-# 3. Create destination folder
+# 3. Determine output file path and create destination folder
+if ([string]::IsNullOrWhiteSpace($Output)) {
+    $dir = Split-Path -Parent $Source
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($Source)
+    $cleanBase = $baseName -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
+    $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
+    $newName = "$cleanBase-$Preset.gguf"
+    if ($dir) { $Output = Join-Path $dir $newName } else { $Output = $newName }
+}
+
 $OutputDir = Split-Path -Parent $Output
 if ($OutputDir -and -not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null

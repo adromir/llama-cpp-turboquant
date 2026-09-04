@@ -114,12 +114,16 @@ llama-quantize --allow-requantize models/model-Q8_0.gguf models/model-ROCmFP4.gg
 llama-quantize --imatrix imatrix.gguf models/model-BF16.gguf models/model-ROCmFP3-imatrix.gguf Q3_0_ROCMFPX
 ```
 
-### Method 2: Windows PowerShell Helper (`quantize-rocmfpx.ps1`)
+### Method 2: Windows PowerShell & WPF GUI (`quantize-rocmfpx-gui.ps1`)
 
-For Windows users, we provide a turnkey helper script in `scripts/quantize-rocmfpx.ps1`:
+For Windows users, we provide both an interactive WPF graphical interface and a CLI helper script:
 
 ```powershell
-# Basic FP4 quantization
+# 1. Launch the interactive WPF GUI (auto-detects llama-quantize.exe):
+.\scripts\quantize-rocmfpx-gui.ps1
+# (or double-click / run .\scripts\quantize-rocmfpx.ps1 without arguments)
+
+# 2. Basic CLI FP4 quantization:
 .\scripts\quantize-rocmfpx.ps1 -Source "models\model-f16.gguf" -Output "models\model-rocmfp4.gguf" -Preset Q4_0_ROCMFP4_FAST
 
 # 3-bit Agent quantization with importance matrix
