@@ -1188,10 +1188,11 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn_linear(
     cb(k_conv, "k_conv", il);
     cb(v_conv, "v_conv", il);
 
+
     const float eps_norm = hparams.f_norm_rms_eps;
 
-    q_conv = ggml_l2_norm(ctx0, q_conv, eps_norm);
-    k_conv = ggml_l2_norm(ctx0, k_conv, eps_norm);
+    q_conv = build_gdn_l2_norm(ctx0, q_conv, eps_norm);
+    k_conv = build_gdn_l2_norm(ctx0, k_conv, eps_norm);
 
 
 
@@ -1397,6 +1398,10 @@ void llm_graph_input_ple::set_input(const llama_ubatch * ubatch) {
         }
         h.next_pos = pos + 1;
     }
+
+    // the table stays host side and is read by 16 gathers per token, no two on the same page.
+    // queued here they are in flight before the graph runs
+    pmodel.prefetch_rows(pmodel.per_layer_tok_embd, idx.data(), idx.size());
 
     ggml_backend_tensor_set(rows, idx.data(), 0, idx.size()*ggml_element_size(rows));
 }

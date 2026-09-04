@@ -1723,19 +1723,26 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
                 // this is important for metal with apple silicon: if the entire model could be mapped to a metal buffer,
                 //     then we could just use metal for all layers
                 // this allows using partial offloading when the model size exceeds the metal buffer size, but not the RAM size
+                // a tensor of another buffer type can sit between this context's, and one span
+                // over them would map it too, so map each contiguous run separately
                 void * addr = nullptr;
-                size_t first, last; // NOLINT
-                ml.get_mapping_range(&first, &last, &addr, idx, ctx);
-                if (first >= last) {
+                std::vector<std::pair<size_t, size_t>> ranges;
+                ml.get_mapping_ranges(ranges, &addr, idx, ctx);
+                if (ranges.empty()) {
                     continue;
                 }
                 const size_t max_size = ggml_get_max_tensor_size(ctx);
-                ggml_backend_buffer_t buf = ggml_backend_dev_buffer_from_host_ptr(dev, (char *) addr + first, last - first, max_size);
-                if (buf == nullptr) {
-                    throw std::runtime_error(format("unable to allocate %s buffer", ggml_backend_buft_name(buft)));
+                for (const auto & [first, last] : ranges) {
+                    if (first >= last) {
+                        continue;
+                    }
+                    ggml_backend_buffer_t buf = ggml_backend_dev_buffer_from_host_ptr(dev, (char *) addr + first, last - first, max_size);
+                    if (buf == nullptr) {
+                        throw std::runtime_error(format("unable to allocate %s buffer", ggml_backend_buft_name(buft)));
+                    }
+                    bufs.emplace_back(buf);
+                    buf_map[idx].push_back(buf);
                 }
-                bufs.emplace_back(buf);
-                buf_map.emplace(idx, buf);
             }
         } else {
             ggml_backend_buffer_t buf;
@@ -1758,7 +1765,7 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
             }
             bufs.emplace_back(buf);
             for (uint32_t idx = 0; idx < ml.files.size(); idx++) {
-                buf_map.emplace(idx, buf);
+                buf_map[idx].push_back(buf);
             }
         }
 
@@ -2176,6 +2183,19 @@ const ggml_tensor * llama_model::get_tensor(const char * name) const {
     }
 
     return it->second;
+}
+
+void llama_model::prefetch_rows(const ggml_tensor * t, const int32_t * rows, size_t n_rows) const {
+    if (t == nullptr || t->data == nullptr || n_rows == 0) {
+        return;
+    }
+
+    for (const auto & mapping : pimpl->mappings) {
+        if (mapping->contains(t->data, ggml_nbytes(t))) {
+            mapping->prefetch_rows(t->data, t->nb[1], ggml_row_size(t->type, t->ne[0]), rows, n_rows);
+            return;
+        }
+    }
 }
 
 float llama_model::get_rope_freq_base (const llama_cparams & cparams, int il) const {
@@ -2638,6 +2658,7 @@ llama_model_params llama_model_default_params() {
         /*.progress_callback           =*/ nullptr,
         /*.progress_callback_user_data =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
+        /*.model_shared                =*/ nullptr,
         /*.vocab_only                  =*/ false,
         /*.check_tensors               =*/ false,
         /*.use_extra_bufts             =*/ true,

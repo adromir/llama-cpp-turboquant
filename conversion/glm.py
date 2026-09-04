@@ -112,9 +112,33 @@ class Glm4MoeModel(TextModel):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # GLM4_MOE has num_hidden_layers + 1 actual layers (including NextN layer)
-        self.block_count = self.hparams["num_hidden_layers"] + self.hparams.get("num_nextn_predict_layers", 0)
-        self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
+        if not self.no_mtp:
+            self.block_count += self.hparams.get("num_nextn_predict_layers", 0)
+            self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
+
+    def index_tensors(self, remote_hf_model_id: str | None = None):
+        hparams = {**self.hparams, **self.hparams.get("text_config", {})}
+        key = next((k for k in ["n_layers", "num_hidden_layers", "n_layer", "num_layers"] if k in hparams), None)
+        type(self)._n_main_layers = hparams.get(key)
+        return super().index_tensors(remote_hf_model_id=remote_hf_model_id)
+
+    @classmethod
+    def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
+        if (titem := super().filter_tensors(item)) is None:
+            return None
+        name, gen = titem
+
+        assert cls._n_main_layers is not None
+        is_mtp = (m := re.match(r"model\.layers\.(\d+)\.", name)) is not None and int(m.group(1)) >= cls._n_main_layers
+
+        if is_mtp and cls.no_mtp:
+            return None
+        if cls.mtp_only and not is_mtp and (cls.mtp_shared_embd or name not in (
+            "model.embed_tokens.weight", "model.norm.weight", "lm_head.weight",
+        )):
+            return None
+
+        return name, gen
 
     def set_vocab(self):
         return self._set_vocab_glm()
@@ -250,9 +274,9 @@ class Glm4MoeLiteModel(DeepseekV2Model):
             is_mtp = match is not None and int(match.group(1)) >= cls._n_main_layers
             if is_mtp and cls.no_mtp:
                 return None
-            if cls.mtp_only and not is_mtp and name not in (
+            if cls.mtp_only and not is_mtp and (cls.mtp_shared_embd or name not in (
                 "model.embed_tokens.weight", "model.norm.weight", "lm_head.weight",
-            ):
+            )):
                 return None
 
         return name, gen
@@ -309,9 +333,9 @@ class GlmMoeDsaModel(DeepseekV2Model):
             return None
         # --mtp: keep ONLY NextN-block tensors plus the shared embeddings/
         # norm/lm_head (so the resulting GGUF carries just the draft head).
-        if cls.mtp_only and not is_mtp and name not in (
+        if cls.mtp_only and not is_mtp and (cls.mtp_shared_embd or name not in (
             "model.embed_tokens.weight", "model.norm.weight", "lm_head.weight",
-        ):
+        )):
             return None
 
         return name, gen
