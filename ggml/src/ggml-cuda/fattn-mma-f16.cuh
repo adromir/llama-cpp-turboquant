@@ -588,6 +588,7 @@ static __device__ __forceinline__ void flash_attn_ext_turbo4_load_tile(
             }
 
             for (; c < c_end; ++c) {
+                const int in_blk = (col_offset + c) % (QK_TURBO4 / 2);
                 const uint8_t byte = ggml_cuda_ldcs(&blk->qs[in_blk]);
                 turbo_store_h2<stride_tile, swz>(tile_KV, row, c, __halves2half2(scaled[byte & 0xF], scaled[byte >> 4]));
             }
