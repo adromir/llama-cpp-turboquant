@@ -18,30 +18,16 @@
 # With importance matrix (recommended for Q3 from Q8):
 #   IMATRIX=/path/to/imatrix.gguf SRC=... OUT=... PRESET=Q3_0_ROCMFPX \
 #     scripts/quantize-rocmfpx-from-kquant.sh
+#
+# Optional post-quant coherency gate:
+#   RUN_COHERENCY=1 SRC=... OUT=... scripts/quantize-rocmfpx-from-kquant.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
-
-if [[ -z "${QUANTIZE_BIN:-}" ]]; then
-    for candidate in \
-        "$BUILD_DIR/bin/llama-quantize" \
-        "$BUILD_DIR/bin/llama-quantize.exe" \
-        "$BUILD_DIR/bin/Release/llama-quantize.exe" \
-        "$ROOT/build/bin/llama-quantize" \
-        "$ROOT/build/bin/llama-quantize.exe" \
-        "$ROOT/build/bin/Release/llama-quantize.exe" \
-        "$(command -v llama-quantize 2>/dev/null || true)"; do
-        if [[ -n "$candidate" && -x "$candidate" ]]; then
-            QUANTIZE_BIN="$candidate"
-            break
-        fi
-    done
-    QUANTIZE_BIN="${QUANTIZE_BIN:-$BUILD_DIR/bin/llama-quantize}"
-fi
-
+BUILD_DIR="${BUILD_DIR:-$ROOT/build-strix-rocmfp4}"
+QUANTIZE_BIN="${QUANTIZE_BIN:-$BUILD_DIR/bin/llama-quantize}"
 SRC="${SRC:-}"
 OUT="${OUT:-}"
 PRESET="${PRESET:-Q3_0_ROCMFPX}"
@@ -64,6 +50,7 @@ Optional:
   IMATRIX=path         Importance matrix for better Q3/Q6 from Q8 sources
   TENSOR_TYPE_FILE=path
                        Tensor override file for experimental policies
+  RUN_COHERENCY=1      Run check-rocmfpx-qwen-coherency.sh after quantize
   DRY_RUN=1            Print planned command only
 
 Examples:
@@ -94,7 +81,7 @@ fi
 src_base="$(basename "$SRC")"
 warn=""
 if [[ "$src_base" == *[Rr][Oo][Cc][Mm][Ff][Pp][Xx]* && "$PRESET" == *ROCMFPX* ]]; then
-    warn="source is already ROCmFPX; double requant often fails coherency - prefer Q4_K_M/Q6_K/Q8_0 stock quants"
+    warn="source is already ROCmFPX; double requant often fails coherency — prefer Q4_K_M/Q6_K/Q8_0 stock quants"
 elif [[ "$src_base" == *Q3_K* ]]; then
     warn="Q3_K source is below practical floor for Q3_0_ROCMFPX; expect coherency failures"
 fi
@@ -164,3 +151,8 @@ print(json.dumps({
     "tensor_type_file": os.environ.get("TENSOR_TYPE_FILE") or None,
 }, indent=2))
 PY
+
+if [[ "$RUN_COHERENCY" == "1" ]]; then
+    echo "Running coherency gate on $OUT ..."
+    MODEL="$OUT" "$SCRIPT_DIR/check-rocmfpx-qwen-coherency.sh"
+fi

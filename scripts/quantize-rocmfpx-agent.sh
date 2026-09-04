@@ -16,24 +16,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
-
-if [[ -z "${QUANTIZE_BIN:-}" ]]; then
-    for candidate in \
-        "$BUILD_DIR/bin/llama-quantize" \
-        "$BUILD_DIR/bin/llama-quantize.exe" \
-        "$BUILD_DIR/bin/Release/llama-quantize.exe" \
-        "$ROOT/build/bin/llama-quantize" \
-        "$ROOT/build/bin/llama-quantize.exe" \
-        "$ROOT/build/bin/Release/llama-quantize.exe" \
-        "$(command -v llama-quantize 2>/dev/null || true)"; do
-        if [[ -n "$candidate" && -x "$candidate" ]]; then
-            QUANTIZE_BIN="$candidate"
-            break
-        fi
-    done
-    QUANTIZE_BIN="${QUANTIZE_BIN:-$BUILD_DIR/bin/llama-quantize}"
-fi
+BUILD_DIR="${BUILD_DIR:-$ROOT/build-strix-rocmfp4}"
+QUANTIZE_BIN="${QUANTIZE_BIN:-$BUILD_DIR/bin/llama-quantize}"
 
 SRC="${SRC:-}"
 OUT="${OUT:-}"
@@ -54,8 +38,8 @@ Required:
   OUT                 Output GGUF path or split-output prefix
 
 Optional:
-  FORMAT=rocmfp8      rocmfp3 | rocmfp4 | rocmfp6 | rocmfp8 | rocmi4
-  PROFILE=agent       agent | straight | fast | fast-coherent | strix | strix-lean | lean | agent-lean
+  FORMAT=rocmfp8      rocmfp3 | rocmfp4 | rocmfp6 | rocmfp8
+  PROFILE=agent       agent | straight | fast | fast-coherent | strix | strix-lean
   KEEP_SPLIT=1        Preserve input shard count when source is split
   DRY_RUN=1           Ask llama-quantize for the estimated output size only
   NTHREADS=N          Optional llama-quantize nthreads argument
@@ -78,7 +62,6 @@ Preset mapping:
   rocmfp6 agent-lean -> Q6_0_ROCMFPX_AGENT_LEAN
   rocmfp8 straight -> Q8_0_ROCMFPX
   rocmfp8 agent    -> Q8_0_ROCMFPX_AGENT
-  rocmi4  straight -> Q4_0_ROCMI4
 EOF
 }
 
@@ -121,8 +104,6 @@ case "$FORMAT:$PROFILE" in
     rocmfp6:agent_lean) PRESET="Q6_0_ROCMFPX_AGENT_LEAN" ;;
     rocmfp8:straight) PRESET="Q8_0_ROCMFPX" ;;
     rocmfp8:agent)    PRESET="Q8_0_ROCMFPX_AGENT" ;;
-    rocmi4:straight)  PRESET="Q4_0_ROCMI4" ;;
-    rocmi4:agent)     PRESET="Q4_0_ROCMI4" ;;
     *)
         echo "unsupported FORMAT/PROFILE: FORMAT=$FORMAT PROFILE=$PROFILE" >&2
         usage >&2
