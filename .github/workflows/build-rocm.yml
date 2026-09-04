@@ -4,16 +4,56 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name for the release (e.g. v1.0.0)'
+        description: 'Base tag name for the release (e.g. v1.0.0)'
         required: true
         type: string
+      flavor:
+        description: 'Flavor to build (all, vanilla, experimental)'
+        required: true
+        type: choice
+        options:
+          - all
+          - vanilla
+          - experimental
+        default: 'all'
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      tag_name: ${{ steps.set-tag.outputs.tag_name }}
+    steps:
+      - id: set-matrix
+        run: |
+          FLAVOR="${{ github.event.inputs.flavor }}"
+          if [ -z "$FLAVOR" ] || [ "$FLAVOR" = "all" ]; then
+            echo 'matrix={"include":[{"flavor":"vanilla","branch":"custom-workflow"},{"flavor":"experimental","branch":"experiment/rdna-boosts"}]}' >> $GITHUB_OUTPUT
+          elif [ "$FLAVOR" = "vanilla" ]; then
+            echo 'matrix={"include":[{"flavor":"vanilla","branch":"custom-workflow"}]}' >> $GITHUB_OUTPUT
+          elif [ "$FLAVOR" = "experimental" ]; then
+            echo 'matrix={"include":[{"flavor":"experimental","branch":"experiment/rdna-boosts"}]}' >> $GITHUB_OUTPUT
+          fi
+      - id: set-tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag_name=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
   build-windows:
+    needs: setup
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
       HIP_PATH: C:\TheRock\build
@@ -22,8 +62,10 @@ jobs:
       LLVM_PATH: C:\TheRock\build\lib\llvm
 
     steps:
-    - name: Checkout repository
+    - name: Checkout branch ${{ matrix.branch }}
       uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
 
     - name: Restore ROCm Install Cache
       id: cache-rocm-restore
@@ -88,11 +130,11 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: .ccache
-        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
         restore-keys: |
-          ${{ runner.os }}-rocm-ccache-
+          ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-
 
-    - name: Build llama.cpp
+    - name: Build llama.cpp (${{ matrix.flavor }})
       env:
         CCACHE_DIR: ${{ github.workspace }}\.ccache
         CCACHE_COMPILERCHECK: string:rocm-10.0.0
@@ -125,7 +167,7 @@ jobs:
             }
         }
         
-        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
+        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno -flto=thin"
         
         $env:HIP_PATH = $RocmPath
         $env:ROCM_PATH = $RocmPath
@@ -157,7 +199,7 @@ jobs:
           "-DSSL_EAY=$OpenSslPath/lib/VC/x64/MD/libssl.lib",
           "-DCMAKE_C_FLAGS=$CoreFlags",
           "-DCMAKE_CXX_FLAGS=$CoreFlags",
-          "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr"
+          "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr -mllvm -amdgpu-early-inline-all=true"
         )
         
         if ($RcCompiler) {
@@ -175,33 +217,45 @@ jobs:
       if: always()
       with:
         path: .ccache
-        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
 
     - name: Archive build output
       run: |
+        $zipName = "llama-rocm-${{ matrix.flavor }}-windows.zip"
+        Write-Host "Creating archive $zipName for flavor ${{ matrix.flavor }}..."
+
         Copy-Item "C:\TheRock\build\bin\rocblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        if (Test-Path "C:\TheRock\build\bin\rocblas") {
+            Copy-Item "C:\TheRock\build\bin\rocblas" -Destination build\bin\ -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Copy-Item "C:\TheRock\build\bin\libhipblaslt.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\hipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\amdhip64*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
-        Compress-Archive -Path build\bin\* -DestinationPath llama-rocm-windows.zip
+        Compress-Archive -Path build\bin\* -DestinationPath $zipName
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: llama-rocm-windows-zip
-        path: llama-rocm-windows.zip
+        name: llama-rocm-${{ matrix.flavor }}-windows
+        path: llama-rocm-${{ matrix.flavor }}-windows.zip
 
   build-linux:
+    needs: setup
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
       ROCM_PATH: /opt/rocm
       HIP_PATH: /opt/rocm
     
     steps:
-    - name: Checkout repository
+    - name: Checkout branch ${{ matrix.branch }}
       uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
 
     - name: Restore ROCm Install Cache
       id: cache-rocm-linux-restore
@@ -244,11 +298,11 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: .ccache
-        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
         restore-keys: |
-          ${{ runner.os }}-rocm-ccache-
+          ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-
 
-    - name: Build llama.cpp
+    - name: Build llama.cpp (${{ matrix.flavor }})
       env:
         CCACHE_DIR: ${{ github.workspace }}/.ccache
         CCACHE_COMPILERCHECK: string:rocm-10.0.0
@@ -264,7 +318,7 @@ jobs:
         mkdir build
         cd build
         
-        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion"
+        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno -flto=thin"
         
         cmake -G "Ninja" \
           -DCMAKE_C_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang \
@@ -284,7 +338,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="${ROCM_PATH};${ROCM_PATH}/lib/cmake" \
           -DCMAKE_C_FLAGS="$CORE_FLAGS" \
           -DCMAKE_CXX_FLAGS="$CORE_FLAGS" \
-          -DCMAKE_HIP_FLAGS="$CORE_FLAGS" \
+          -DCMAKE_HIP_FLAGS="$CORE_FLAGS -mllvm -amdgpu-early-inline-all=true" \
           ..
           
         cmake --build . --config Release --parallel $(nproc)
@@ -293,52 +347,97 @@ jobs:
 
     - name: Archive build output
       run: |
+        ZIP_NAME="llama-rocm-${{ matrix.flavor }}-linux.zip"
+        echo "Creating archive ${ZIP_NAME} for flavor ${{ matrix.flavor }}..."
+
         cp /opt/rocm/lib/librocblas.so* build/bin/ 2>/dev/null || true
+        cp -r /opt/rocm/lib/rocblas build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblaslt.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblas.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libamdhip64.so* build/bin/ 2>/dev/null || true
-        
+
         cd build/bin
-        zip -r ../../llama-rocm-linux.zip ./*
+        zip -r "../../${ZIP_NAME}" ./*
 
     - name: Save ccache directly after build
       uses: actions/cache/save@v4
       if: always()
       with:
         path: .ccache
-        key: ${{ runner.os }}-rocm-ccache-${{ github.run_id }}
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: llama-rocm-linux-zip
-        path: llama-rocm-linux.zip
+        name: llama-rocm-${{ matrix.flavor }}-linux
+        path: llama-rocm-${{ matrix.flavor }}-linux.zip
 
   release:
-    needs: [build-windows, build-linux]
+    needs: [setup, build-windows, build-linux]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
+    - name: Checkout branch ${{ matrix.branch }} to read commit details
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ matrix.branch }}
+
+    - name: Determine Release Details
+      id: prep
+      run: |
+        TAG_BASE="${{ needs.setup.outputs.tag_name }}"
+        TAG_BASE=$(echo "$TAG_BASE" | sed -e 's/-vanilla$//' -e 's/-experimental$//')
+        FINAL_TAG="${TAG_BASE}-${{ matrix.flavor }}"
+
+        COMMIT_SHA=$(git rev-parse HEAD)
+
+        echo "final_tag=$FINAL_TAG" >> $GITHUB_OUTPUT
+        echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+        if [ "${{ matrix.flavor }}" = "vanilla" ]; then
+          echo "flavor_title=Vanilla TurboQuant" >> $GITHUB_OUTPUT
+          echo "flavor_desc=Upstream llama.cpp base with TurboQuant KV cache compression." >> $GITHUB_OUTPUT
+        else
+          echo "flavor_title=Experimental RDNA Boosts" >> $GITHUB_OUTPUT
+          echo "flavor_desc=TurboQuant KV cache + Stew's RDNA Boosts (native-BF16 FA, WMMA, fused GDN, fused MoE) + ROCmFPX quantization family + DFlash2 speculative decoding." >> $GITHUB_OUTPUT
+        fi
+
     - name: Download Windows Artifact
       uses: actions/download-artifact@v4
       with:
-        name: llama-rocm-windows-zip
-        
+        name: llama-rocm-${{ matrix.flavor }}-windows
+
     - name: Download Linux Artifact
       uses: actions/download-artifact@v4
       with:
-        name: llama-rocm-linux-zip
-        
+        name: llama-rocm-${{ matrix.flavor }}-linux
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.event.inputs.tag_name }}
+        tag_name: ${{ steps.prep.outputs.final_tag }}
+        name: "llama.cpp ROCm ${{ steps.prep.outputs.final_tag }} [${{ steps.prep.outputs.flavor_title }}]"
         files: |
-          llama-rocm-windows.zip
-          llama-rocm-linux.zip
-        body: "Includes unified ROCm 10.0.0 (TheRock) builds for Windows and Linux. Packages include required AMD ROCm runtime libraries (rocblas, hipblaslt, hipblas, amdhip64) for convenience. These are MIT-licensed open-source components from AMD."
+          llama-rocm-${{ matrix.flavor }}-windows.zip
+          llama-rocm-${{ matrix.flavor }}-linux.zip
+        body: |
+          ### Release Information
+          - **Flavor:** `${{ steps.prep.outputs.flavor_title }}`
+          - **Source Branch:** `${{ matrix.branch }}`
+          - **Commit:** `${{ steps.prep.outputs.commit_sha }}`
+          - **ROCm Core SDK:** 10.0.0 (TheRock)
+          - **Target GPU Architectures:** `gfx900;gfx906;gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx1102;gfx1200;gfx1201`
+
+          ### Description
+          ${{ steps.prep.outputs.flavor_desc }}
+
+          Unified ROCm 10.0.0 (TheRock) release built for Windows and Linux.
+          Packages include required AMD ROCm runtime libraries (`rocblas`, `hipblaslt`, `hipblas`, `amdhip64`) for portable out-of-the-box execution.
         draft: false
-        prerelease: false
+        prerelease: ${{ matrix.flavor == 'experimental' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
