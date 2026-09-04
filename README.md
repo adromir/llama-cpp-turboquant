@@ -12,7 +12,7 @@
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg)](https://github.com/adromir/llama-cpp-turboquant/releases)
 [![Architectures: RDNA2 | RDNA3 | RDNA4 | CDNA](https://img.shields.io/badge/GPU%20Targets-RDNA2%20%7C%20RDNA3%20%7C%20RDNA4%20%7C%20CDNA-orange.svg)](https://github.com/adromir/llama-cpp-turboquant)
 
-[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
+[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [What is ROCmFPX?](#what-is-rocmfpx-fpx) | [Create New Quants](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
 
 </div>
 
@@ -57,6 +57,95 @@ Standard quantization methods struggle with outlier activations in the Key and V
 
 > [!NOTE]
 > Turbo cache types require Flash Attention (`-fa 1`), which is automatically enabled. DeepSeek/MLA models do not have a separate V cache, so identical K and V types should be used.
+
+---
+
+## What is ROCmFPX (FPX)?
+
+**ROCmFPX** (developed by Carlo Pasquale / [charlie12345/ROCmFPX](https://github.com/charlie12345/ROCmFPX)) is a high-performance sub-8-bit floating-point and integer quantization family engineered specifically for AMD GPU hardware (RDNA2, RDNA3, RDNA3.5, RDNA4, and Strix Halo APUs).
+
+Unlike conventional integer k-quants (`Q4_K_M`, `Q5_K_M`), ROCmFPX formats use native floating-point and integer encodings that map directly to AMD SIMD and WMMA matrix units for blistering decode speeds and compact model footprints:
+
+### ROCmFPX Quantization Formats
+
+| Format | GGML Type | Precision | Effective BPW | Target Use Case & Characteristics |
+| :--- | :--- | :--- | :--- | :--- |
+| `Q4_0_ROCMFP4` | `GGML_TYPE_Q4_0_ROCMFP4` | 4-bit Float (E2M1) | ~4.50 | Standard 4-bit float format with balanced perplexity |
+| `Q4_0_ROCMFP4_FAST` | `GGML_TYPE_Q4_0_ROCMFP4_FAST` | 4-bit Float (E2M1) | ~4.50 | Maximum decode tok/s on AMD RDNA GPUs (recommended FP4) |
+| `Q3_0_ROCMFPX` | `GGML_TYPE_Q3_0_ROCMFPX` | 3-bit Float (FP3) | ~3.30 | Ultra-compact 3-bit weights for large models on smaller VRAM |
+| `Q6_0_ROCMFPX` | `GGML_TYPE_Q6_0_ROCMFPX` | 6-bit Float (E3M2) | ~6.50 | Near-F16 accuracy with 25% memory savings compared to Q8_0 |
+| `Q8_0_ROCMFPX` | `GGML_TYPE_Q8_0_ROCMFPX` | 8-bit Float (FP8) | ~8.50 | Reference-grade precision for base models and critical layers |
+| `Q4_0_ROCMI4` | `GGML_TYPE_Q4_0_ROCMI4` | 4-bit Int (W4A4) | ~4.00 | Experimental W4A4 integer MMQ acceleration on RDNA3.5/RDNA4 |
+
+### Agent & Coherent Presets
+
+For production agents requiring strict JSON formatting, tool calling, or complex reasoning, standard aggressive quantization can cause occasional syntax errors. ROCmFPX provides **Agent / Coherent presets**:
+- `Q4_0_ROCMFP4_COHERENT`: Keeps output layers, embeddings, and sensitive attention heads at `Q6_K` / `Q8_0` while quantizing dense MLP weights to ROCmFP4.
+- `Q3_0_ROCMFPX_AGENT`: Coherent 3-bit quantization preserving JSON syntax tracking.
+- `Q6_0_ROCMFPX_AGENT`: Near-lossless agent execution with high context stability.
+
+---
+
+## How to Create New Quants
+
+You can quantize any model from standard BF16/F16 GGUF weights or requantize from existing `Q4_K_M`/`Q8_0` files.
+
+### Method 1: Direct CLI (`llama-quantize`)
+
+`llama-quantize` natively supports both TurboQuant weight types (`tq3_1s`, `tq4_1s`) and ROCmFPX formats:
+
+```bash
+# 1. Quantize from BF16/F16 to ROCmFP4 (Fast)
+llama-quantize models/model-BF16.gguf models/model-ROCmFP4.gguf Q4_0_ROCMFP4_FAST
+
+# 2. Quantize to 3-bit ROCmFP3
+llama-quantize models/model-BF16.gguf models/model-ROCmFP3.gguf Q3_0_ROCMFPX
+
+# 3. Quantize to TurboQuant WHT-Rotated Weights
+llama-quantize models/model-BF16.gguf models/model-TQ4.gguf tq4_1s
+
+# 4. Requantize from an existing Q8_0 or Q4_K_M GGUF (add --allow-requantize)
+llama-quantize --allow-requantize models/model-Q8_0.gguf models/model-ROCmFP4.gguf Q4_0_ROCMFP4_FAST
+
+# 5. Using an Importance Matrix (Imatrix) for superior quality at low bitrates
+llama-quantize --imatrix imatrix.gguf models/model-BF16.gguf models/model-ROCmFP3-imatrix.gguf Q3_0_ROCMFPX
+```
+
+### Method 2: Windows PowerShell Helper (`quantize-rocmfpx.ps1`)
+
+For Windows users, we provide a turnkey helper script in `scripts/quantize-rocmfpx.ps1`:
+
+```powershell
+# Basic FP4 quantization
+.\scripts\quantize-rocmfpx.ps1 -Source "models\model-f16.gguf" -Output "models\model-rocmfp4.gguf" -Preset Q4_0_ROCMFP4_FAST
+
+# 3-bit Agent quantization with importance matrix
+.\scripts\quantize-rocmfpx.ps1 -Source "models\model-f16.gguf" -Output "models\model-rocmfp3-agent.gguf" -Preset Q3_0_ROCMFPX_AGENT -Imatrix "models\imatrix.gguf"
+
+# Requantizing from an existing Q8_0 GGUF
+.\scripts\quantize-rocmfpx.ps1 -Source "models\model-Q8_0.gguf" -Output "models\model-rocmfp6.gguf" -Preset Q6_0_ROCMFPX -AllowRequantize
+```
+
+### Method 3: Linux / macOS Bash Scripts
+
+On Linux or macOS, use the dedicated bash scripts in `scripts/`:
+
+```bash
+# Quantize BF16 to ROCmFP4 using the agent profile
+SRC=model-BF16.gguf OUT=model-ROCmFP4-agent.gguf FORMAT=rocmfp4 PROFILE=agent ./scripts/quantize-rocmfpx-agent.sh
+
+# Quantize to fast ROCmFP4
+SRC=model-BF16.gguf OUT=model-ROCmFP4-fast.gguf FORMAT=rocmfp4 PROFILE=fast ./scripts/quantize-rocmfpx-agent.sh
+
+# Requantize from an existing K-quant (e.g. Q4_K_M or Q8_0)
+SRC=model-Q4_K_M.gguf OUT=model-Q3_0_ROCMFPX.gguf PRESET=Q3_0_ROCMFPX ./scripts/quantize-rocmfpx-from-kquant.sh
+```
+
+> [!TIP]
+> **Quality Ladder for Requantizing**:
+> When original BF16 sources are not available, use the highest quality source possible:
+> `BF16/F16` (Best) > `Q8_0` > `Q6_K` > `Q4_K_M` (Acceptable floor for Q3).
+> Never requantize an existing ROCmFPX file into another ROCmFPX format (double-quantization causes severe degradation).
 
 ---
 
