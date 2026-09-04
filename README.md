@@ -12,7 +12,7 @@
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg)](https://github.com/adromir/llama-cpp-turboquant/releases)
 [![Architectures: RDNA2 | RDNA3 | RDNA4 | CDNA](https://img.shields.io/badge/GPU%20Targets-RDNA2%20%7C%20RDNA3%20%7C%20RDNA4%20%7C%20CDNA-orange.svg)](https://github.com/adromir/llama-cpp-turboquant)
 
-[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [What is ROCmFPX?](#what-is-rocmfpx-fpx) | [Create New Quants](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
+[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [What is ROCmFPX?](#what-is-rocmfpx-fpx) | [Create Quants & Imatrix](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
 
 </div>
 
@@ -146,6 +146,62 @@ SRC=model-Q4_K_M.gguf OUT=model-Q3_0_ROCMFPX.gguf PRESET=Q3_0_ROCMFPX ./scripts/
 > When original BF16 sources are not available, use the highest quality source possible:
 > `BF16/F16` (Best) > `Q8_0` > `Q6_K` > `Q4_K_M` (Acceptable floor for Q3).
 > Never requantize an existing ROCmFPX file into another ROCmFPX format (double-quantization causes severe degradation).
+
+---
+
+### Understanding the Importance Matrix (imatrix)
+
+An **Importance Matrix (`imatrix`)** is a powerful calibration technique in `llama.cpp` that dramatically improves quantization quality, especially for low-bit formats (`Q3_0_ROCMFPX`, `tq3_1s`, `Q4_0_ROCMFP4`, `IQ3_XXS`, `Q4_K_M`).
+
+#### How it Works: Uniform MSE vs. Weighted MSE
+- **Standard Quantization (Uniform MSE)**: Minimizes rounding error equally across all tensor coordinates:
+  $$\min \sum (W_{ij} - \hat{W}_{ij})^2$$
+  This treats inactive weights and critical attention channels with the exact same priority.
+- **imatrix Quantization (Weighted MSE)**: Feeds a calibration text dataset through the unquantized model to compute the actual activation variance ($I_{ij} \approx \sum A_{ik}^2$) flowing through every channel:
+  $$\min \sum I_{ij} \cdot (W_{ij} - \hat{W}_{ij})^2$$
+  Weights that experience massive activation spikes or carry high semantic influence receive maximum quantization fidelity, while less critical weights absorb the quantization noise.
+
+#### Why Use an Imatrix?
+| Quantization Level | Without Imatrix | With Imatrix | Real-world Impact |
+| :--- | :--- | :--- | :--- |
+| **8-Bit (`Q8_0`, `FP8`)** | Excellent | Near-Lossless | Negligible difference (quantization noise is already minimal) |
+| **6-Bit (`Q6_K`, `FP6`)** | Very Good | Near-Lossless | Slight perplexity gain (~0.02 PPL) |
+| **4-Bit (`ROCmFP4`, `Q4_K_M`)** | Good | Excellent | Measurable uplift (~0.1 - 0.2 PPL), reaches near-FP16 quality |
+| **3-Bit (`ROCmFP3`, `tq3_1s`)** | Risk of degradation | Coherent & Usable | **Crucial:** Prevents syntax errors, hallucination loops, and severe logic decay |
+
+#### Step-by-Step: How to Generate and Use an Imatrix
+
+1. **Prepare Calibration Data**:
+   Download or create a clean, diverse text file (`calibration.txt`) containing prose, code, math, and JSON (e.g. `groups_merged.txt` or `wiki.train.raw`). A file size of 500 KB to 2 MB is ideal.
+
+2. **Compute the Importance Matrix with `llama-imatrix`**:
+   Run `llama-imatrix` with GPU offloading enabled (`-ngl 99`). On modern AMD Radeon GPUs, calibration finishes in just 2 to 5 minutes:
+   ```bash
+   # Windows
+   llama-imatrix.exe -m models/model-BF16.gguf -f data/calibration.txt -o models/imatrix.gguf -ngl 99 -c 2048 --chunks 64
+
+   # Linux
+   ./llama-imatrix -m models/model-BF16.gguf -f data/calibration.txt -o models/imatrix.gguf -ngl 99 -c 2048 --chunks 64
+   ```
+   - `-m`: Path to the unquantized (BF16/F16) model.
+   - `-f`: Path to the calibration text dataset.
+   - `-o`: Output importance matrix file (`imatrix.gguf`).
+   - `-ngl 99`: Offloads layers to AMD ROCm GPU for rapid execution.
+   - `-c 2048`: Context window size for computing activation tensors.
+   - `--chunks 64`: Number of text chunks to evaluate (64 to 100 chunks is recommended).
+
+3. **Apply the Imatrix during Quantization**:
+   Pass `--imatrix` directly into `llama-quantize`, `quantize-rocmfpx.ps1`, or the bash scripts:
+   ```bash
+   # CLI
+   llama-quantize --imatrix models/imatrix.gguf models/model-BF16.gguf models/model-Q3_0_ROCMFPX.gguf Q3_0_ROCMFPX
+
+   # PowerShell (Windows)
+   .\scripts\quantize-rocmfpx.ps1 -Source "models\model-BF16.gguf" -Output "models\model-Q3.gguf" -Preset Q3_0_ROCMFPX -Imatrix "models\imatrix.gguf"
+
+   # Bash (Linux)
+   IMATRIX=models/imatrix.gguf SRC=models/model-BF16.gguf OUT=models/model-Q3.gguf FORMAT=rocmfp3 PROFILE=agent ./scripts/quantize-rocmfpx-agent.sh
+   ```
 
 ---
 
