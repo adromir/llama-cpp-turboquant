@@ -19,7 +19,7 @@ static constexpr __device__ int ggml_cuda_fattn_vec_get_nthreads_device() {
 template<int D, int ncols, ggml_type type_K, ggml_type type_V, bool use_logit_softcap> // D == head size
 // minBlocksPerSM=1 matches upstream plain f16 decode (poolside board). minBlocks=2 was a
 // turbo-path occupancy nudge that can regress f16/f16 TG on GB10 (~1% decode).
-__launch_bounds__(ggml_cuda_fattn_vec_get_nthreads_device(), 1)
+__launch_bounds__(ggml_cuda_fattn_vec_get_nthreads_device(), 1) GGML_AMDGPU_WAVES_PER_EU(4, 8)
 static __global__ void flash_attn_ext_vec(
         const char * Q_ptr,
         const char * K_ptr,
@@ -346,10 +346,10 @@ static __global__ void flash_attn_ext_vec(
                     for (int d0 = 0; d0 < D; d0 += 8) {
                         const int ib = d0 / QK_TURBO3;
                         const int jj = d0 % QK_TURBO3;
-                        const float norm = __half2float(K_turbo[ib].norm);
-                        const uint8_t qs0 = K_turbo[ib].qs[jj / 4];
-                        const uint8_t qs1 = K_turbo[ib].qs[jj / 4 + 1];
-                        const uint8_t sgn = K_turbo[ib].signs[jj / 8];
+                        const float norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
+                        const uint8_t qs0 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4]);
+                        const uint8_t qs1 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4 + 1]);
+                        const uint8_t sgn = ggml_cuda_ldcs(&K_turbo[ib].signs[jj / 8]);
                         sum += (__half2float(turbo_lut[d0  ][((qs0>>0)&3)|((sgn>>0&1)<<2)]) +
                                 __half2float(turbo_lut[d0+1][((qs0>>2)&3)|((sgn>>1&1)<<2)]) +
                                 __half2float(turbo_lut[d0+2][((qs0>>4)&3)|((sgn>>2&1)<<2)]) +
@@ -366,9 +366,9 @@ static __global__ void flash_attn_ext_vec(
                     for (int d0 = 0; d0 < D; d0 += 8) {
                         const int ib = d0 / QK_TURBO2;
                         const int jj = d0 % QK_TURBO2;
-                        const float norm = __half2float(K_turbo[ib].norm);
-                        const uint8_t qs0 = K_turbo[ib].qs[jj / 4];
-                        const uint8_t qs1 = K_turbo[ib].qs[jj / 4 + 1];
+                        const float norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
+                        const uint8_t qs0 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4]);
+                        const uint8_t qs1 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4 + 1]);
                         sum += (__half2float(turbo_lut[d0  ][(qs0>>0)&3]) +
                                 __half2float(turbo_lut[d0+1][(qs0>>2)&3]) +
                                 __half2float(turbo_lut[d0+2][(qs0>>4)&3]) +

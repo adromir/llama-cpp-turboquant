@@ -124,7 +124,7 @@ static __global__ void k_get_rows_float_vec(
         const int4 * GGML_CUDA_RESTRICT src0_row = (const int4 *)((const char *) src0_ptr + i01*nb01 + i11*nb02 + i12*nb03);
 
         for (int64_t i = blockIdx.y*blockDim.x + threadIdx.x; i < ne00v; i += gridDim.y*blockDim.x) {
-            dst_row[i] = src0_row[i];
+            dst_row[i] = ggml_cuda_ldcs(&src0_row[i]);
         }
     }
 }

@@ -116,6 +116,16 @@ using block_rocmfp6_device = block_rocmfp6;
 #define GGML_CUDA_CC_IS_CDNA3(cc)   (cc >= GGML_CUDA_CC_CDNA3 && cc < GGML_CUDA_CC_CDNA4)
 #define GGML_CUDA_CC_IS_CDNA4(cc)   (cc >= GGML_CUDA_CC_CDNA4 && cc < GGML_CUDA_CC_RDNA1)
 
+#if defined(GGML_USE_HIP) && defined(__has_attribute)
+#  if __has_attribute(amdgpu_waves_per_eu)
+#    define GGML_AMDGPU_WAVES_PER_EU(min_waves, max_waves) __attribute__((amdgpu_waves_per_eu(min_waves, max_waves)))
+#  else
+#    define GGML_AMDGPU_WAVES_PER_EU(min_waves, max_waves)
+#  endif
+#else
+#  define GGML_AMDGPU_WAVES_PER_EU(min_waves, max_waves)
+#endif
+
 // Moore Threads
 #define MUSART_HMASK 40300 // MUSA rc4.3, min. ver. for half2 -> uint mask comparisons
 
@@ -418,47 +428,129 @@ static constexpr __device__ int ggml_cuda_get_max_cpy_bytes() {
 template <typename T>
 static __device__ __forceinline__ T ggml_cuda_ldcs(const T * ptr) {
 #if defined(GGML_USE_HIP)
-    return __builtin_nontemporal_load(ptr);
+    if constexpr (sizeof(T) == 1) {
+        const uint8_t val = __builtin_nontemporal_load((const uint8_t *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 2) {
+        const uint16_t val = __builtin_nontemporal_load((const uint16_t *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 4) {
+        const uint32_t val = __builtin_nontemporal_load((const uint32_t *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 8) {
+        const uint64_t val = __builtin_nontemporal_load((const uint64_t *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 16) {
+        struct U16 { uint64_t lo; uint64_t hi; };
+        const uint64_t lo = __builtin_nontemporal_load(&((const uint64_t *) ptr)[0]);
+        const uint64_t hi = __builtin_nontemporal_load(&((const uint64_t *) ptr)[1]);
+        const U16 u{lo, hi};
+        T res;
+        memcpy(&res, &u, sizeof(T));
+        return res;
+    } else {
+        return *ptr;
+    }
 #elif !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-    return __ldcs(ptr);
+    if constexpr (sizeof(T) == 1) {
+        const char val = __ldcs((const char *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 2) {
+        const short val = __ldcs((const short *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 4) {
+        const int val = __ldcs((const int *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 8) {
+        const double val = __ldcs((const double *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else if constexpr (sizeof(T) == 16) {
+        const int4 val = __ldcs((const int4 *) ptr);
+        T res;
+        memcpy(&res, &val, sizeof(T));
+        return res;
+    } else {
+        return *ptr;
+    }
 #else
     return *ptr;
 #endif
 }
-
-#if defined(GGML_USE_HIP)
-static __device__ __forceinline__ half ggml_cuda_ldcs(const half * ptr) {
-    const uint16_t val = __builtin_nontemporal_load((const uint16_t *) ptr);
-    half h;
-    memcpy(&h, &val, sizeof(h));
-    return h;
-}
-#endif
 
 // Streaming / non-temporal store helper: maps to __builtin_nontemporal_store (GLC/SLC bypass) on HIP
 // and __stcs on NVIDIA Volta/Turing/Ampere+ to bypass L1/L2 cache pollution for streaming KV-cache writes.
 template <typename T>
 static __device__ __forceinline__ void ggml_cuda_stcs(T * ptr, T val) {
 #if defined(GGML_USE_HIP)
-    __builtin_nontemporal_store(val, ptr);
+    if constexpr (sizeof(T) == 1) {
+        uint8_t uval;
+        memcpy(&uval, &val, sizeof(T));
+        __builtin_nontemporal_store(uval, (uint8_t *) ptr);
+    } else if constexpr (sizeof(T) == 2) {
+        uint16_t uval;
+        memcpy(&uval, &val, sizeof(T));
+        __builtin_nontemporal_store(uval, (uint16_t *) ptr);
+    } else if constexpr (sizeof(T) == 4) {
+        uint32_t uval;
+        memcpy(&uval, &val, sizeof(T));
+        __builtin_nontemporal_store(uval, (uint32_t *) ptr);
+    } else if constexpr (sizeof(T) == 8) {
+        uint64_t uval;
+        memcpy(&uval, &val, sizeof(T));
+        __builtin_nontemporal_store(uval, (uint64_t *) ptr);
+    } else if constexpr (sizeof(T) == 16) {
+        struct U16 { uint64_t lo; uint64_t hi; };
+        U16 u;
+        memcpy(&u, &val, sizeof(T));
+        __builtin_nontemporal_store(u.lo, &((uint64_t *) ptr)[0]);
+        __builtin_nontemporal_store(u.hi, &((uint64_t *) ptr)[1]);
+    } else {
+        *ptr = val;
+    }
 #elif !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-    __stcs(ptr, val);
+    if constexpr (sizeof(T) == 1) {
+        char sval;
+        memcpy(&sval, &val, sizeof(T));
+        __stcs((char *) ptr, sval);
+    } else if constexpr (sizeof(T) == 2) {
+        short sval;
+        memcpy(&sval, &val, sizeof(T));
+        __stcs((short *) ptr, sval);
+    } else if constexpr (sizeof(T) == 4) {
+        int sval;
+        memcpy(&sval, &val, sizeof(T));
+        __stcs((int *) ptr, sval);
+    } else if constexpr (sizeof(T) == 8) {
+        double sval;
+        memcpy(&sval, &val, sizeof(T));
+        __stcs((double *) ptr, sval);
+    } else if constexpr (sizeof(T) == 16) {
+        int4 sval;
+        memcpy(&sval, &val, sizeof(T));
+        __stcs((int4 *) ptr, sval);
+    } else {
+        *ptr = val;
+    }
 #else
     *ptr = val;
 #endif
 }
-
-#if defined(GGML_USE_HIP)
-static __device__ __forceinline__ void ggml_cuda_stcs(half * ptr, half val) {
-    uint16_t uval;
-    memcpy(&uval, &val, sizeof(uval));
-    __builtin_nontemporal_store(uval, (uint16_t *) ptr);
-}
-#elif !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-static __device__ __forceinline__ void ggml_cuda_stcs(half * ptr, half val) {
-    __stcs((unsigned short *) ptr, *(const unsigned short *) &val);
-}
-#endif
 
 
 
@@ -935,6 +1027,34 @@ static __device__ __forceinline__ void ggml_cuda_memcpy_1(void * __restrict__ ds
             ((int2 *) dst)[i] = ((const int2 *) src)[i];
         } else if constexpr (nb_per_cpy == 16) {
             ((int4 *) dst)[i] = ((const int4 *) src)[i];
+        } else {
+            static_assert(nbytes == 0 && nbytes == -1, "bad nbytes");
+        }
+    }
+}
+
+template <int nbytes, int alignment = 0>
+static __device__ __forceinline__ void ggml_cuda_memcpy_streaming(void * __restrict__ dst, const void * __restrict__ src) {
+    static_assert(
+        nbytes <= ggml_cuda_get_max_cpy_bytes() || alignment == 0,
+        "You are misusing the alignment parameter for ggml_cuda_memcpy_streaming.");
+    if constexpr (alignment != 0) {
+        static_assert(nbytes % alignment == 0, "bad alignment");
+    }
+    constexpr int nb_per_cpy = alignment == 0 ? nbytes : alignment;
+
+#pragma unroll
+    for (int i = 0; i < nbytes/nb_per_cpy; ++i) {
+        if constexpr (nb_per_cpy == 1) {
+            ((char *) dst)[i] = ggml_cuda_ldcs(&((const char *) src)[i]);
+        } else if constexpr (nb_per_cpy == 2) {
+            ((short *) dst)[i] = ggml_cuda_ldcs(&((const short *) src)[i]);
+        } else if constexpr (nb_per_cpy == 4) {
+            ((int *) dst)[i] = ggml_cuda_ldcs(&((const int *) src)[i]);
+        } else if constexpr (nb_per_cpy == 8) {
+            ((int2 *) dst)[i] = ggml_cuda_ldcs(&((const int2 *) src)[i]);
+        } else if constexpr (nb_per_cpy == 16) {
+            ((int4 *) dst)[i] = ggml_cuda_ldcs(&((const int4 *) src)[i]);
         } else {
             static_assert(nbytes == 0 && nbytes == -1, "bad nbytes");
         }

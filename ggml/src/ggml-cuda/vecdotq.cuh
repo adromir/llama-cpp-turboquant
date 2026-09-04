@@ -1222,6 +1222,16 @@ static __device__ __forceinline__ float vec_dot_q1_0_q8_1(
         const int u2 = get_int_b4(bq8_1_chunk->qs, j*4+2);
         const int u3 = get_int_b4(bq8_1_chunk->qs, j*4+3);
 
+#if defined(GGML_USE_HIP)
+        const auto unpack_q1_nibble = [] __device__ (uint32_t b) {
+            const uint32_t idx = (b & 1) | ((b & 2) << 7) | ((b & 4) << 14) | ((b & 8) << 21);
+            return __builtin_amdgcn_perm(0x01FF01FF, 0x01FF01FF, idx);
+        };
+        const int v0 = unpack_q1_nibble((q >>  0) & 0x0F);
+        const int v1 = unpack_q1_nibble((q >>  4) & 0x0F);
+        const int v2 = unpack_q1_nibble((q >>  8) & 0x0F);
+        const int v3 = unpack_q1_nibble((q >> 12) & 0x0F);
+#else
         // unpack crumbs into nibble indices
         const int n0 = __byte_perm(0x11100100, 0x11100100, q >> 0); // [0, 1, 4, 5] [ 8,  9, 12, 13]
         const int n1 = __byte_perm(0x11100100, 0x11100100, q >> 2); // [2, 3, 6, 7] [10, 11, 14, 15]
@@ -1235,6 +1245,7 @@ static __device__ __forceinline__ float vec_dot_q1_0_q8_1(
         const int v1 = __byte_perm(s0, s1, 0x7632);
         const int v2 = __byte_perm(s2, s3, 0x5410);
         const int v3 = __byte_perm(s2, s3, 0x7632);
+#endif // defined(GGML_USE_HIP)
 
         sumi = ggml_cuda_dp4a(v0, u0, sumi);
         sumi = ggml_cuda_dp4a(v1, u1, sumi);

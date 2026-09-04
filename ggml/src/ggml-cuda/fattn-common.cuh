@@ -648,11 +648,11 @@ typedef void (*dequantize_V_t)(const void *, void *, const int64_t);
 template <typename T, int ne>
 static __device__ __forceinline__ void dequantize_V_f16(const void * __restrict__ vx, void * __restrict__ dst, const int64_t i0) {
     if constexpr (std::is_same_v<T, half>) {
-        ggml_cuda_memcpy_1<ne*sizeof(half)>(dst, (const half *) vx + i0);
+        ggml_cuda_memcpy_streaming<ne*sizeof(half)>(dst, (const half *) vx + i0);
     } else if constexpr (std::is_same_v<T, float>) {
         static_assert(ne % 2 == 0, "bad ne");
         __align__(16) half2 tmp[ne/2];
-        ggml_cuda_memcpy_1<ne*sizeof(half)>(tmp, (const half *) vx + i0);
+        ggml_cuda_memcpy_streaming<ne*sizeof(half)>(tmp, (const half *) vx + i0);
         float2 * dst_f2 = (float2 *) dst;
 #pragma unroll
         for (int l = 0; l < ne/2; ++l) {
@@ -668,7 +668,7 @@ static __device__ __forceinline__ void dequantize_V_bf16(const void * __restrict
     static_assert(std::is_same_v<T, float>, "BF16 V dequantization only supports float output");
     static_assert(ne % 2 == 0, "bad ne");
     __align__(16) nv_bfloat162 tmp[ne/2];
-    ggml_cuda_memcpy_1<ne*sizeof(nv_bfloat16)>(tmp, (const nv_bfloat16 *) vx + i0);
+    ggml_cuda_memcpy_streaming<ne*sizeof(nv_bfloat16)>(tmp, (const nv_bfloat16 *) vx + i0);
     float2 * dst_f2 = (float2 *) dst;
 #pragma unroll
     for (int l = 0; l < ne/2; ++l) {
@@ -864,11 +864,11 @@ static __device__ __forceinline__ void dequantize_V_q8_0(const void * __restrict
 
     static_assert(ne % 2 == 0, "bad ne");
     int8_t qs[ne];
-    ggml_cuda_memcpy_1<ne, 2>(qs, x[ib].qs + iqs);
+    ggml_cuda_memcpy_streaming<ne, 2>(qs, x[ib].qs + iqs);
 
 #ifdef FP16_AVAILABLE
     if constexpr (std::is_same<T, half>::value) {
-        const half2 d = __half2half2(x[ib].d);
+        const half2 d = __half2half2(ggml_cuda_ldcs(&x[ib].d));
 
 #pragma unroll
         for (int l0 = 0; l0 < ne; l0 += 2) {
@@ -877,7 +877,7 @@ static __device__ __forceinline__ void dequantize_V_q8_0(const void * __restrict
     } else
 #endif // FP16_AVAILABLE
     if constexpr (std::is_same<T, float>::value) {
-        const float d = x[ib].d;
+        const float d = ggml_cuda_ldcs(&x[ib].d);
 
 #pragma unroll
         for (int l = 0; l < ne; ++l) {
@@ -997,15 +997,15 @@ static __device__ __forceinline__ void dequantize_V_turbo3_0(const void * __rest
 
     const int64_t ib   = i0 / QK_TURBO3;
     const int     j0   = i0 % QK_TURBO3;
-    const float   norm = __half2float(x[ib].norm);
+    const float   norm = __half2float(ggml_cuda_ldcs(&x[ib].norm));
 
     static_assert(ne == 2 || ne == 4, "bad ne");
 
     if constexpr (ne == 4) {
         // When j0 % 4 == 0 (always true from VEC kernel), all 4 elements share one
         // qs byte (4 elements per byte) and one signs byte (8 elements per byte).
-        const uint8_t qs_byte  = x[ib].qs[j0 / 4];
-        const uint8_t sgn_byte = x[ib].signs[j0 / 8];
+        const uint8_t qs_byte  = ggml_cuda_ldcs(&x[ib].qs[j0 / 4]);
+        const uint8_t sgn_byte = ggml_cuda_ldcs(&x[ib].signs[j0 / 8]);
         const int     shift_s  = j0 % 8;   // 0 or 4
 
         const uint8_t idx0 = ((qs_byte >> 0) & 0x3) | (((sgn_byte >> (shift_s+0)) & 0x1) << 2);
@@ -1057,12 +1057,12 @@ static __device__ __forceinline__ void dequantize_V_turbo2_0(const void * __rest
 
     const int64_t ib   = i0 / QK_TURBO2;
     const int     j0   = i0 % QK_TURBO2;
-    const float   norm = __half2float(x[ib].norm);
+    const float   norm = __half2float(ggml_cuda_ldcs(&x[ib].norm));
 
     static_assert(ne == 2 || ne == 4, "bad ne");
 
     if constexpr (ne == 4) {
-        const uint8_t qs_byte = x[ib].qs[j0 / 4];
+        const uint8_t qs_byte = ggml_cuda_ldcs(&x[ib].qs[j0 / 4]);
 
         const uint8_t idx0 = (qs_byte >> 0) & 0x3;
         const uint8_t idx1 = (qs_byte >> 2) & 0x3;
