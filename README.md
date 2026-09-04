@@ -1,10 +1,10 @@
-# llama.cpp (TurboQuant + RDNA Boosts + ROCmFPX)
+# llama.cpp (TurboQuant + RDNA Boosts + ROCmFPX + DFlash2)
 
 ![llama](https://raw.githubusercontent.com/ggml-org/llama.brand/refs/heads/master/cover/llama-cpp/cover-llama-cpp-dark.svg)
 
 <div align="center">
 
-<b>High-Performance LLM Inference on AMD Radeon & ROCm with Ultra-Compact KV Cache and Native RDNA Boosts</b>
+<b>High-Performance LLM Inference on AMD Radeon & ROCm with Ultra-Compact KV Cache, Native RDNA Boosts, and DFlash2 Speculative Decoding</b>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Author](https://img.shields.io/badge/Author-Adromir-orange.svg)](https://github.com/adromir)
@@ -21,12 +21,14 @@
 
 ## Overview
 
-This repository is an experimental, performance-optimized fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) combining three major acceleration technologies into a single unified tree:
+This repository is an experimental, performance-optimized fork of [llama.cpp](https://github.com/ggml-org/llama.cpp) combining bleeding-edge LLM acceleration technologies into a single unified tree:
 
 1. **TurboQuant KV Cache**: 2-bit to 4.25-bit KV cache compression via Walsh-Hadamard Transforms (WHT) and PolarQuant, reducing context memory footprint by 2x to 4x compared to standard Q8_0 while retaining near-FP16 attention quality.
 2. **RDNA Boosts**: Deep GPU architecture optimizations by Stew Forster (`stew675/llama-cpp-rdna-boosts`), featuring native-BF16 flash attention, RDNA4 WMMA acceleration, fused chunked Gated-Delta-Net, fused MoE gate+up GLU MMQ/MMVQ kernels, and hybrid HIP all-reduce.
 3. **ROCmFPX Quantization Family**: Experimental AMD FP4 and FPx quantization formats ported from [charlie12345/ROCmFPX](https://github.com/charlie12345/ROCmFPX), featuring UE4M3-scaled low-bit representations (`Q4_0_ROCMFP4`, `Q4_0_ROCMFP4_FAST`, `Q3_0_ROCMFPX`, `Q6_0_ROCMFPX`, `Q8_0_ROCMFPX`, `Q2_0_ROCMFPX`, `Q4_0_ROCMI4`) and specialized agent/tool-calling coherence routing recipes.
-4. **AMD ROCm Core SDK 10.0.0 ("TheRock") Support**: Native support for modern ROCm 10 toolchains on both Windows 11 and Ubuntu 24.04, with fast compilation, automated dependency staging, and multi-architecture fat binaries.
+4. **DFlash2 Speculative Decoding**: High-throughput block-parallel speculative decoding (PR #27816 & PR #28000) featuring dynamic 1D grouped causal convolution, candidate selector transition scoring lattice, M-RoPE multimodal position batching, and CPU confidence pruning.
+5. **Shape-Aware CUDA/HIP Graphs & Unified Memory**: O(1) shape-aware graph hashing preventing warmup thrashing during variable speculative batch evaluation, robust unified memory environment validation, and async 2D D2D memory transfers.
+6. **AMD ROCm Core SDK 10.0.0 ("TheRock") Support**: Native support for modern ROCm 10 toolchains on both Windows 11 and Ubuntu 24.04, with fast compilation, automated dependency staging, and multi-architecture fat binaries.
 
 ---
 
@@ -61,6 +63,17 @@ This repository is an experimental, performance-optimized fork of [llama.cpp](ht
 - **Agent and Tool-Calling Routing Recipes**:
   - `Q4_0_ROCMFP4_LEAN`, `Q4_0_ROCMFP4_COHERENT`, `Q4_0_ROCMFP4_STRIX`.
   - `Q3_0_ROCMFPX_AGENT`, `Q6_0_ROCMFPX_AGENT`, `Q6_0_ROCMFPX_LEAN`.
+
+### 4. DFlash2 Speculative Decoding
+- **Block-Parallel Drafting**: Multi-token draft generation using dynamic grouped 1D causal convolutions (`build_dflash2_conv`).
+- **Candidate Transition Lattice**: Evaluates candidate selector scores `⟨A[p] ⊙ project(h), B[c]⟩ + unary[c]` (`build_dflash2_selector`) for tree speculation.
+- **M-RoPE Multimodal Compatibility**: Native support for 4-row position batches for vision-language models (e.g. Qwen2-VL).
+- **Lattice Confidence Pruning**: CPU-side lattice walk and `p_min` confidence thresholding without expensive full logit sampling.
+
+### 5. Shape-Aware CUDA/HIP Graphs & Unified Memory
+- **O(1) Shape-Aware Graph Caching**: Mixes split root, node count, and dimension strides into a 64-bit key, preventing warmup resets and thrashing during variable batch verify passes.
+- **Safe Managed Memory Validation**: Environment variable helper `ggml_cuda_env_enabled` avoids accidental allocation when `GGML_CUDA_ENABLE_UNIFIED_MEMORY=0` or `false`.
+- **Async 2D D2D Copies**: Employs `cudaMemcpyDefault` across CUDA, HIP, and MUSA for direct asynchronous 2D transfers without forced synchronization.
 
 ---
 
@@ -228,6 +241,15 @@ $env:HIP_VISIBLE_DEVICES = "1"
 .\build\bin\llama-cli.exe -m model.gguf -ngl 99
 ```
 
+### Speculative Decoding (DFlash2)
+
+```bash
+# High-speed speculative decoding with DFlash2 draft model and TurboQuant KV cache:
+llama-cli -m target-model.gguf -md dflash-draft-model.gguf -ngl 99 -c 8192 \
+  --cache-type-k q8_0 --cache-type-v turbo3 \
+  -p "Implement a fast Walsh-Hadamard transform in C++:"
+```
+
 ---
 
 ## Screenshots
@@ -257,6 +279,8 @@ $env:HIP_VISIBLE_DEVICES = "1"
 - **TurboQuant Fork**: [TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) - Walsh-Hadamard Transform KV compression and PolarQuant codecs.
 - **RDNA Boosts**: [stew675/llama-cpp-rdna-boosts](https://github.com/stew675/llama-cpp-rdna-boosts) by Stew Forster - AMD RDNA-specific kernels, WMMA acceleration, and MoE optimizations.
 - **ROCmFPX**: [charlie12345/ROCmFPX](https://github.com/charlie12345/ROCmFPX) - ROCm FP4/FPx quantization formats and agent recipes.
+- **Unsloth AI**: [unslothai/llama.cpp](https://github.com/unslothai/llama.cpp) - Shape-aware graph keying and runtime optimizations.
+- **DFlash**: Upstream PR #27816 & PR #28000 by the DFlash contributors.
 
 ---
 
