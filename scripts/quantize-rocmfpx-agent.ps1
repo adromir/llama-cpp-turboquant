@@ -80,6 +80,27 @@ param(
     [string]$Imatrix = $env:IMATRIX,
 
     [Parameter()]
+    [switch]$CreateImatrix,
+
+    [Parameter()]
+    [string]$CalibrationData = $env:CALIBRATION_DATA,
+
+    [Parameter()]
+    [int]$ImatrixChunks = 64,
+
+    [Parameter()]
+    [int]$ImatrixContext = 2048,
+
+    [Parameter()]
+    [int]$ImatrixNgl = 99,
+
+    [Parameter()]
+    [string]$ImatrixBin = $env:IMATRIX_BIN,
+
+    [Parameter()]
+    [switch]$OnlyImatrix,
+
+    [Parameter()]
     [string]$TensorTypeFile = $env:TENSOR_TYPE_FILE,
 
     [Parameter()]
@@ -128,6 +149,99 @@ if (-not $QuantizeBin -or -not (Test-Path $QuantizeBin)) {
 if (-not (Test-Path $Src)) {
     Write-Error "Source file does not exist: $Src"
     exit 1
+}
+
+# Discover llama-imatrix.exe if requested
+$needImatrixGen = $CreateImatrix -or -not [string]::IsNullOrWhiteSpace($CalibrationData)
+if ($needImatrixGen) {
+    if (-not $ImatrixBin) {
+        $binDir = Split-Path -Parent $QuantizeBin
+        $imatrixCandidates = @(
+            (Join-Path $binDir "llama-imatrix.exe"),
+            "$PSScriptRoot\..\build\bin\llama-imatrix.exe",
+            "$PSScriptRoot\..\build\bin\Release\llama-imatrix.exe",
+            "$PSScriptRoot\..\build-rocm\bin\llama-imatrix.exe",
+            "$PSScriptRoot\..\build-strix-rocmfp4\bin\llama-imatrix.exe",
+            "llama-imatrix.exe"
+        )
+        foreach ($cand in $imatrixCandidates) {
+            if (Test-Path $cand) {
+                $ImatrixBin = (Resolve-Path $cand).Path
+                break
+            }
+        }
+        if (-not $ImatrixBin) {
+            $cmd = Get-Command "llama-imatrix.exe" -ErrorAction SilentlyContinue
+            if ($cmd) { $ImatrixBin = $cmd.Source }
+        }
+    }
+
+    if (-not $ImatrixBin -or -not (Test-Path $ImatrixBin)) {
+        Write-Error "Could not find llama-imatrix binary. Build it or specify -ImatrixBin."
+        exit 1
+    }
+
+    if ([string]::IsNullOrWhiteSpace($CalibrationData)) {
+        Write-Error "Please specify calibration dataset via -CalibrationData to generate an importance matrix."
+        exit 1
+    }
+    if (-not (Test-Path $CalibrationData)) {
+        Write-Error "Calibration dataset does not exist: $CalibrationData"
+        exit 1
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Imatrix)) {
+        $srcDir = Split-Path -Parent $Src
+        $srcBase = [System.IO.Path]::GetFileNameWithoutExtension($Src)
+        $cleanBase = $srcBase -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
+        $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
+        $imatrixName = "$cleanBase-imatrix.gguf"
+        if ($srcDir) { $Imatrix = Join-Path $srcDir $imatrixName } else { $Imatrix = $imatrixName }
+    }
+
+    $imatrixDir = Split-Path -Parent $Imatrix
+    if ($imatrixDir -and -not (Test-Path $imatrixDir)) {
+        New-Item -ItemType Directory -Path $imatrixDir -Force | Out-Null
+    }
+
+    $imatrixArgs = @(
+        "-m", $Src,
+        "-f", $CalibrationData,
+        "-o", $Imatrix,
+        "-ngl", $ImatrixNgl.ToString(),
+        "-c", $ImatrixContext.ToString(),
+        "--chunks", $ImatrixChunks.ToString()
+    )
+    if ($NThreads -gt 0) {
+        $imatrixArgs += @("-t", $NThreads.ToString())
+    }
+
+    Write-Host "=================================================="
+    Write-Host " Generating Importance Matrix (llama-imatrix)"
+    Write-Host "=================================================="
+    Write-Host "Binary:     $ImatrixBin"
+    Write-Host "Model:      $Src"
+    Write-Host "Dataset:    $CalibrationData"
+    Write-Host "Output:     $Imatrix"
+    Write-Host "GPU Layers: $ImatrixNgl"
+    Write-Host "Context:    $ImatrixContext"
+    Write-Host "Chunks:     $ImatrixChunks"
+    if ($NThreads -gt 0) { Write-Host "Threads:    $NThreads" }
+    Write-Host "=================================================="
+
+    & $ImatrixBin @imatrixArgs
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Imatrix)) {
+        Write-Error "Importance matrix calculation failed with exit code $LASTEXITCODE."
+        exit $LASTEXITCODE
+    }
+
+    $imatrixMB = [math]::Round((Get-Item $Imatrix).Length / 1MB, 2)
+    Write-Host "`n[OK] Successfully generated imatrix: $Imatrix ($imatrixMB MB)`n" -ForegroundColor Green
+
+    if ($OnlyImatrix) {
+        Write-Host "Completed -OnlyImatrix. Exiting."
+        exit 0
+    }
 }
 
 if ($Imatrix -and -not (Test-Path $Imatrix)) {

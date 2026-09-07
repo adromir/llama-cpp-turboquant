@@ -10,7 +10,9 @@
 
 param(
     [string]$InitialSource = "",
-    [string]$InitialPreset = "Q4_0_ROCMFP4_FAST"
+    [string]$InitialPreset = "Q4_0_ROCMFP4_FAST",
+    [string]$InitialImatrix = "",
+    [string]$InitialCalibration = ""
 )
 
 Set-StrictMode -Off
@@ -54,6 +56,46 @@ function Find-QuantizeBinary {
     return $null
 }
 
+function Find-ImatrixBinary {
+    param(
+        [string]$ScriptDir,
+        [string]$KnownQuantizeBin = ""
+    )
+
+    $Candidates = @()
+    if ($KnownQuantizeBin -and (Test-Path $KnownQuantizeBin)) {
+        $binDir = Split-Path -Parent $KnownQuantizeBin
+        $Candidates += [PSCustomObject]@{ Path = (Join-Path $binDir "llama-imatrix.exe"); Source = "Directory of llama-quantize" }
+    }
+    $Candidates += @(
+        [PSCustomObject]@{ Path = (Join-Path $ScriptDir "llama-imatrix.exe"); Source = "Script Directory" },
+        [PSCustomObject]@{ Path = (Join-Path (Get-Location) "llama-imatrix.exe"); Source = "Current Working Directory" },
+        [PSCustomObject]@{ Path = (Join-Path $ScriptDir "..\llama-imatrix.exe"); Source = "Parent Directory" },
+        [PSCustomObject]@{ Path = (Join-Path $ScriptDir "..\build\bin\llama-imatrix.exe"); Source = "Build Directory" },
+        [PSCustomObject]@{ Path = (Join-Path $ScriptDir "..\build\bin\Release\llama-imatrix.exe"); Source = "Build Release Directory" },
+        [PSCustomObject]@{ Path = (Join-Path $ScriptDir "..\build-rocm\bin\llama-imatrix.exe"); Source = "ROCm Build Directory" }
+    )
+
+    foreach ($cand in $Candidates) {
+        if (Test-Path $cand.Path) {
+            return [PSCustomObject]@{
+                Path = (Resolve-Path $cand.Path).Path
+                Origin = $cand.Source
+            }
+        }
+    }
+
+    $cmd = Get-Command "llama-imatrix" -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return [PSCustomObject]@{
+            Path = $cmd.Source
+            Origin = "System PATH"
+        }
+    }
+
+    return $null
+}
+
 function Get-SuggestedOutputPath {
     param(
         [string]$SourcePath,
@@ -73,6 +115,27 @@ function Get-SuggestedOutputPath {
     $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
 
     $newName = "$cleanBase-$Preset.gguf"
+    if ($dir) {
+        return Join-Path $dir $newName
+    }
+    return $newName
+}
+
+function Get-SuggestedImatrixPath {
+    param([string]$SourcePath)
+
+    if ([string]::IsNullOrWhiteSpace($SourcePath)) {
+        return ""
+    }
+
+    $dir = Split-Path -Parent $SourcePath
+    $filename = Split-Path -Leaf $SourcePath
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($filename)
+
+    $cleanBase = $baseName -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
+    $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
+
+    $newName = "$cleanBase-imatrix.gguf"
     if ($dir) {
         return Join-Path $dir $newName
     }
@@ -264,7 +327,10 @@ function Build-QuantizeArguments {
                 <!-- Importance Matrix -->
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Imatrix (Optional):" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="3" Grid.Column="1" Name="TxtImatrix" Height="30" Margin="0,0,8,0"/>
-                <Button Grid.Row="3" Grid.Column="2" Name="BtnBrowseImatrix" Content="Browse..." Width="90" Height="30"/>
+                <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal">
+                    <Button Name="BtnBrowseImatrix" Content="Browse..." Width="70" Height="30" Margin="0,0,6,0"/>
+                    <Button Name="BtnCreateImatrix" Content="Generate..." Width="75" Height="30" Background="#0D9488" BorderBrush="#14B8A6" ToolTip="Calculate importance matrix from calibration text dataset using llama-imatrix"/>
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -332,6 +398,7 @@ $txtOutputModel       = $window.FindName("TxtOutputModel")
 $btnBrowseOutput      = $window.FindName("BtnBrowseOutput")
 $txtImatrix           = $window.FindName("TxtImatrix")
 $btnBrowseImatrix     = $window.FindName("BtnBrowseImatrix")
+$btnCreateImatrix     = $window.FindName("BtnCreateImatrix")
 $chkAllowRequantize   = $window.FindName("ChkAllowRequantize")
 $cmbThreads           = $window.FindName("CmbThreads")
 $lblStatus            = $window.FindName("LblStatus")
@@ -357,11 +424,14 @@ if ($foundExe) {
     $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
 }
 
-# Apply initial source if provided
+# Apply initial values if provided
 if ($InitialSource) {
     $txtSourceModel.Text = $InitialSource
     $selectedPresetTag = $cmbPreset.SelectedItem.Tag
     $txtOutputModel.Text = Get-SuggestedOutputPath -SourcePath $InitialSource -Preset $selectedPresetTag
+}
+if ($InitialImatrix) {
+    $txtImatrix.Text = $InitialImatrix
 }
 
 # Helper to get current preset tag
@@ -453,6 +523,383 @@ $btnBrowseImatrix.Add_Click({
     }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $txtImatrix.Text = $dlg.FileName
+    }
+})
+
+# Function to launch interactive Imatrix Generator Modal
+function Show-ImatrixDialog {
+    param(
+        [System.Windows.Window]$OwnerWindow,
+        [string]$CurrentSource,
+        [string]$CurrentBin,
+        [string]$CurrentCalibration = ""
+    )
+
+    $imatrixBinObj = Find-ImatrixBinary -ScriptDir $PSScriptRoot -KnownQuantizeBin $CurrentBin
+    $defaultImatrixBin = if ($imatrixBinObj) { $imatrixBinObj.Path } else { "" }
+    $defaultImatrixOut = Get-SuggestedImatrixPath -SourcePath $CurrentSource
+
+    $dialogXaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Generate Importance Matrix (llama-imatrix)"
+        Width="720" Height="600" WindowStartupLocation="CenterOwner"
+        Background="#191921" Foreground="#E2E8F0" FontFamily="Segoe UI"
+        ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#2A2A38"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="BorderBrush" Value="#3F3F52"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#3B82F6"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#60A5FA"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Importance Matrix Calculation (GPU Accelerated)" FontSize="16" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,12"/>
+
+        <Border Grid.Row="1" Background="#20202A" CornerRadius="6" Padding="12" Margin="0,0,0,10" BorderBrush="#2D2D3B" BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="130"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="llama-imatrix:" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Name="DlgTxtBin" Height="28" Margin="0,0,8,8"/>
+                <Button Grid.Row="0" Grid.Column="2" Name="DlgBtnBrowseBin" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Source Model:" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                <TextBox Grid.Row="1" Grid.Column="1" Name="DlgTxtSource" Height="28" Margin="0,0,8,8"/>
+                <Button Grid.Row="1" Grid.Column="2" Name="DlgBtnBrowseSource" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Calibration (.txt):" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Name="DlgTxtCalibration" Height="28" Margin="0,0,8,8"/>
+                <Button Grid.Row="2" Grid.Column="2" Name="DlgBtnBrowseCalibration" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Output Matrix:" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Name="DlgTxtOutput" Height="28" Margin="0,0,8,0"/>
+                <Button Grid.Row="3" Grid.Column="2" Name="DlgBtnBrowseOutput" Content="Save As..." Width="80" Height="28"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2" Background="#20202A" CornerRadius="6" Padding="12" Margin="0,0,0,10" BorderBrush="#2D2D3B" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="65"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="65"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="65"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="70"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="GPU Layers (-ngl):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Grid.Column="1" Name="DlgTxtNgl" Text="99" Height="28" Margin="0,0,12,0"/>
+
+                <TextBlock Grid.Column="2" Text="Context (-c):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Grid.Column="3" Name="DlgTxtContext" Text="2048" Height="28" Margin="0,0,12,0"/>
+
+                <TextBlock Grid.Column="4" Text="Chunks:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Grid.Column="5" Name="DlgTxtChunks" Text="64" Height="28" Margin="0,0,12,0"/>
+
+                <TextBlock Grid.Column="6" Text="Threads:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Grid.Column="7" Name="DlgTxtThreads" Text="0" Height="28"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Name="DlgLblStatus" Text="Ready to compute importance matrix" VerticalAlignment="Center" Foreground="#38BDF8" FontWeight="SemiBold"/>
+            <Button Grid.Column="1" Name="DlgBtnCancel" Content="Abort" Width="80" Height="32" Margin="0,0,8,0" Background="#7F1D1D" BorderBrush="#991B1B" IsEnabled="False"/>
+            <Button Grid.Column="2" Name="DlgBtnStart" Content="Start Calculation" Width="130" Height="32" Margin="0,0,8,0" Background="#0D9488" BorderBrush="#14B8A6" FontWeight="SemiBold"/>
+            <Button Grid.Column="3" Name="DlgBtnApply" Content="Apply &amp; Close" Width="110" Height="32" Background="#2563EB" BorderBrush="#3B82F6" IsEnabled="False"/>
+        </Grid>
+
+        <Border Grid.Row="4" Background="#14141B" CornerRadius="6" BorderBrush="#2D2D3B" BorderThickness="1" Padding="8">
+            <TextBox Name="DlgTxtLog" Background="Transparent" Foreground="#E2E8F0" BorderThickness="0"
+                     FontFamily="Consolas, Courier New, monospace" FontSize="11"
+                     IsReadOnly="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     AcceptsReturn="True" TextWrapping="NoWrap"/>
+        </Border>
+    </Grid>
+</Window>
+"@
+
+    $dialogReader = New-Object System.Xml.XmlNodeReader ([xml]$dialogXaml)
+    $dialog = [System.Windows.Markup.XamlReader]::Load($dialogReader)
+    $dialog.Owner = $OwnerWindow
+
+    # Dialog Controls
+    $dlgTxtBin = $dialog.FindName("DlgTxtBin")
+    $dlgBtnBrowseBin = $dialog.FindName("DlgBtnBrowseBin")
+    $dlgTxtSource = $dialog.FindName("DlgTxtSource")
+    $dlgBtnBrowseSource = $dialog.FindName("DlgBtnBrowseSource")
+    $dlgTxtCalibration = $dialog.FindName("DlgTxtCalibration")
+    $dlgBtnBrowseCalibration = $dialog.FindName("DlgBtnBrowseCalibration")
+    $dlgTxtOutput = $dialog.FindName("DlgTxtOutput")
+    $dlgBtnBrowseOutput = $dialog.FindName("DlgBtnBrowseOutput")
+    $dlgTxtNgl = $dialog.FindName("DlgTxtNgl")
+    $dlgTxtContext = $dialog.FindName("DlgTxtContext")
+    $dlgTxtChunks = $dialog.FindName("DlgTxtChunks")
+    $dlgTxtThreads = $dialog.FindName("DlgTxtThreads")
+    $dlgLblStatus = $dialog.FindName("DlgLblStatus")
+    $dlgBtnCancel = $dialog.FindName("DlgBtnCancel")
+    $dlgBtnStart = $dialog.FindName("DlgBtnStart")
+    $dlgBtnApply = $dialog.FindName("DlgBtnApply")
+    $dlgTxtLog = $dialog.FindName("DlgTxtLog")
+
+    $dlgTxtBin.Text = $defaultImatrixBin
+    $dlgTxtSource.Text = $CurrentSource
+    $dlgTxtCalibration.Text = $CurrentCalibration
+    $dlgTxtOutput.Text = $defaultImatrixOut
+
+    $dlgRunningProcess = $null
+    $script:GeneratedImatrixResult = $null
+
+    # Dialog Browse Events
+    $dlgBtnBrowseBin.Add_Click({
+        $fbd = New-Object System.Windows.Forms.OpenFileDialog
+        $fbd.Title = "Select llama-imatrix Executable"
+        $fbd.Filter = "Executable files (*.exe)|*.exe|All files (*.*)|*.*"
+        if ($dlgTxtBin.Text -and (Test-Path $dlgTxtBin.Text)) {
+            $fbd.InitialDirectory = Split-Path -Parent $dlgTxtBin.Text
+        }
+        if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $dlgTxtBin.Text = $fbd.FileName
+        }
+    })
+
+    $dlgBtnBrowseSource.Add_Click({
+        $fbd = New-Object System.Windows.Forms.OpenFileDialog
+        $fbd.Title = "Select Source GGUF Model"
+        $fbd.Filter = "GGUF files (*.gguf)|*.gguf|All files (*.*)|*.*"
+        if ($dlgTxtSource.Text -and (Test-Path $dlgTxtSource.Text)) {
+            $fbd.InitialDirectory = Split-Path -Parent $dlgTxtSource.Text
+        }
+        if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $dlgTxtSource.Text = $fbd.FileName
+            $dlgTxtOutput.Text = Get-SuggestedImatrixPath -SourcePath $fbd.FileName
+        }
+    })
+
+    $dlgBtnBrowseCalibration.Add_Click({
+        $fbd = New-Object System.Windows.Forms.OpenFileDialog
+        $fbd.Title = "Select Calibration Dataset (.txt)"
+        $fbd.Filter = "Text files (*.txt;*.raw)|*.txt;*.raw|All files (*.*)|*.*"
+        if ($dlgTxtCalibration.Text -and (Test-Path $dlgTxtCalibration.Text)) {
+            $fbd.InitialDirectory = Split-Path -Parent $dlgTxtCalibration.Text
+        }
+        if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $dlgTxtCalibration.Text = $fbd.FileName
+        }
+    })
+
+    $dlgBtnBrowseOutput.Add_Click({
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Title = "Save Importance Matrix As"
+        $sfd.Filter = "GGUF files (*.gguf)|*.gguf|Data files (*.dat)|*.dat|All files (*.*)|*.*"
+        if ($dlgTxtOutput.Text) {
+            $sfd.FileName = Split-Path -Leaf $dlgTxtOutput.Text
+            $parent = Split-Path -Parent $dlgTxtOutput.Text
+            if ($parent -and (Test-Path $parent)) { $sfd.InitialDirectory = $parent }
+        }
+        if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $dlgTxtOutput.Text = $sfd.FileName
+        }
+    })
+
+    # Dialog Cancel Event
+    $dlgBtnCancel.Add_Click({
+        if ($dlgRunningProcess -and -not $dlgRunningProcess.HasExited) {
+            $dlgTxtLog.AppendText("`r`n[ABORT] Cancelling llama-imatrix process...`r`n")
+            try { $dlgRunningProcess.Kill() } catch { }
+            $dlgLblStatus.Text = "Calculation aborted."
+            $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+            $dlgBtnStart.IsEnabled = $true
+            $dlgBtnCancel.IsEnabled = $false
+        }
+    })
+
+    # Dialog Apply Event
+    $dlgBtnApply.Add_Click({
+        $dialog.Close()
+    })
+
+    # Dialog Start Calculation Event
+    $dlgBtnStart.Add_Click({
+        $bin = $dlgTxtBin.Text.Trim()
+        $src = $dlgTxtSource.Text.Trim()
+        $cal = $dlgTxtCalibration.Text.Trim()
+        $out = $dlgTxtOutput.Text.Trim()
+
+        if (-not $bin -or -not (Test-Path $bin)) {
+            [System.Windows.MessageBox]::Show("Valid llama-imatrix executable not found.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if (-not $src -or -not (Test-Path $src)) {
+            [System.Windows.MessageBox]::Show("Source model file not found.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if (-not $cal -or -not (Test-Path $cal)) {
+            [System.Windows.MessageBox]::Show("Calibration dataset file not found: $cal", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if (-not $out) {
+            [System.Windows.MessageBox]::Show("Please specify an output matrix path.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+
+        $outDir = Split-Path -Parent $out
+        if ($outDir -and -not (Test-Path $outDir)) {
+            New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+        }
+
+        $ngl = if ($dlgTxtNgl.Text) { $dlgTxtNgl.Text.Trim() } else { "99" }
+        $ctx = if ($dlgTxtContext.Text) { $dlgTxtContext.Text.Trim() } else { "2048" }
+        $chunks = if ($dlgTxtChunks.Text) { $dlgTxtChunks.Text.Trim() } else { "64" }
+        $threads = if ($dlgTxtThreads.Text) { $dlgTxtThreads.Text.Trim() } else { "0" }
+
+        $argsList = New-Object System.Collections.Generic.List[string]
+        $argsList.Add("-m"); $argsList.Add($src)
+        $argsList.Add("-f"); $argsList.Add($cal)
+        $argsList.Add("-o"); $argsList.Add($out)
+        $argsList.Add("-ngl"); $argsList.Add($ngl)
+        $argsList.Add("-c"); $argsList.Add($ctx)
+        $argsList.Add("--chunks"); $argsList.Add($chunks)
+        if ([int]$threads -gt 0) {
+            $argsList.Add("-t"); $argsList.Add($threads)
+        }
+
+        $argString = ($argsList | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join " "
+
+        $dlgBtnStart.IsEnabled = $false
+        $dlgBtnCancel.IsEnabled = $true
+        $dlgBtnApply.IsEnabled = $false
+        $dlgLblStatus.Text = "Calculating importance matrix..."
+        $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Yellow
+
+        $dlgTxtLog.Clear()
+        $dlgTxtLog.AppendText("==================================================`r`n")
+        $dlgTxtLog.AppendText(" Calculating Importance Matrix (llama-imatrix)`r`n")
+        $dlgTxtLog.AppendText("==================================================`r`n")
+        $dlgTxtLog.AppendText("Binary:     $bin`r`n")
+        $dlgTxtLog.AppendText("Source:     $src`r`n")
+        $dlgTxtLog.AppendText("Dataset:    $cal`r`n")
+        $dlgTxtLog.AppendText("Output:     $out`r`n")
+        $dlgTxtLog.AppendText("GPU Layers: $ngl`r`n")
+        $dlgTxtLog.AppendText("Context:    $ctx`r`n")
+        $dlgTxtLog.AppendText("Chunks:     $chunks`r`n")
+        $dlgTxtLog.AppendText("Command:    `"$bin`" $argString`r`n")
+        $dlgTxtLog.AppendText("==================================================`r`n`r`n")
+
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo.FileName = $bin
+        $proc.StartInfo.Arguments = $argString
+        $proc.StartInfo.UseShellExecute = $false
+        $proc.StartInfo.RedirectStandardOutput = $true
+        $proc.StartInfo.RedirectStandardError = $true
+        $proc.StartInfo.CreateNoWindow = $true
+        $proc.EnableRaisingEvents = $true
+
+        $dlgRunningProcess = $proc
+
+        $dlgOutputHandler = {
+            param($sender, $e)
+            if ($e.Data) {
+                $dlgTxtLog.Dispatcher.Invoke([Action]{
+                    $dlgTxtLog.AppendText($e.Data + "`r`n")
+                    $dlgTxtLog.ScrollToEnd()
+                })
+            }
+        }
+
+        $proc.add_OutputDataReceived($dlgOutputHandler)
+        $proc.add_ErrorDataReceived($dlgOutputHandler)
+
+        $proc.add_Exited({
+            $exitCode = $proc.ExitCode
+            $dlgTxtLog.Dispatcher.Invoke([Action]{
+                $dlgTxtLog.AppendText("`r`n--------------------------------------------------`r`n")
+                if ($exitCode -eq 0 -and (Test-Path $out)) {
+                    $mb = [math]::Round((Get-Item $out).Length / 1MB, 2)
+                    $dlgTxtLog.AppendText("[SUCCESS] Importance matrix calculation complete!`r`n")
+                    $dlgTxtLog.AppendText("Created: $out ($mb MB)`r`n")
+                    $dlgLblStatus.Text = "Finished: $mb MB generated"
+                    $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
+                    $script:GeneratedImatrixResult = $out
+                    $dlgBtnApply.IsEnabled = $true
+                } else {
+                    $dlgTxtLog.AppendText("[ERROR] Calculation failed with exit code $exitCode.`r`n")
+                    $dlgLblStatus.Text = "Failed with exit code $exitCode"
+                    $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+                }
+                $dlgBtnStart.IsEnabled = $true
+                $dlgBtnCancel.IsEnabled = $false
+            })
+        })
+
+        try {
+            $proc.Start() | Out-Null
+            $proc.BeginOutputReadLine()
+            $proc.BeginErrorReadLine()
+        } catch {
+            $dlgTxtLog.AppendText("[ERROR] Failed to start process: $($_.Exception.Message)`r`n")
+            $dlgLblStatus.Text = "Execution failed"
+            $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+            $dlgBtnStart.IsEnabled = $true
+            $dlgBtnCancel.IsEnabled = $false
+        }
+    })
+
+    # Show modal dialog
+    $dialog.ShowDialog() | Out-Null
+
+    # Clean up process if still somehow running when dialog closed
+    if ($dlgRunningProcess -and -not $dlgRunningProcess.HasExited) {
+        try { $dlgRunningProcess.Kill() } catch { }
+    }
+
+    return $script:GeneratedImatrixResult
+}
+
+# Event: Generate Imatrix (launch dialog)
+$btnCreateImatrix.Add_Click({
+    $calInitial = if ($InitialCalibration) { $InitialCalibration } else { "" }
+    $genImatrix = Show-ImatrixDialog -OwnerWindow $window -CurrentSource $txtSourceModel.Text -CurrentBin $txtExePath.Text -CurrentCalibration $calInitial
+    if ($genImatrix) {
+        $txtImatrix.Text = $genImatrix
+        $txtLog.AppendText("`r`n[IMATRIX] Configured importance matrix: $genImatrix`r`n")
     }
 })
 

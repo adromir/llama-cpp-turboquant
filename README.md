@@ -7,7 +7,7 @@
 <b>Ultra-compressed KV Cache & Native AMD ROCm Acceleration for Windows and Linux</b>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Author: Adromir](https://img.shields.io/badge/Author-Adromir-blue.svg)](https://github.com/adromir)
+[![Maintainer: Adromir](https://img.shields.io/badge/Maintainer-Adromir-blue.svg)](https://github.com/adromir)
 [![ROCm: 10.0.0](https://img.shields.io/badge/ROCm-10.0.0_(TheRock)-red.svg)](https://github.com/adromir/llama-cpp-turboquant)
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg)](https://github.com/adromir/llama-cpp-turboquant/releases)
 [![Architectures: RDNA2 | RDNA3 | RDNA4 | CDNA](https://img.shields.io/badge/GPU%20Targets-RDNA2%20%7C%20RDNA3%20%7C%20RDNA4%20%7C%20CDNA-orange.svg)](https://github.com/adromir/llama-cpp-turboquant)
@@ -119,17 +119,20 @@ llama-quantize --imatrix imatrix.gguf models/model-BF16.gguf models/model-ROCmFP
 For Windows users, we provide both an interactive WPF graphical interface and a CLI helper script:
 
 ```powershell
-# 1. Launch the interactive WPF GUI (auto-detects llama-quantize.exe):
+# 1. Launch the interactive WPF GUI (includes built-in Imatrix Generator dialog):
 .\scripts\quantize-rocmfpx-gui.ps1
-# (or double-click / run .\scripts\quantize-rocmfpx.ps1 without arguments)
+# (or run .\scripts\quantize-rocmfpx.ps1 without arguments)
 
 # 2. Basic CLI FP4 quantization:
 .\scripts\quantize-rocmfpx.ps1 -Source "models\model-f16.gguf" -Output "models\model-rocmfp4.gguf" -Preset Q4_0_ROCMFP4_FAST
 
-# 3-bit Agent quantization with importance matrix
+# 3. All-in-one Imatrix calculation & 3-bit Agent quantization:
+.\scripts\quantize-rocmfpx.ps1 -Source "models\model-f16.gguf" -CalibrationData "data\calibration.txt" -Preset Q3_0_ROCMFPX_AGENT
+
+# 4. Quantize using an existing importance matrix:
 .\scripts\quantize-rocmfpx.ps1 -Source "models\model-f16.gguf" -Output "models\model-rocmfp3-agent.gguf" -Preset Q3_0_ROCMFPX_AGENT -Imatrix "models\imatrix.gguf"
 
-# Requantizing from an existing Q8_0 GGUF
+# 5. Requantizing from an existing Q8_0 GGUF:
 .\scripts\quantize-rocmfpx.ps1 -Source "models\model-Q8_0.gguf" -Output "models\model-rocmfp6.gguf" -Preset Q6_0_ROCMFPX -AllowRequantize
 ```
 
@@ -402,12 +405,20 @@ This software is provided "as is", without warranty of any kind, express or impl
 
 ---
 
-## License
+## License & Credits
 
 This project is licensed under the [MIT License](LICENSE).
 
-**Author**: [Adromir](https://github.com/adromir)  
+**Maintainer**: [Adromir](https://github.com/adromir)  
 **Project Repository**: [https://github.com/adromir/llama-cpp-turboquant](https://github.com/adromir/llama-cpp-turboquant)  
-**Upstream Projects**:
-- [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)
-- [TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)
+
+### Integrated Community Forks & Upstream Projects
+
+This distribution incorporates features, kernel optimizations, and architectural designs from several outstanding community forks and upstream repositories:
+
+- **[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)**: The official upstream source of truth for the ggml tensor library, llama architecture, and model inference engine.
+- **[TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)**: Tom Turney's revolutionary TurboQuant KV-cache quantization codec, Walsh-Hadamard Transform (WHT) orthonormal rotation, Lloyd-Max centroid optimization, and elementwise chain fusion.
+- **[stew675/llama-cpp-rdna-boosts](https://github.com/stew675/llama-cpp-rdna-boosts)** & **[stew675/llama.cpp](https://github.com/stew675/llama.cpp)**: Stew Forster's comprehensive AMD RDNA optimization suite: native-BF16 Flash Attention tiles, RDNA4 WMMA tensor core acceleration, fused chunked Gated-Delta-Net, fused MoE gate+up GLU kernels, and adaptive MTP speculative decoding.
+- **[charlie12345/ROCmFPX](https://github.com/charlie12345/ROCmFPX)**: Carlo Pasquale's high-performance ROCmFPX sub-8-bit floating-point and integer quantization family (`Q4_0_ROCMFP4`, `Q4_0_ROCMFP4_FAST`, `Q3_0_ROCMFPX`, `Q6_0_ROCMFPX`, `Q8_0_ROCMFPX`, `Q2_0_ROCMFPX`, `Q4_0_ROCMI4`) for AMD RDNA and CDNA architectures.
+- **[unslothai/llama.cpp](https://github.com/unslothai/llama.cpp)**: Unsloth AI optimizations including shape-aware CUDA/HIP graph keying, contiguous virtual memory run mapping, batched VM readahead, and MTP shared tensor borrowing.
+
