@@ -1881,7 +1881,9 @@ void ggml_cuda_mul_mat_vec_q(
         bool src1_q8_1_cached = false;
         src1_q8_1 = ctx.q8_1_cache_get(src1_key, ctx.curr_stream_no, src1_q8_1_size,
                                               ne10, ne11, ne12, ne13, src1_s11, src1_s12, src1_s13, src1_q8_1_cached);
-        if (!src1_q8_1_cached) {
+        if (src1_q8_1_cached) {
+            ctx.fusion_stats.q8_cache_hits++;
+        } else {
             quantize_row_q8_1_cuda(src1_d, nullptr, src1_q8_1, src0->type, ne10, src1_s11, src1_s12, src1_s13, ne10_padded, ne11, ne12, ne13, stream);
         }
     }
