@@ -923,6 +923,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
             }
         }
     }
+#ifdef GGML_USE_HIP
+    if (K->ne[0] >= 576) {
+        return BEST_FATTN_KERNEL_NONE;
+    }
+#endif
     return BEST_FATTN_KERNEL_TILE;
 }
 
