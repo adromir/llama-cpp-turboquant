@@ -157,3 +157,4 @@ a.out.*
 AGENTS.local.md
 .pi/SYSTEM.md
 MEMORY.md
+docs/development/adaptive-kv-streaming-concept.md
