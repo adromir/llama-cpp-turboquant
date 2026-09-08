@@ -117,25 +117,21 @@ jobs:
         if (-not (Test-Path "C:\Program Files\OpenSSL-Win64") -and -not (Test-Path "C:\Program Files\OpenSSL")) {
             choco install openssl -y
         }
-        if (-not (Get-Command ccache -ErrorAction SilentlyContinue)) {
-            choco install ccache --no-progress
-        }
-
-    - name: Restore ccache
-      uses: actions/cache/restore@v4
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
       with:
-        path: .ccache
-        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-10.0.0
+        max-size: 3500M
 
     - name: Build llama.cpp (${{ matrix.flavor }})
       env:
-        CCACHE_DIR: ${{ github.workspace }}\.ccache
         CCACHE_COMPILERCHECK: string:rocm-10.0.0
-        CCACHE_BASEDIR: ${{ github.workspace }}
+        CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
+        CCACHE_NOHASHDIR: "true"
       run: |
-        ccache -z
+        $env:CCACHE_BASEDIR = ($env:GITHUB_WORKSPACE).Replace('\', '/')
+        Write-Host "ccache statistics before build:"
+        ccache -s
         $fso = New-Object -ComObject Scripting.FileSystemObject
         $RocmPath = "C:/TheRock/build"
         $ClangBin = "$RocmPath/lib/llvm/bin"
@@ -208,14 +204,8 @@ jobs:
         Write-Host "Building with $ParallelJobs parallel jobs (matching runner vCPUs to prevent RAM thrashing)..."
         & cmake --build . --config Release --parallel $ParallelJobs
         
-        ccache -s
-
-    - name: Save ccache directly after build
-      uses: actions/cache/save@v4
-      if: always()
-      with:
-        path: .ccache
-        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
+        Write-Host "ccache statistics after build:"
+        ccache -s -v
 
     - name: Archive build output
       run: |
@@ -290,23 +280,23 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake ninja-build ccache libcurl4-openssl-dev zip git libatomic1 libquadmath0
+        sudo apt-get install -y cmake ninja-build libcurl4-openssl-dev zip git libatomic1 libquadmath0
 
-    - name: Restore ccache
-      uses: actions/cache/restore@v4
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
       with:
-        path: .ccache
-        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-10.0.0
+        max-size: 3500M
 
     - name: Build llama.cpp (${{ matrix.flavor }})
       env:
-        CCACHE_DIR: ${{ github.workspace }}/.ccache
-        CCACHE_COMPILERCHECK: string:rocm-10.0.0
         CCACHE_BASEDIR: ${{ github.workspace }}
+        CCACHE_COMPILERCHECK: string:rocm-10.0.0
+        CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
+        CCACHE_NOHASHDIR: "true"
       run: |
-        ccache -z
+        echo "ccache statistics before build:"
+        ccache -s
         
         export ROCM_PATH=/opt/rocm
         export HIP_PATH=/opt/rocm
@@ -316,7 +306,7 @@ jobs:
         mkdir build
         cd build
         
-        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno -flto=thin"
+        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno"
         
         cmake -G "Ninja" \
           -DCMAKE_C_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang \
@@ -341,7 +331,8 @@ jobs:
           
         cmake --build . --config Release --parallel $(nproc)
         
-        ccache -s
+        echo "ccache statistics after build:"
+        ccache -s -v
 
     - name: Archive build output
       run: |
@@ -356,13 +347,6 @@ jobs:
 
         cd build/bin
         zip -r "../../${ZIP_NAME}" ./*
-
-    - name: Save ccache directly after build
-      uses: actions/cache/save@v4
-      if: always()
-      with:
-        path: .ccache
-        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-ccache-${{ github.run_id }}
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
