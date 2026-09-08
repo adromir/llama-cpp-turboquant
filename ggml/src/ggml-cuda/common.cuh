@@ -73,6 +73,7 @@ using block_rocmfp6_device = block_rocmfp6;
 #define GGML_CUDA_CC_VOLTA           700
 #define GGML_CUDA_CC_TURING          750
 #define GGML_CUDA_CC_AMPERE          800
+#define GGML_CUDA_CC_ORIN            870
 #define GGML_CUDA_CC_ADA_LOVELACE    890
 #define GGML_CUDA_CC_HOPPER          900
 // While BW spans CC 1000, 1100 & 1200, we are integrating Tensor Core instructions available to 1200 family, see
@@ -1222,6 +1223,7 @@ template<>
 struct ggml_cuda_type_traits<GGML_TYPE_F16> {
     static constexpr int qk = 1;
     static constexpr int qr = 1;
+    static constexpr int bs = sizeof(ggml_half);
 };
 
 template<>
@@ -1229,6 +1231,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q1_0> {
     static constexpr int qk = QK1_0;
     static constexpr int qr = QR1_0;
     static constexpr int qi = QI1_0;
+    static constexpr int bs = sizeof(block_q1_0);
 };
 
 template<>
@@ -1236,6 +1239,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q2_0> {
     static constexpr int qk = QK2_0;
     static constexpr int qr = QR2_0;
     static constexpr int qi = QI2_0;
+    static constexpr int bs = sizeof(block_q2_0);
 };
 
 template<>
@@ -1243,6 +1247,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q4_0> {
     static constexpr int qk = QK4_0;
     static constexpr int qr = QR4_0;
     static constexpr int qi = QI4_0;
+    static constexpr int bs = sizeof(block_q4_0);
 };
 
 template<>
@@ -1250,6 +1255,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q4_1> {
     static constexpr int qk = QK4_1;
     static constexpr int qr = QR4_1;
     static constexpr int qi = QI4_1;
+    static constexpr int bs = sizeof(block_q4_1);
 };
 
 template<>
@@ -1257,6 +1263,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q5_0> {
     static constexpr int qk = QK5_0;
     static constexpr int qr = QR5_0;
     static constexpr int qi = QI5_0;
+    static constexpr int bs = sizeof(block_q5_0);
 };
 
 template<>
@@ -1264,6 +1271,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q5_1> {
     static constexpr int qk = QK5_1;
     static constexpr int qr = QR5_1;
     static constexpr int qi = QI5_1;
+    static constexpr int bs = sizeof(block_q5_1);
 };
 
 template<>
@@ -1271,6 +1279,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q8_0> {
     static constexpr int qk = QK8_0;
     static constexpr int qr = QR8_0;
     static constexpr int qi = QI8_0;
+    static constexpr int bs = sizeof(block_q8_0);
 };
 
 template<>
@@ -1278,6 +1287,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_TQ4_1S> {
     static constexpr int qk = QK_TQ4_1S;
     static constexpr int qr = 1;              // QR_TQ4_1S
     static constexpr int qi = QK_TQ4_1S / 4;  // = QK/(4*QR): 8 int8-quads per block
+    static constexpr int bs = sizeof(block_tq4_1s);
 };
 
 template<>
@@ -1285,6 +1295,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_MXFP4> {
     static constexpr int qk = QK_MXFP4;
     static constexpr int qr = QR_MXFP4;
     static constexpr int qi = QI_MXFP4;
+    static constexpr int bs = sizeof(block_mxfp4);
 };
 
 template<>
@@ -1292,6 +1303,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_NVFP4> {
     static constexpr int qk = QK_NVFP4;
     static constexpr int qr = QR_NVFP4;
     static constexpr int qi = QI_NVFP4;
+    static constexpr int bs = sizeof(block_nvfp4);
 };
 
 template<>
@@ -1299,6 +1311,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q2_K> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR2_K;
     static constexpr int qi = QI2_K;
+    static constexpr int bs = sizeof(block_q2_K);
 };
 
 template<>
@@ -1306,6 +1319,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q3_K> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR3_K;
     static constexpr int qi = QI3_K;
+    static constexpr int bs = sizeof(block_q3_K);
 };
 
 template<>
@@ -1313,6 +1327,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q4_K> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR4_K;
     static constexpr int qi = QI4_K;
+    static constexpr int bs = sizeof(block_q4_K);
 };
 
 template<>
@@ -1320,6 +1335,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q5_K> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR5_K;
     static constexpr int qi = QI5_K;
+    static constexpr int bs = sizeof(block_q5_K);
 };
 
 template<>
@@ -1327,6 +1343,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q6_K> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR6_K;
     static constexpr int qi = QI6_K;
+    static constexpr int bs = sizeof(block_q6_K);
 };
 
 template<>
@@ -1334,6 +1351,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ2_XXS> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR2_XXS;
     static constexpr int qi = QI2_XXS;
+    static constexpr int bs = sizeof(block_iq2_xxs);
 };
 
 template<>
@@ -1341,6 +1359,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ2_XS> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR2_XS;
     static constexpr int qi = QI2_XS;
+    static constexpr int bs = sizeof(block_iq2_xs);
 };
 
 template<>
@@ -1348,6 +1367,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ2_S> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR2_S;
     static constexpr int qi = QI2_S;
+    static constexpr int bs = sizeof(block_iq2_s);
 };
 
 template<>
@@ -1355,6 +1375,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ3_XXS> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR3_XXS;
     static constexpr int qi = QI3_XXS;
+    static constexpr int bs = sizeof(block_iq3_xxs);
 };
 
 template<>
@@ -1362,6 +1383,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ1_S> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR1_S;
     static constexpr int qi = QI1_S;
+    static constexpr int bs = sizeof(block_iq1_s);
 };
 
 template<>
@@ -1369,6 +1391,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ1_M> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR1_M;
     static constexpr int qi = QI1_M;
+    static constexpr int bs = sizeof(block_iq1_m);
 };
 
 template<>
@@ -1376,6 +1399,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ4_NL> {
     static constexpr int qk = QK4_NL;
     static constexpr int qr = QR4_NL;
     static constexpr int qi = QI4_NL;
+    static constexpr int bs = sizeof(block_iq4_nl);
 };
 
 template<>
@@ -1383,6 +1407,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ4_XS> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR4_XS;
     static constexpr int qi = QI4_XS;
+    static constexpr int bs = sizeof(block_iq4_xs);
 };
 
 template<>
@@ -1390,6 +1415,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ3_S> {
     static constexpr int qk = QK_K;
     static constexpr int qr = QR3_S;
     static constexpr int qi = QI3_S;
+    static constexpr int bs = sizeof(block_iq3_s);
 };
 
 template<>
@@ -1397,6 +1423,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q4_0_ROCMFP4> {
     static constexpr int qk = QK_ROCMFP4;
     static constexpr int qr = QR_ROCMFP4;
     static constexpr int qi = QI_ROCMFP4;
+    static constexpr int bs = sizeof(block_rocmfp4);
 };
 
 template<>
@@ -1404,6 +1431,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q4_0_ROCMFP4_FAST> {
     static constexpr int qk = QK_ROCMFP4;
     static constexpr int qr = QR_ROCMFP4;
     static constexpr int qi = QI_ROCMFP4;
+    static constexpr int bs = sizeof(block_rocmfp4_fast);
 };
 
 template<>
@@ -1411,6 +1439,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q3_0_ROCMFPX> {
     static constexpr int qk = QK_ROCMFP3;
     static constexpr int qr = QR_ROCMFP3;
     static constexpr int qi = QI_ROCMFP3;
+    static constexpr int bs = sizeof(block_rocmfp3);
 };
 
 template<>
@@ -1418,6 +1447,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q2_0_ROCMFPX> {
     static constexpr int qk = QK_ROCMFP2;
     static constexpr int qr = QR_ROCMFP2;
     static constexpr int qi = QI_ROCMFP2;
+    static constexpr int bs = sizeof(block_rocmfp2);
 };
 
 template<>
@@ -1425,6 +1455,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q6_0_ROCMFPX> {
     static constexpr int qk = QK_ROCMFP6;
     static constexpr int qr = QR_ROCMFP6;
     static constexpr int qi = QI_ROCMFP6;
+    static constexpr int bs = sizeof(block_rocmfp6);
 };
 
 template<>
@@ -1432,6 +1463,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q8_0_ROCMFPX> {
     static constexpr int qk = QK_ROCMFP8;
     static constexpr int qr = QR_ROCMFP8;
     static constexpr int qi = QI_ROCMFP8;
+    static constexpr int bs = sizeof(block_rocmfp8);
 };
 
 template<>
@@ -1439,6 +1471,7 @@ struct ggml_cuda_type_traits<GGML_TYPE_Q4_0_ROCMI4> {
     static constexpr int qk = QK_ROCMI4;
     static constexpr int qr = QR_ROCMI4;
     static constexpr int qi = QI_ROCMI4;
+    static constexpr int bs = sizeof(block_rocmi4);
 };
 
 //////////////////////
