@@ -1679,10 +1679,14 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, 
         //   spills), J>=96 clean; J=96 measured best -> 96
         // - Q8_0/Q3_K (q8_0_q8_1_mma / q3_K_q8_1_mma): low register per
         //   accumulator; J=64 gives the best occupancy/compute balance -> 64
-        // Only applied on RDNA4: the vec_dot paths and register allocation
-        // differ on other arches, so leave the tile width uncapped there
-        // until validated (e.g. Strix Halo is RDNA3.5, gfx1151).
-        const int J_max_gate = GGML_CUDA_CC_IS_RDNA4(cc)
+        // Applied on RDNA4/RDNA3_5/RDNA3_0 (Strix Halo gfx1151 validation
+        // 2026-09-05 and RX 7900XTX gfx1100 validation 2026-09-05): the caps
+        // transfer - on gfx1151 uncapping regressed pp2048 ~1673->1111 and
+        // pp16384 ~1423->1334; on gfx1100 (Q3_K) uncapping (J=128) regressed
+        // pp2048 5405->4819 and pp16384 4487->4070 (below the 3-op fallback)
+        // and a Q3_K@96 probe (5094/4251) also lost to the cap 64, so no
+        // per-arch port tuning is needed for the fused MMQ.
+        const int J_max_gate = (GGML_CUDA_CC_IS_RDNA4(cc) || GGML_CUDA_CC_IS_RDNA3_5(cc) || GGML_CUDA_CC_IS_RDNA3_0(cc))
             ? (type == GGML_TYPE_Q6_K ? 64 :
                type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K ? 96 :
                type == GGML_TYPE_Q8_0 || type == GGML_TYPE_Q3_K ? 64 : 128)

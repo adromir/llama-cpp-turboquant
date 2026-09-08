@@ -4800,13 +4800,13 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
             // (n_tokens <= MMVQ_MAX_BATCH_SIZE) or F32/F16 src0. For the batched
             // quantized case the gate+up+GLU triple runs as separate ops; fuse it
             // into one MMQ kernel that reads both weight streams and applies the
-            // GLU epilogue. The J tile-width caps in mul_mat_q_switch_J are tuned
-            // on RDNA4 (gfx1201); on other arches (e.g. Strix Halo, RDNA3.5) the
-            // fused kernel is disabled until validated there.
+            // GLU epilogue. The J tile-width caps in mul_mat_q_switch_J are tuned on RDNA4,
+            // RDNA3.5 (Strix Halo gfx1151) and RDNA3.0 (RX 7900 XTX gfx1100).
             const bool moe_mmq_type = src0->type == GGML_TYPE_Q3_K || src0->type == GGML_TYPE_Q4_K ||
                                       src0->type == GGML_TYPE_Q5_K || src0->type == GGML_TYPE_Q8_0 ||
                                       src0->type == GGML_TYPE_Q6_K;
-            if (op == GGML_OP_MUL_MAT_ID && ids != nullptr && !disable_moe_mmq && GGML_CUDA_CC_IS_RDNA4(cc) && moe_mmq_type &&
+            if (op == GGML_OP_MUL_MAT_ID && ids != nullptr && !disable_moe_mmq &&
+                    (GGML_CUDA_CC_IS_RDNA4(cc) || GGML_CUDA_CC_IS_RDNA3_5(cc) || GGML_CUDA_CC_IS_RDNA3_0(cc)) && moe_mmq_type &&
                     ggml_cuda_should_use_mmq(src0->type, cc, src1->ne[2], /*n_experts=*/src0->ne[2])) {
                 ggml_cuda_mm_fusion_args_host fusion_data{};
                 fusion_data.gate      = gate->src[0];
