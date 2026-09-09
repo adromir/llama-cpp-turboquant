@@ -188,6 +188,20 @@ function Build-QuantizeArguments {
         FontFamily="Segoe UI" FontSize="13">
 
     <Window.Resources>
+        <!-- Fix ComboBox System Brushes for Dropdown Popup Contrast -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#20202A"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#F0F0F5"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2563EB"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
+
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="#1E1E28"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="BorderBrush" Value="#3B82F6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="#E0E0EB"/>
         </Style>
@@ -209,9 +223,25 @@ function Build-QuantizeArguments {
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="#22222C"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="#F0F0F5"/>
             <Setter Property="BorderBrush" Value="#383848"/>
             <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="#20202A"/>
+            <Setter Property="Foreground" Value="#F0F0F5"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#3B82F6"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#2563EB"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="#E0E0EB"/>
@@ -257,10 +287,10 @@ function Build-QuantizeArguments {
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Quantization Executable (llama-quantize.exe)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Quantization Executable (llama-quantize.exe)" FontWeight="SemiBold" Margin="0,0,0,6" ToolTip="Path to the llama-quantize binary that performs weight quantization"/>
                 
-                <TextBox Grid.Row="1" Grid.Column="0" Name="TxtExePath" Height="30" Margin="0,0,8,0"/>
-                <Button Grid.Row="1" Grid.Column="1" Name="BtnBrowseExe" Content="Browse..." Width="90" Height="30"/>
+                <TextBox Grid.Row="1" Grid.Column="0" Name="TxtExePath" Height="30" Margin="0,0,8,0" ToolTip="Full path to llama-quantize.exe binary"/>
+                <Button Grid.Row="1" Grid.Column="1" Name="BtnBrowseExe" Content="Browse..." Width="90" Height="30" ToolTip="Browse filesystem for llama-quantize.exe"/>
 
                 <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="LblExeStatus" Text="Searching for llama-quantize.exe..." FontSize="11" Foreground="#10B981" Margin="2,5,0,0"/>
             </Grid>
@@ -282,54 +312,54 @@ function Build-QuantizeArguments {
                 </Grid.ColumnDefinitions>
 
                 <!-- Source Model -->
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Model:" VerticalAlignment="Center" Margin="0,0,0,10"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Name="TxtSourceModel" Height="30" Margin="0,0,8,10"/>
-                <Button Grid.Row="0" Grid.Column="2" Name="BtnBrowseSource" Content="Browse..." Width="90" Height="30" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Model:" VerticalAlignment="Center" Margin="0,0,0,10" ToolTip="Path to input GGUF model (F16/BF16 or existing quantized model)"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Name="TxtSourceModel" Height="30" Margin="0,0,8,10" ToolTip="Input GGUF model path (typically unquantized F16/BF16, or Q8_0/Q4_K_M if requantizing)"/>
+                <Button Grid.Row="0" Grid.Column="2" Name="BtnBrowseSource" Content="Browse..." Width="90" Height="30" Margin="0,0,0,10" ToolTip="Browse filesystem for input GGUF model file"/>
 
                 <!-- Preset Selection -->
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Quant Preset:" VerticalAlignment="Center" Margin="0,0,0,10"/>
-                <ComboBox Grid.Row="1" Grid.Column="1" Name="CmbPreset" Height="30" Margin="0,0,8,10">
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Quant Preset:" VerticalAlignment="Center" Margin="0,0,0,10" ToolTip="Target quantization format (ROCmFP4, ROCmFPX, TurboQuant, or upstream standard)"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" Name="CmbPreset" Height="30" Margin="0,0,8,10" ToolTip="Select quantization preset format">
                     <!-- ROCmFP4 -->
-                    <ComboBoxItem Content="Q4_0_ROCMFP4_FAST - Fastest 4-Bit FP4 (Recommended)" Tag="Q4_0_ROCMFP4_FAST" IsSelected="True"/>
-                    <ComboBoxItem Content="Q4_0_ROCMFP4 - Standard 4-Bit FP4" Tag="Q4_0_ROCMFP4"/>
-                    <ComboBoxItem Content="Q4_0_ROCMFP4_COHERENT - Coherent 4-Bit FP4 (Higher Quality)" Tag="Q4_0_ROCMFP4_COHERENT"/>
-                    <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX - Tuned for Strix Point iGPU" Tag="Q4_0_ROCMFP4_STRIX"/>
-                    <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX_LEAN - Lean Strix Point Format" Tag="Q4_0_ROCMFP4_STRIX_LEAN"/>
+                    <ComboBoxItem Content="Q4_0_ROCMFP4_FAST - Fastest 4-Bit FP4 (Recommended)" Tag="Q4_0_ROCMFP4_FAST" IsSelected="True" ToolTip="4.25 bpw. Fastest 4-bit floating-point format for AMD RDNA3 and RDNA4 GPUs. Native single-scale speed layout."/>
+                    <ComboBoxItem Content="Q4_0_ROCMFP4 - Standard 4-Bit FP4" Tag="Q4_0_ROCMFP4" ToolTip="4.50 bpw. Standard ROCm FP4 format with UE4M3 dual scales. Balanced performance and quality."/>
+                    <ComboBoxItem Content="Q4_0_ROCMFP4_COHERENT - Coherent 4-Bit FP4 (Higher Quality)" Tag="Q4_0_ROCMFP4_COHERENT" ToolTip="4.70 bpw. Coherent 4-bit FP4 with Q6_K token embeddings for improved response coherence."/>
+                    <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX - Tuned for Strix Point iGPU" Tag="Q4_0_ROCMFP4_STRIX" ToolTip="~4.49 bpw. Optimized for AMD Strix Point / Strix Halo APUs (Zen 5 + RDNA 3.5 iGPU) with high-quality attention K/V recipe."/>
+                    <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX_LEAN - Lean Strix Point Format" Tag="Q4_0_ROCMFP4_STRIX_LEAN" ToolTip="~4.38 bpw. Lean variant for Strix Point iGPUs with Q5_K token embeddings to conserve memory."/>
                     <!-- ROCmFP3 -->
-                    <ComboBoxItem Content="Q3_0_ROCMFPX - 3-Bit FP3 (Fastest 3-Bit)" Tag="Q3_0_ROCMFPX"/>
-                    <ComboBoxItem Content="Q3_0_ROCMFPX_AGENT - 3-Bit FP3 Agent (Best with Imatrix)" Tag="Q3_0_ROCMFPX_AGENT"/>
+                    <ComboBoxItem Content="Q3_0_ROCMFPX - 3-Bit FP3 (Fastest 3-Bit)" Tag="Q3_0_ROCMFPX" ToolTip="3.50 bpw. 3-bit floating-point quantization for AMD GPUs with fast ROCm/Vulkan staging. Maximum VRAM savings."/>
+                    <ComboBoxItem Content="Q3_0_ROCMFPX_AGENT - 3-Bit FP3 Agent (Best with Imatrix)" Tag="Q3_0_ROCMFPX_AGENT" ToolTip="Agent/tool-call coherent 3-bit ROCmFPx routing. Best quality when paired with an importance matrix (imatrix)."/>
                     <!-- ROCmFP6 -->
-                    <ComboBoxItem Content="Q6_0_ROCMFPX - 6-Bit FP6 (High Precision)" Tag="Q6_0_ROCMFPX"/>
-                    <ComboBoxItem Content="Q6_0_ROCMFPX_AGENT - 6-Bit FP6 Agent (Near Lossless)" Tag="Q6_0_ROCMFPX_AGENT"/>
-                    <ComboBoxItem Content="Q6_0_ROCMFPX_LEAN - 6-Bit FP6 Lean" Tag="Q6_0_ROCMFPX_LEAN"/>
+                    <ComboBoxItem Content="Q6_0_ROCMFPX - 6-Bit FP6 (High Precision)" Tag="Q6_0_ROCMFPX" ToolTip="6.50 bpw. 6-bit floating-point format for high-precision inference with accelerated ROCm kernels."/>
+                    <ComboBoxItem Content="Q6_0_ROCMFPX_AGENT - 6-Bit FP6 Agent (Near Lossless)" Tag="Q6_0_ROCMFPX_AGENT" ToolTip="Agent/tool-call coherent 6-bit ROCmFPx routing. Near-lossless precision for complex reasoning."/>
+                    <ComboBoxItem Content="Q6_0_ROCMFPX_LEAN - 6-Bit FP6 Lean" Tag="Q6_0_ROCMFPX_LEAN" ToolTip="Size/speed-biased 6-bit ROCmFPx routing without heavy Q8 layer boosts."/>
                     <!-- ROCmFP8 -->
-                    <ComboBoxItem Content="Q8_0_ROCMFPX - 8-Bit FP8" Tag="Q8_0_ROCMFPX"/>
-                    <ComboBoxItem Content="Q8_0_ROCMFPX_AGENT - 8-Bit FP8 Agent" Tag="Q8_0_ROCMFPX_AGENT"/>
+                    <ComboBoxItem Content="Q8_0_ROCMFPX - 8-Bit FP8" Tag="Q8_0_ROCMFPX" ToolTip="8.25 bpw. 8-bit floating-point format with ROCm tensor acceleration. Reference-grade accuracy."/>
+                    <ComboBoxItem Content="Q8_0_ROCMFPX_AGENT - 8-Bit FP8 Agent" Tag="Q8_0_ROCMFPX_AGENT" ToolTip="Agent-guided 8-bit ROCmFPx format with critical tensor protection."/>
                     <!-- ROCm Integer -->
-                    <ComboBoxItem Content="Q4_0_ROCMI4 - 4-Bit Integer ROCm" Tag="Q4_0_ROCMI4"/>
+                    <ComboBoxItem Content="Q4_0_ROCMI4 - 4-Bit Integer ROCm" Tag="Q4_0_ROCMI4" ToolTip="4.25 bpw. Native signed-nibble 4-bit integer format without codebook for ROCm matrix cores."/>
                     <!-- TurboQuant Weights -->
-                    <ComboBoxItem Content="tq3_1s - TurboQuant 3-Bit (WHT-rotated Lloyd-Max)" Tag="tq3_1s"/>
-                    <ComboBoxItem Content="tq4_1s - TurboQuant 4-Bit (WHT-rotated Lloyd-Max)" Tag="tq4_1s"/>
+                    <ComboBoxItem Content="tq3_1s - TurboQuant 3-Bit (WHT-rotated Lloyd-Max)" Tag="tq3_1s" ToolTip="4.00 bpw. TurboQuant 3-bit weight format with Walsh-Hadamard rotation (WHT) and Lloyd-Max codebooks."/>
+                    <ComboBoxItem Content="tq4_1s - TurboQuant 4-Bit (WHT-rotated Lloyd-Max)" Tag="tq4_1s" ToolTip="5.00 bpw. TurboQuant 4-bit weight format with Walsh-Hadamard rotation (WHT) and Lloyd-Max codebooks."/>
                     <!-- Upstream Standard Formats -->
-                    <ComboBoxItem Content="Q4_K_M - Upstream 4-Bit K-Quant" Tag="Q4_K_M"/>
-                    <ComboBoxItem Content="Q5_K_M - Upstream 5-Bit K-Quant" Tag="Q5_K_M"/>
-                    <ComboBoxItem Content="Q6_K - Upstream 6-Bit K-Quant" Tag="Q6_K"/>
-                    <ComboBoxItem Content="Q8_0 - Upstream 8-Bit Standard" Tag="Q8_0"/>
-                    <ComboBoxItem Content="IQ3_S - Upstream 3-Bit I-Quant (Needs Imatrix)" Tag="IQ3_S"/>
+                    <ComboBoxItem Content="Q4_K_M - Upstream 4-Bit K-Quant" Tag="Q4_K_M" ToolTip="4.58 bpw. Upstream medium 4-bit K-quant with mixed tensor precision. Popular general-purpose format."/>
+                    <ComboBoxItem Content="Q5_K_M - Upstream 5-Bit K-Quant" Tag="Q5_K_M" ToolTip="5.33 bpw. Upstream medium 5-bit K-quant. High accuracy with moderate VRAM usage."/>
+                    <ComboBoxItem Content="Q6_K - Upstream 6-Bit K-Quant" Tag="Q6_K" ToolTip="6.14 bpw. Upstream 6-bit K-quant. Very close to F16 quality."/>
+                    <ComboBoxItem Content="Q8_0 - Upstream 8-Bit Standard" Tag="Q8_0" ToolTip="7.96 bpw. Upstream standard 8-bit quantization. Highest accuracy among standard integer quants."/>
+                    <ComboBoxItem Content="IQ3_S - Upstream 3-Bit I-Quant (Needs Imatrix)" Tag="IQ3_S" ToolTip="3.44 bpw. Upstream 3-bit importance matrix quant. Requires an imatrix file for acceptable quality."/>
                 </ComboBox>
                 <Button Grid.Row="1" Grid.Column="2" Name="BtnSuggestOutput" Content="Auto-Name" Width="90" Height="30" Margin="0,0,0,10" ToolTip="Regenerate output path based on source and preset"/>
 
                 <!-- Output Model -->
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Output Model:" VerticalAlignment="Center" Margin="0,0,0,10"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Name="TxtOutputModel" Height="30" Margin="0,0,8,10"/>
-                <Button Grid.Row="2" Grid.Column="2" Name="BtnBrowseOutput" Content="Save As..." Width="90" Height="30" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Output Model:" VerticalAlignment="Center" Margin="0,0,0,10" ToolTip="Destination path for the quantized GGUF file"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Name="TxtOutputModel" Height="30" Margin="0,0,8,10" ToolTip="Path where the quantized GGUF model will be saved"/>
+                <Button Grid.Row="2" Grid.Column="2" Name="BtnBrowseOutput" Content="Save As..." Width="90" Height="30" Margin="0,0,0,10" ToolTip="Choose destination path and filename for output GGUF"/>
 
                 <!-- Importance Matrix -->
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Imatrix (Optional):" VerticalAlignment="Center"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Name="TxtImatrix" Height="30" Margin="0,0,8,0"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Imatrix (Optional):" VerticalAlignment="Center" ToolTip="Importance matrix file to preserve accuracy in low-bit quants"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Name="TxtImatrix" Height="30" Margin="0,0,8,0" ToolTip="Optional importance matrix (.gguf or .dat). Greatly improves 3-bit and 4-bit quantization quality."/>
                 <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal">
-                    <Button Name="BtnBrowseImatrix" Content="Browse..." Width="70" Height="30" Margin="0,0,6,0"/>
-                    <Button Name="BtnCreateImatrix" Content="Generate..." Width="75" Height="30" Background="#0D9488" BorderBrush="#14B8A6" ToolTip="Calculate importance matrix from calibration text dataset using llama-imatrix"/>
+                    <Button Name="BtnBrowseImatrix" Content="Browse..." Width="70" Height="30" Margin="0,0,6,0" ToolTip="Select an existing importance matrix file"/>
+                    <Button Name="BtnCreateImatrix" Content="Generate..." Width="75" Height="30" Background="#0D9488" BorderBrush="#14B8A6" ToolTip="Calculate importance matrix from calibration text dataset using GPU-accelerated llama-imatrix"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -343,32 +373,42 @@ function Build-QuantizeArguments {
                     <ColumnDefinition Width="80"/>
                 </Grid.ColumnDefinitions>
 
-                <CheckBox Grid.Column="0" Name="ChkAllowRequantize" Content="Allow Requantize (--allow-requantize)" ToolTip="Check if source is already quantized (e.g. Q8_0 or Q4_K_M) rather than F16/BF16"/>
+                <CheckBox Grid.Column="0" Name="ChkAllowRequantize" Content="Allow Requantize (--allow-requantize)" ToolTip="Check if source is already quantized (e.g. Q8_0 or Q4_K_M) rather than F16/BF16. Requantization runs on CPU."/>
 
-                <TextBlock Grid.Column="1" Text="CPU Threads:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <ComboBox Grid.Column="2" Name="CmbThreads" Height="28">
-                    <ComboBoxItem Content="0 (Auto)" Tag="0" IsSelected="True"/>
-                    <ComboBoxItem Content="4" Tag="4"/>
-                    <ComboBoxItem Content="8" Tag="8"/>
-                    <ComboBoxItem Content="12" Tag="12"/>
-                    <ComboBoxItem Content="16" Tag="16"/>
-                    <ComboBoxItem Content="24" Tag="24"/>
-                    <ComboBoxItem Content="32" Tag="32"/>
+                <TextBlock Grid.Column="1" Text="CPU Threads:" VerticalAlignment="Center" Margin="0,0,8,0" ToolTip="Number of CPU worker threads (0 = auto-detect based on CPU cores)"/>
+                <ComboBox Grid.Column="2" Name="CmbThreads" Height="28" ToolTip="CPU threads to use for quantization (offline quantization runs on CPU)">
+                    <ComboBoxItem Content="0 (Auto)" Tag="0" IsSelected="True" ToolTip="Automatically detect and use all available CPU logical cores"/>
+                    <ComboBoxItem Content="4" Tag="4" ToolTip="Use 4 CPU threads"/>
+                    <ComboBoxItem Content="8" Tag="8" ToolTip="Use 8 CPU threads"/>
+                    <ComboBoxItem Content="12" Tag="12" ToolTip="Use 12 CPU threads"/>
+                    <ComboBoxItem Content="16" Tag="16" ToolTip="Use 16 CPU threads"/>
+                    <ComboBoxItem Content="24" Tag="24" ToolTip="Use 24 CPU threads"/>
+                    <ComboBoxItem Content="32" Tag="32" ToolTip="Use 32 CPU threads"/>
                 </ComboBox>
             </Grid>
         </Border>
 
         <!-- 5. Actions & Status -->
         <Grid Grid.Row="4" Margin="0,0,0,10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0" Name="LblStatus" Text="Ready" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#38BDF8"/>
-            <Button Grid.Column="1" Name="BtnCancel" Content="Cancel" Width="100" Height="34" Margin="0,0,10,0" IsEnabled="False" Background="#7F1D1D" BorderBrush="#991B1B"/>
-            <Button Grid.Column="2" Name="BtnStart" Content="Start Quantization" Width="160" Height="34" FontWeight="SemiBold" Background="#2563EB" BorderBrush="#3B82F6"/>
+            <TextBlock Grid.Row="0" Grid.Column="0" Name="LblStatus" Text="Ready" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#38BDF8" ToolTip="Current execution status"/>
+            <Button Grid.Row="0" Grid.Column="1" Name="BtnCancel" Content="Cancel" Width="100" Height="34" Margin="0,0,10,0" IsEnabled="False" Background="#7F1D1D" BorderBrush="#991B1B" ToolTip="Abort the active quantization process"/>
+            <Button Grid.Row="0" Grid.Column="2" Name="BtnStart" Content="Start Quantization" Width="160" Height="34" FontWeight="SemiBold" Background="#2563EB" BorderBrush="#3B82F6" ToolTip="Begin quantization with selected parameters"/>
+
+            <!-- Progress Bar & Indicator -->
+            <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,10,0,0">
+                <ProgressBar Name="PrgBar" Height="18" Minimum="0" Maximum="100" Value="0" Background="#1E1E28" Foreground="#3B82F6" BorderBrush="#383848" BorderThickness="1"/>
+                <TextBlock Name="LblProgressText" Text="Ready" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" Foreground="#F0F0F5" FontWeight="SemiBold"/>
+            </Grid>
         </Grid>
 
         <!-- 6. Log Output -->
@@ -405,6 +445,8 @@ $lblStatus            = $window.FindName("LblStatus")
 $btnStart             = $window.FindName("BtnStart")
 $btnCancel            = $window.FindName("BtnCancel")
 $txtLog               = $window.FindName("TxtLog")
+$prgBar               = $window.FindName("PrgBar")
+$lblProgressText      = $window.FindName("LblProgressText")
 
 # Store running process reference
 $script:RunningProcess = $null
@@ -543,10 +585,22 @@ function Show-ImatrixDialog {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Generate Importance Matrix (llama-imatrix)"
-        Width="720" Height="600" WindowStartupLocation="CenterOwner"
+        Width="740" Height="640" WindowStartupLocation="CenterOwner"
         Background="#191921" Foreground="#E2E8F0" FontFamily="Segoe UI"
         ResizeMode="CanResizeWithGrip">
     <Window.Resources>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#20202A"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#F0F0F5"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#0D9488"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="#1E1E28"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="BorderBrush" Value="#14B8A6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="#2A2A38"/>
             <Setter Property="Foreground" Value="#F8FAFC"/>
@@ -565,11 +619,12 @@ function Show-ImatrixDialog {
     </Window.Resources>
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/> <!-- 0: Title -->
+            <RowDefinition Height="Auto"/> <!-- 1: Files -->
+            <RowDefinition Height="Auto"/> <!-- 2: Config -->
+            <RowDefinition Height="Auto"/> <!-- 3: Actions -->
+            <RowDefinition Height="Auto"/> <!-- 4: Progress -->
+            <RowDefinition Height="*"/>    <!-- 5: Log Output -->
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Text="Importance Matrix Calculation (GPU Accelerated)" FontSize="16" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,12"/>
@@ -588,21 +643,21 @@ function Show-ImatrixDialog {
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="llama-imatrix:" VerticalAlignment="Center" Margin="0,0,0,8"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Name="DlgTxtBin" Height="28" Margin="0,0,8,8"/>
-                <Button Grid.Row="0" Grid.Column="2" Name="DlgBtnBrowseBin" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="llama-imatrix:" VerticalAlignment="Center" Margin="0,0,0,8" ToolTip="Path to llama-imatrix executable binary"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Name="DlgTxtBin" Height="28" Margin="0,0,8,8" ToolTip="Full path to llama-imatrix.exe"/>
+                <Button Grid.Row="0" Grid.Column="2" Name="DlgBtnBrowseBin" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8" ToolTip="Browse filesystem for llama-imatrix.exe"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Source Model:" VerticalAlignment="Center" Margin="0,0,0,8"/>
-                <TextBox Grid.Row="1" Grid.Column="1" Name="DlgTxtSource" Height="28" Margin="0,0,8,8"/>
-                <Button Grid.Row="1" Grid.Column="2" Name="DlgBtnBrowseSource" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Source Model:" VerticalAlignment="Center" Margin="0,0,0,8" ToolTip="Source GGUF model used to evaluate token activations"/>
+                <TextBox Grid.Row="1" Grid.Column="1" Name="DlgTxtSource" Height="28" Margin="0,0,8,8" ToolTip="Path to source model (unquantized F16/BF16 or high-precision quant)"/>
+                <Button Grid.Row="1" Grid.Column="2" Name="DlgBtnBrowseSource" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8" ToolTip="Browse filesystem for source GGUF model"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Calibration (.txt):" VerticalAlignment="Center" Margin="0,0,0,8"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Name="DlgTxtCalibration" Height="28" Margin="0,0,8,8"/>
-                <Button Grid.Row="2" Grid.Column="2" Name="DlgBtnBrowseCalibration" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Calibration (.txt):" VerticalAlignment="Center" Margin="0,0,0,8" ToolTip="Plain text training/calibration dataset file"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Name="DlgTxtCalibration" Height="28" Margin="0,0,8,8" ToolTip="Calibration dataset (.txt) containing diverse domain or conversational text"/>
+                <Button Grid.Row="2" Grid.Column="2" Name="DlgBtnBrowseCalibration" Content="Browse..." Width="80" Height="28" Margin="0,0,0,8" ToolTip="Select calibration text file (.txt)"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Output Matrix:" VerticalAlignment="Center"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Name="DlgTxtOutput" Height="28" Margin="0,0,8,0"/>
-                <Button Grid.Row="3" Grid.Column="2" Name="DlgBtnBrowseOutput" Content="Save As..." Width="80" Height="28"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Output Matrix:" VerticalAlignment="Center" ToolTip="Destination path for generated importance matrix file"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Name="DlgTxtOutput" Height="28" Margin="0,0,8,0" ToolTip="Output file path (.gguf) for importance matrix"/>
+                <Button Grid.Row="3" Grid.Column="2" Name="DlgBtnBrowseOutput" Content="Save As..." Width="80" Height="28" ToolTip="Choose destination path for the importance matrix"/>
             </Grid>
         </Border>
 
@@ -619,17 +674,17 @@ function Show-ImatrixDialog {
                     <ColumnDefinition Width="70"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="GPU Layers (-ngl):" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox Grid.Column="1" Name="DlgTxtNgl" Text="99" Height="28" Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="0" Text="GPU Layers (-ngl):" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Number of layers to offload to GPU/VRAM. 99 offloads all layers for maximum GPU acceleration."/>
+                <TextBox Grid.Column="1" Name="DlgTxtNgl" Text="99" Height="28" Margin="0,0,12,0" ToolTip="GPU layer offload count (-ngl). Use 99 for full GPU offload."/>
 
-                <TextBlock Grid.Column="2" Text="Context (-c):" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox Grid.Column="3" Name="DlgTxtContext" Text="2048" Height="28" Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="2" Text="Context (-c):" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Context window length (-c) for processing tokens during calibration"/>
+                <TextBox Grid.Column="3" Name="DlgTxtContext" Text="2048" Height="28" Margin="0,0,12,0" ToolTip="Context window length (default: 2048)"/>
 
-                <TextBlock Grid.Column="4" Text="Chunks:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox Grid.Column="5" Name="DlgTxtChunks" Text="64" Height="28" Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="4" Text="Chunks:" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Number of text chunks to process from the dataset"/>
+                <TextBox Grid.Column="5" Name="DlgTxtChunks" Text="64" Height="28" Margin="0,0,12,0" ToolTip="Calibration chunk count (default: 64; higher increases accuracy but takes longer)"/>
 
-                <TextBlock Grid.Column="6" Text="Threads:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox Grid.Column="7" Name="DlgTxtThreads" Text="0" Height="28"/>
+                <TextBlock Grid.Column="6" Text="Threads:" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="CPU threads to use during imatrix computation (0 = auto)"/>
+                <TextBox Grid.Column="7" Name="DlgTxtThreads" Text="0" Height="28" ToolTip="Thread count (-t); 0 for automatic CPU core detection"/>
             </Grid>
         </Border>
 
@@ -640,13 +695,19 @@ function Show-ImatrixDialog {
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Name="DlgLblStatus" Text="Ready to compute importance matrix" VerticalAlignment="Center" Foreground="#38BDF8" FontWeight="SemiBold"/>
-            <Button Grid.Column="1" Name="DlgBtnCancel" Content="Abort" Width="80" Height="32" Margin="0,0,8,0" Background="#7F1D1D" BorderBrush="#991B1B" IsEnabled="False"/>
-            <Button Grid.Column="2" Name="DlgBtnStart" Content="Start Calculation" Width="130" Height="32" Margin="0,0,8,0" Background="#0D9488" BorderBrush="#14B8A6" FontWeight="SemiBold"/>
-            <Button Grid.Column="3" Name="DlgBtnApply" Content="Apply &amp; Close" Width="110" Height="32" Background="#2563EB" BorderBrush="#3B82F6" IsEnabled="False"/>
+            <TextBlock Grid.Column="0" Name="DlgLblStatus" Text="Ready to compute importance matrix" VerticalAlignment="Center" Foreground="#38BDF8" FontWeight="SemiBold" ToolTip="Status of importance matrix calculation"/>
+            <Button Grid.Column="1" Name="DlgBtnCancel" Content="Abort" Width="80" Height="32" Margin="0,0,8,0" Background="#7F1D1D" BorderBrush="#991B1B" IsEnabled="False" ToolTip="Abort running imatrix calculation"/>
+            <Button Grid.Column="2" Name="DlgBtnStart" Content="Start Calculation" Width="130" Height="32" Margin="0,0,8,0" Background="#0D9488" BorderBrush="#14B8A6" FontWeight="SemiBold" ToolTip="Start GPU-accelerated importance matrix calculation"/>
+            <Button Grid.Column="3" Name="DlgBtnApply" Content="Apply &amp; Close" Width="110" Height="32" Background="#2563EB" BorderBrush="#3B82F6" IsEnabled="False" ToolTip="Set generated matrix as active imatrix and close dialog"/>
         </Grid>
 
-        <Border Grid.Row="4" Background="#14141B" CornerRadius="6" BorderBrush="#2D2D3B" BorderThickness="1" Padding="8">
+        <!-- 4. Progress Bar -->
+        <Grid Grid.Row="4" Margin="0,0,0,8">
+            <ProgressBar Name="DlgPrgBar" Height="16" Minimum="0" Maximum="100" Value="0" Background="#1E1E28" Foreground="#0D9488" BorderBrush="#2D2D3B" BorderThickness="1"/>
+            <TextBlock Name="DlgLblProgressText" Text="Ready" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="#F0F0F5" FontWeight="SemiBold"/>
+        </Grid>
+
+        <Border Grid.Row="5" Background="#14141B" CornerRadius="6" BorderBrush="#2D2D3B" BorderThickness="1" Padding="8">
             <TextBox Name="DlgTxtLog" Background="Transparent" Foreground="#E2E8F0" BorderThickness="0"
                      FontFamily="Consolas, Courier New, monospace" FontSize="11"
                      IsReadOnly="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
@@ -678,6 +739,8 @@ function Show-ImatrixDialog {
     $dlgBtnStart = $dialog.FindName("DlgBtnStart")
     $dlgBtnApply = $dialog.FindName("DlgBtnApply")
     $dlgTxtLog = $dialog.FindName("DlgTxtLog")
+    $dlgPrgBar = $dialog.FindName("DlgPrgBar")
+    $dlgLblProgressText = $dialog.FindName("DlgLblProgressText")
 
     $dlgTxtBin.Text = $defaultImatrixBin
     $dlgTxtSource.Text = $CurrentSource
@@ -746,6 +809,8 @@ function Show-ImatrixDialog {
             try { $dlgRunningProcess.Kill() } catch { }
             $dlgLblStatus.Text = "Calculation aborted."
             $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+            $dlgPrgBar.Value = 0
+            $dlgLblProgressText.Text = "Aborted"
             $dlgBtnStart.IsEnabled = $true
             $dlgBtnCancel.IsEnabled = $false
         }
@@ -808,6 +873,10 @@ function Show-ImatrixDialog {
         $dlgBtnApply.IsEnabled = $false
         $dlgLblStatus.Text = "Calculating importance matrix..."
         $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Yellow
+        $dlgPrgBar.Minimum = 0
+        $dlgPrgBar.Maximum = 100
+        $dlgPrgBar.Value = 0
+        $dlgLblProgressText.Text = "Starting computation..."
 
         $dlgTxtLog.Clear()
         $dlgTxtLog.AppendText("==================================================`r`n")
@@ -837,9 +906,17 @@ function Show-ImatrixDialog {
         $dlgOutputHandler = {
             param($sender, $e)
             if ($e.Data) {
+                $line = $e.Data
                 $dlgTxtLog.Dispatcher.Invoke([Action]{
-                    $dlgTxtLog.AppendText($e.Data + "`r`n")
+                    $dlgTxtLog.AppendText($line + "`r`n")
                     $dlgTxtLog.ScrollToEnd()
+
+                    if ($line -match 'computing over\s+(\d+)\s+chunks') {
+                        $totChunks = [int]$Matches[1]
+                        $dlgPrgBar.Maximum = $totChunks
+                        $dlgPrgBar.Value = 0
+                        $dlgLblProgressText.Text = "0 / $totChunks chunks (0%)"
+                    }
                 })
             }
         }
@@ -857,12 +934,15 @@ function Show-ImatrixDialog {
                     $dlgTxtLog.AppendText("Created: $out ($mb MB)`r`n")
                     $dlgLblStatus.Text = "Finished: $mb MB generated"
                     $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
+                    $dlgPrgBar.Value = $dlgPrgBar.Maximum
+                    $dlgLblProgressText.Text = "100% Complete"
                     $script:GeneratedImatrixResult = $out
                     $dlgBtnApply.IsEnabled = $true
                 } else {
                     $dlgTxtLog.AppendText("[ERROR] Calculation failed with exit code $exitCode.`r`n")
                     $dlgLblStatus.Text = "Failed with exit code $exitCode"
                     $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+                    $dlgLblProgressText.Text = "Failed"
                 }
                 $dlgBtnStart.IsEnabled = $true
                 $dlgBtnCancel.IsEnabled = $false
@@ -877,6 +957,7 @@ function Show-ImatrixDialog {
             $dlgTxtLog.AppendText("[ERROR] Failed to start process: $($_.Exception.Message)`r`n")
             $dlgLblStatus.Text = "Execution failed"
             $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+            $dlgLblProgressText.Text = "Failed"
             $dlgBtnStart.IsEnabled = $true
             $dlgBtnCancel.IsEnabled = $false
         }
@@ -914,6 +995,8 @@ $btnCancel.Add_Click({
         }
         $lblStatus.Text = "Cancelled"
         $lblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+        $prgBar.Value = 0
+        $lblProgressText.Text = "Cancelled"
         $btnStart.IsEnabled = $true
         $btnCancel.IsEnabled = $false
     }
@@ -965,6 +1048,10 @@ $btnStart.Add_Click({
     $btnCancel.IsEnabled = $true
     $lblStatus.Text = "Quantizing to $preset..."
     $lblStatus.Foreground = [System.Windows.Media.Brushes]::Yellow
+    $prgBar.Minimum = 0
+    $prgBar.Maximum = 100
+    $prgBar.Value = 0
+    $lblProgressText.Text = "Starting..."
     $txtLog.Clear()
     $txtLog.AppendText("==================================================`r`n")
     $txtLog.AppendText(" ROCmFPX & TurboQuant Model Quantizer`r`n")
@@ -994,9 +1081,23 @@ $btnStart.Add_Click({
     $outputHandler = {
         param($sender, $e)
         if ($e.Data) {
+            $line = $e.Data
             $txtLog.Dispatcher.Invoke([Action]{
-                $txtLog.AppendText($e.Data + "`r`n")
+                $txtLog.AppendText($line + "`r`n")
                 $txtLog.ScrollToEnd()
+
+                # Parse [   1/ 291] tensor progress
+                if ($line -match '\[\s*(\d+)\s*/\s*(\d+)\s*\]') {
+                    $curTensor = [int]$Matches[1]
+                    $totTensors = [int]$Matches[2]
+                    if ($totTensors -gt 0) {
+                        $pct = [math]::Round(($curTensor / $totTensors) * 100)
+                        $prgBar.Maximum = $totTensors
+                        $prgBar.Value = $curTensor
+                        $lblProgressText.Text = "$pct% ($curTensor / $totTensors tensors)"
+                        $lblStatus.Text = "Quantizing: $pct% ($curTensor/$totTensors)"
+                    }
+                }
             })
         }
     }
@@ -1016,10 +1117,13 @@ $btnStart.Add_Click({
                 $txtLog.AppendText("File: $output ($sizeMB MB)`r`n")
                 $lblStatus.Text = "Finished: $sizeMB MB created"
                 $lblStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
+                $prgBar.Value = $prgBar.Maximum
+                $lblProgressText.Text = "100% Complete"
             } else {
                 $txtLog.AppendText("[ERROR] Process exited with code: $exitCode`r`n")
                 $lblStatus.Text = "Failed (Exit code: $exitCode)"
                 $lblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+                $lblProgressText.Text = "Failed"
             }
             $btnStart.IsEnabled = $true
             $btnCancel.IsEnabled = $false
@@ -1037,6 +1141,7 @@ $btnStart.Add_Click({
             $btnCancel.IsEnabled = $false
             $lblStatus.Text = "Start Failed"
             $lblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+            $lblProgressText.Text = "Failed"
         }
     } catch {
         $txtLog.AppendText("[EXCEPTION] $($_.Exception.Message)`r`n")
@@ -1044,6 +1149,7 @@ $btnStart.Add_Click({
         $btnCancel.IsEnabled = $false
         $lblStatus.Text = "Exception"
         $lblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+        $lblProgressText.Text = "Exception"
     }
 })
 

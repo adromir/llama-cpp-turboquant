@@ -405,14 +405,14 @@ jobs:
         mkdir -p staging-win/scripts staging-linux/scripts
 
         # Windows package (PowerShell scripts + Python policies)
-        cp scripts/*.ps1 staging-win/scripts/ 2>/dev/null || true
-        cp scripts/*.bat staging-win/scripts/ 2>/dev/null || true
-        cp scripts/*.py staging-win/scripts/ 2>/dev/null || true
+        cp scripts/quantize-rocmfpx*.ps1 staging-win/scripts/ 2>/dev/null || true
+        cp scripts/rocmfpx-ranked-policy.py staging-win/scripts/ 2>/dev/null || true
         (cd staging-win && zip -r ../llama-rocm-experimental-scripts-windows.zip scripts/)
 
         # Linux package (Bash scripts + Python policies)
-        cp scripts/*.sh staging-linux/scripts/ 2>/dev/null || true
-        cp scripts/*.py staging-linux/scripts/ 2>/dev/null || true
+        cp scripts/quantize-rocmfpx*.sh staging-linux/scripts/ 2>/dev/null || true
+        cp scripts/rocmfpx-lib.sh staging-linux/scripts/ 2>/dev/null || true
+        cp scripts/rocmfpx-ranked-policy.py staging-linux/scripts/ 2>/dev/null || true
         (cd staging-linux && zip -r ../llama-rocm-experimental-scripts-linux.zip scripts/)
 
     - name: Create Release
