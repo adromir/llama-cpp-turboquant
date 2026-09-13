@@ -1521,7 +1521,7 @@ static void mul_mat_vec_q_switch_ncols_dst(
                     // (pre-block-13 geometry) instead.
                     constexpr int c_ncols_dst = 1;
                     if (table_id >= MMVQ_PARAMETERS_RDNA2) {
-                        if (ncols_x >= 4096) {
+                        if (!has_ids || ncols_x >= 4096) {
                             std::pair<dim3, dim3> dims = calc_launch_params<type>(c_ncols_dst, nrows_x, nchannels_dst, nsamples_dst, warp_size, table_id);
                             mul_mat_vec_q_switch_fusion_ksplit<type, c_ncols_dst>(
                                 vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,

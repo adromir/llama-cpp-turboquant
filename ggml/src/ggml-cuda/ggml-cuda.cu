@@ -1145,8 +1145,9 @@ struct ggml_backend_cuda_comm_context {
 // Shared size heuristic: tensors below these element counts are latency-bound
 // (token generation), above them bandwidth-bound (prefill).  The internal
 // host-staged pipeline wins on latency; NCCL/RCCL P2P wins on bandwidth.
+// Speculative verify batches (up to 25 tokens for ne0=5120) stay below 131072.
 static bool ggml_backend_cuda_comm_is_small(int64_t ne, size_t n_backends) {
-    return (n_backends <= 2 && ne < 32768) ||
+    return (n_backends <= 2 && ne < 131072) ||
            (n_backends == 3 && ne < 131072) ||
            (n_backends >= 4 && ne < 262144);
 }
@@ -5144,6 +5145,17 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
 
         // the add reads the matmul output directly, or through the view
         ggml_tensor * mm_or_view = has_view ? cgraph->nodes[i + 1] : mm_node;
+
+        // Require the destination to satisfy the same constraint the kernels
+        // assert before fusing through a view.  The single-sequence case is
+        // unaffected.  (PR #15 / DanoPTT.)
+        if (has_view) {
+            const ggml_tensor * ids_node = mm_node->src[2];
+            if (( ids_node && bias_node->ne[2] != 1) ||
+                (!ids_node && bias_node->ne[1] != 1)) {
+                continue;
+            }
+        }
 
         ggml_tensor * bias_tensor = nullptr;
         if (bias_op == GGML_OP_ADD) {
