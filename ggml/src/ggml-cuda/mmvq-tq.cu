@@ -10,7 +10,10 @@
 #include "convert.cuh"
 #include "mmq.cuh"
 
-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+#if defined(GGML_USE_HIP)
+#define GGML_CUDA_USE_WMMA
+#include "mma.cuh"
+#elif !defined(GGML_USE_MUSA)
 #define GGML_CUDA_USE_WMMA
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
 #include <mma.h>
@@ -145,7 +148,6 @@ static __global__ void tq_prerotate_activation(
     dst[offset] = val;
 }
 
-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 static __device__ __forceinline__ float tq3_cent_reg(uint32_t idx) {
     switch (idx & 7u) {
         case 0: return -1.996684f;
@@ -159,7 +161,6 @@ static __device__ __forceinline__ float tq3_cent_reg(uint32_t idx) {
         default: return 0.0f;
     }
 }
-#endif
 
 static __device__ __forceinline__ uint32_t tq3_extract_index_fast(const uint8_t * __restrict__ qs, int lane) {
     const int group = lane >> 3;
@@ -405,8 +406,6 @@ static void launch_tq3_1s_multi(
 // WMMA needs sm_70+; older arches get NO_DEVICE_CODE stubs
 // ============================================================================
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
-
 static __device__ __forceinline__ float tq4_cent_float(uint32_t idx) {
     switch (idx & 0xFu) {
         case 0:  return -2.732590f;
@@ -428,6 +427,198 @@ static __device__ __forceinline__ float tq4_cent_float(uint32_t idx) {
         default: return  0.0f;
     }
 }
+
+#if defined(GGML_USE_HIP) && defined(AMD_WMMA_AVAILABLE)
+
+typedef tile<16, 8, half2, get_input_data_layout()> tq_tile_A;
+typedef tile<16, 8, half2, get_input_data_layout()> tq_tile_B;
+typedef tile<16, 16, float, DATA_LAYOUT_J_MAJOR>    tq_tile_C;
+
+template <int NWARPS>
+static __global__ void mul_mat_tq4_1s_wmma_kernel(
+        const void  * __restrict__ vx,
+        const float * __restrict__ vy_rot,
+        float       * __restrict__ dst,
+        const int ncols_x,
+        const int nrows_x,
+        const int ncols_dst,
+        const int stride_col_y,
+        const int stride_col_dst) {
+
+    const int warp_id = threadIdx.x / 32;
+    const int lane    = threadIdx.x % 32;
+
+    const int warp_id_in_grid_m = blockIdx.y * NWARPS + warp_id;
+    const int warp_id_in_grid_n = blockIdx.x;
+
+    const int m_base = warp_id_in_grid_m * WMMA_M;
+    const int n_base = warp_id_in_grid_n * WMMA_N;
+
+    if (m_base >= nrows_x || n_base >= ncols_dst) return;
+
+    __shared__ half2 sh_a[NWARPS][16][8];
+    __shared__ half2 sh_b[NWARPS][16][8];
+
+    tq_tile_C frag_c;
+
+    const int blocks_per_row = ncols_x / QK_TQ4_1S;
+
+    for (int k_outer = 0; k_outer < ncols_x; k_outer += WMMA_K) {
+        const int elem_idx = lane * 8;
+        #pragma unroll
+        for (int e = 0; e < 8; e++) {
+            const int flat = elem_idx + e;
+            const int r_local = flat / WMMA_K;
+            const int k_local = flat % WMMA_K;
+            const int r_global = m_base + r_local;
+            const int k_global = k_outer + k_local;
+
+            if (r_global < nrows_x && k_global < ncols_x) {
+                const int ib = k_global / QK_TQ4_1S;
+                const int lane_in_blk = k_global % QK_TQ4_1S;
+                const block_tq4_1s * blk = ((const block_tq4_1s *)vx) + (int64_t)r_global * blocks_per_row + ib;
+
+                const float d = (lane_in_blk < 16) ? __half2float(blk->d0) : __half2float(blk->d1);
+                const uint8_t idx = (blk->qs[lane_in_blk / 2] >> ((lane_in_blk & 1) * 4)) & 0xFu;
+                ((half *)&sh_a[warp_id][0][0])[r_local * 16 + k_local] = __float2half(tq4_cent_float(idx) * d);
+            } else {
+                ((half *)&sh_a[warp_id][0][0])[r_local * 16 + k_local] = __float2half(0.0f);
+            }
+        }
+
+        #pragma unroll
+        for (int e = 0; e < 8; e++) {
+            const int flat = elem_idx + e;
+            const int n_local = flat / WMMA_K;
+            const int k_local = flat % WMMA_K;
+            const int n_global = n_base + n_local;
+            const int k_global = k_outer + k_local;
+
+            if (n_global < ncols_dst && k_global < ncols_x) {
+                const float act = vy_rot[n_global * stride_col_y + k_global];
+                ((half *)&sh_b[warp_id][0][0])[n_local * 16 + k_local] = __float2half(act);
+            } else {
+                ((half *)&sh_b[warp_id][0][0])[n_local * 16 + k_local] = __float2half(0.0f);
+            }
+        }
+
+        ggml_cuda_syncwarp();
+
+        tq_tile_A frag_a;
+        tq_tile_B frag_b;
+        load_ldmatrix(frag_a, &sh_a[warp_id][0][0], 8);
+        load_ldmatrix(frag_b, &sh_b[warp_id][0][0], 8);
+
+        mma(frag_c, frag_a, frag_b);
+    }
+
+    #pragma unroll
+    for (int l = 0; l < tq_tile_C::ne; ++l) {
+        const int r_local  = tq_tile_C::get_i(l);
+        const int n_local  = tq_tile_C::get_j(l);
+        const int r_global = m_base + r_local;
+        const int n_global = n_base + n_local;
+
+        if (r_global < nrows_x && n_global < ncols_dst) {
+            dst[n_global * stride_col_dst + r_global] = frag_c.x[l];
+        }
+    }
+}
+
+template <int NWARPS>
+static __global__ void mul_mat_tq3_1s_wmma_kernel(
+        const void  * __restrict__ vx,
+        const float * __restrict__ vy_rot,
+        float       * __restrict__ dst,
+        const int ncols_x,
+        const int nrows_x,
+        const int ncols_dst,
+        const int stride_col_y,
+        const int stride_col_dst) {
+
+    const int warp_id = threadIdx.x / 32;
+    const int lane    = threadIdx.x % 32;
+
+    const int warp_id_in_grid_m = blockIdx.y * NWARPS + warp_id;
+    const int warp_id_in_grid_n = blockIdx.x;
+
+    const int m_base = warp_id_in_grid_m * WMMA_M;
+    const int n_base = warp_id_in_grid_n * WMMA_N;
+
+    if (m_base >= nrows_x || n_base >= ncols_dst) return;
+
+    __shared__ half2 sh_a[NWARPS][16][8];
+    __shared__ half2 sh_b[NWARPS][16][8];
+
+    tq_tile_C frag_c;
+
+    const int blocks_per_row = ncols_x / QK_TQ3_0;
+
+    for (int k_outer = 0; k_outer < ncols_x; k_outer += WMMA_K) {
+        const int elem_idx = lane * 8;
+        #pragma unroll
+        for (int e = 0; e < 8; e++) {
+            const int flat = elem_idx + e;
+            const int r_local = flat / WMMA_K;
+            const int k_local = flat % WMMA_K;
+            const int r_global = m_base + r_local;
+            const int k_global = k_outer + k_local;
+
+            if (r_global < nrows_x && k_global < ncols_x) {
+                const int ib = k_global / QK_TQ3_0;
+                const int lane_in_blk = k_global % QK_TQ3_0;
+                const block_tq3_1s * blk = ((const block_tq3_1s *)vx) + (int64_t)r_global * blocks_per_row + ib;
+
+                const float d = (lane_in_blk < 16) ? __half2float(blk->d0) : __half2float(blk->d1);
+                const uint32_t idx = tq3_extract_index_fast(blk->qs, lane_in_blk);
+                ((half *)&sh_a[warp_id][0][0])[r_local * 16 + k_local] = __float2half(tq3_cent_reg(idx) * d);
+            } else {
+                ((half *)&sh_a[warp_id][0][0])[r_local * 16 + k_local] = __float2half(0.0f);
+            }
+        }
+
+        #pragma unroll
+        for (int e = 0; e < 8; e++) {
+            const int flat = elem_idx + e;
+            const int n_local = flat / WMMA_K;
+            const int k_local = flat % WMMA_K;
+            const int n_global = n_base + n_local;
+            const int k_global = k_outer + k_local;
+
+            if (n_global < ncols_dst && k_global < ncols_x) {
+                const float act = vy_rot[n_global * stride_col_y + k_global];
+                ((half *)&sh_b[warp_id][0][0])[n_local * 16 + k_local] = __float2half(act);
+            } else {
+                ((half *)&sh_b[warp_id][0][0])[n_local * 16 + k_local] = __float2half(0.0f);
+            }
+        }
+
+        ggml_cuda_syncwarp();
+
+        tq_tile_A frag_a;
+        tq_tile_B frag_b;
+        load_ldmatrix(frag_a, &sh_a[warp_id][0][0], 8);
+        load_ldmatrix(frag_b, &sh_b[warp_id][0][0], 8);
+
+        mma(frag_c, frag_a, frag_b);
+    }
+
+    #pragma unroll
+    for (int l = 0; l < tq_tile_C::ne; ++l) {
+        const int r_local  = tq_tile_C::get_i(l);
+        const int n_local  = tq_tile_C::get_j(l);
+        const int r_global = m_base + r_local;
+        const int n_global = n_base + n_local;
+
+        if (r_global < nrows_x && n_global < ncols_dst) {
+            dst[n_global * stride_col_dst + r_global] = frag_c.x[l];
+        }
+    }
+}
+
+#elif !defined(GGML_USE_HIP) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
+
+
 
 template <int NWARPS>
 static __global__ void mul_mat_tq4_1s_wmma_kernel(
@@ -655,7 +846,7 @@ static __global__ void mul_mat_tq3_1s_wmma_kernel(
     NO_DEVICE_CODE;
 }
 
-#endif // defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
+#endif // (defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA) || defined(AMD_WMMA_AVAILABLE)
 
 static void launch_tq4_1s_wmma(
         const void * src0_d, const float * act_buf,
