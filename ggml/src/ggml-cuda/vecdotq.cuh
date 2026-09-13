@@ -480,6 +480,24 @@ static __device__ __forceinline__ int rocmfpx_pack4_fp6_bits24_vec_cuda(const ui
     return *((const int *) &v);
 }
 
+static __device__ __forceinline__ int rocmfpx_pack4_fp3_from_bits12(const uint32_t bits12) {
+#if defined(GGML_USE_HIP)
+    const uint32_t s0 = bits12 & 7u;
+    const uint32_t s1 = (bits12 >> 3) & 7u;
+    const uint32_t s2 = (bits12 >> 6) & 7u;
+    const uint32_t s3 = (bits12 >> 9) & 7u;
+    const uint32_t sel = s0 | (s1 << 8) | (s2 << 16) | (s3 << 24);
+    return __builtin_amdgcn_perm(0xfcfeff00u, 0x04020100u, sel);
+#else
+    const char4 v = make_char4(
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(bits12 & 7u),
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((bits12 >> 3) & 7u),
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((bits12 >> 6) & 7u),
+        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((bits12 >> 9) & 7u));
+    return *((const int *) &v);
+#endif
+}
+
 static __device__ __forceinline__ int rocmfpx_pack4_fp3_vec_cuda(const uint8_t * qs, const int base) {
     const int quad = base >> 2;
     const int start_byte = (quad >> 1) * 3 + (quad & 1);
@@ -487,12 +505,7 @@ static __device__ __forceinline__ int rocmfpx_pack4_fp3_vec_cuda(const uint8_t *
     uint16_t raw;
     memcpy(&raw, qs + start_byte, sizeof(raw));
     const uint32_t b12 = (raw >> bit_shift) & 0xFFFu;
-    const char4 v = make_char4(
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda(b12 & 7u),
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((b12 >> 3) & 7u),
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((b12 >> 6) & 7u),
-        (int8_t) rocmfpx_decode_fp3_code_vec_cuda((b12 >> 9) & 7u));
-    return *((const int *) &v);
+    return rocmfpx_pack4_fp3_from_bits12(b12);
 }
 
 static __device__ __forceinline__ int rocmfpx_pack4_fp6_vec_cuda(const uint8_t * qs, const int base) {
@@ -622,12 +635,7 @@ static __device__ __forceinline__ float vec_dot_rocmfpx_fp3_q8_1(
         const uint32_t val_high = qs[reg_idx + 1];
         const uint32_t bits12 = (reg_shift == 0) ? (val_low & 0xFFFu) : (((val_low >> reg_shift) | (val_high << (32 - reg_shift))) & 0xFFFu);
 
-        const char4 v = make_char4(
-            (int8_t) rocmfpx_decode_fp3_code_vec_cuda(bits12 & 7u),
-            (int8_t) rocmfpx_decode_fp3_code_vec_cuda((bits12 >> 3) & 7u),
-            (int8_t) rocmfpx_decode_fp3_code_vec_cuda((bits12 >> 6) & 7u),
-            (int8_t) rocmfpx_decode_fp3_code_vec_cuda((bits12 >> 9) & 7u));
-        const int val_packed = *((const int *) &v);
+        const int val_packed = rocmfpx_pack4_fp3_from_bits12(bits12);
 
         const int u = get_int_b4(bq8_1->qs, iqs + i);
 
