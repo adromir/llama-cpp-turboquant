@@ -101,7 +101,7 @@ static __device__ __forceinline__ float vec_dot_fattn_vec_KQ_f16(
 #pragma unroll
     for (int k_KQ_0 = 0; k_KQ_0 < D/2; k_KQ_0 += nthreads*cpy_ne) {
         __align__(16) half2 tmp[cpy_ne];
-        ggml_cuda_memcpy_1<sizeof(tmp)>(tmp, K_h2 + k_KQ_0 + (threadIdx.x % nthreads)*cpy_ne);
+        ggml_cuda_memcpy_streaming<sizeof(tmp)>(tmp, K_h2 + k_KQ_0 + (threadIdx.x % nthreads)*cpy_ne);
 #pragma unroll
         for (int k_KQ_1 = 0; k_KQ_1 < cpy_ne; ++k_KQ_1) {
 #ifdef V_DOT2_F32_F16_AVAILABLE
@@ -131,7 +131,7 @@ static __device__ __forceinline__ float vec_dot_fattn_vec_KQ_bf16(
 #pragma unroll
     for (int k_KQ_0 = 0; k_KQ_0 < D/2; k_KQ_0 += nthreads*cpy_ne) {
         __align__(16) nv_bfloat162 tmp[cpy_ne];
-        ggml_cuda_memcpy_1<sizeof(tmp)>(tmp, K_bf16 + k_KQ_0 + (threadIdx.x % nthreads)*cpy_ne);
+        ggml_cuda_memcpy_streaming<sizeof(tmp)>(tmp, K_bf16 + k_KQ_0 + (threadIdx.x % nthreads)*cpy_ne);
 #pragma unroll
         for (int k_KQ_1 = 0; k_KQ_1 < cpy_ne; ++k_KQ_1) {
 #ifdef V_DOT2_F32_F16_AVAILABLE
@@ -318,12 +318,12 @@ static __device__ __forceinline__ float vec_dot_fattn_vec_KQ_q8_0(
         const int iqs = k_KQ % QI8_0;
 
         int v;
-        ggml_cuda_memcpy_1<sizeof(v), 2>(&v, K_q8_0[ib].qs + 4*iqs);
+        ggml_cuda_memcpy_streaming<sizeof(v), 2>(&v, K_q8_0[ib].qs + 4*iqs);
 
         const float2 * Q_ds = (const float2 *) Q_ds_v;
         const float Q_d = Q_ds[k_KQ_0/nthreads].x;
 
-        sum += vec_dot_q8_0_q8_1_impl<float, 1>(&v, &Q_q8[k_KQ_0/nthreads], K_q8_0[ib].d, Q_d);
+        sum += vec_dot_q8_0_q8_1_impl<float, 1>(&v, &Q_q8[k_KQ_0/nthreads], ggml_cuda_ldcs(&K_q8_0[ib].d), Q_d);
     }
 
     return sum;
