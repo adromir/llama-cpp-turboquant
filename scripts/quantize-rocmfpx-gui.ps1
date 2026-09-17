@@ -20,12 +20,163 @@ Set-StrictMode -Off
 # Ensure WPF assemblies are loaded
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms | Out-Null
 
+# Force Software Rendering to prevent D3D/DirectX quota exhaustion (Win32Exception 1816) during heavy GPU/VRAM workloads
+try {
+    $roType = [Type]::GetType('System.Windows.Media.RenderOptions, PresentationCore')
+    $rmType = [Type]::GetType('System.Windows.Interop.RenderMode, PresentationCore')
+    if ($roType -and $rmType) {
+        $roType.GetProperty('ProcessRenderMode').SetValue($null, [Enum]::Parse($rmType, 'SoftwareOnly'))
+    }
+} catch {}
+
+# Define asynchronous background process runner with thread-safe queue.
+# Pure C# event handlers prevent PowerShell 'no Runspace available on this thread' crashes on ThreadPool threads.
+if (-not ('LlamaAsyncProcessRunner' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Collections.Concurrent;
+
+public class LlamaAsyncProcessRunner {
+    public Process Process { get; private set; }
+    public ConcurrentQueue<string> OutputLines = new ConcurrentQueue<string>();
+    public volatile bool HasExited = false;
+    public int ExitCode = -1;
+
+    public bool Start(string exe, string args) {
+        return Start(exe, args, null);
+    }
+
+    public bool Start(string exe, string args, string workingDir) {
+        Process = new Process();
+        Process.StartInfo.FileName = exe;
+        Process.StartInfo.Arguments = args;
+        Process.StartInfo.UseShellExecute = false;
+        Process.StartInfo.RedirectStandardOutput = true;
+        Process.StartInfo.RedirectStandardError = true;
+        Process.StartInfo.CreateNoWindow = true;
+        Process.EnableRaisingEvents = true;
+
+        if (!string.IsNullOrEmpty(workingDir)) {
+            Process.StartInfo.WorkingDirectory = workingDir;
+        } else {
+            try {
+                string dir = System.IO.Path.GetDirectoryName(exe);
+                if (!string.IsNullOrEmpty(dir)) {
+                    Process.StartInfo.WorkingDirectory = dir;
+                }
+            } catch {}
+        }
+
+        Process.OutputDataReceived += (s, e) => {
+            if (e.Data != null) OutputLines.Enqueue(e.Data);
+        };
+        Process.ErrorDataReceived += (s, e) => {
+            if (e.Data != null) OutputLines.Enqueue(e.Data);
+        };
+        Process.Exited += (s, e) => {
+            HasExited = true;
+            try { ExitCode = Process.ExitCode; } catch {}
+        };
+
+        bool started = Process.Start();
+        if (started) {
+            Process.BeginOutputReadLine();
+            Process.BeginErrorReadLine();
+        }
+        return started;
+    }
+
+    public void Kill() {
+        try {
+            if (Process != null && !Process.HasExited) {
+                Process.Kill();
+            }
+        } catch {}
+    }
+}
+'@
+}
+
+# ==============================================================================
+# Settings Persistence
+# ==============================================================================
+
+function Get-GuiConfigPath {
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        $localCfg = Join-Path $PSScriptRoot "quantize-rocmfpx-gui.json"
+        if (Test-Path $localCfg) { return $localCfg }
+    }
+    $appDataDir = Join-Path $env:LOCALAPPDATA "llama-cpp-gui"
+    return (Join-Path $appDataDir "settings.json")
+}
+
+function Load-GuiConfig {
+    $cfg = [PSCustomObject]@{}
+    $appDataPath = Join-Path $env:LOCALAPPDATA "llama-cpp-gui\settings.json"
+    if (Test-Path $appDataPath) {
+        try {
+            $raw = Get-Content $appDataPath -Raw -ErrorAction Stop
+            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                $cfg = $raw | ConvertFrom-Json
+            }
+        } catch {}
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        $localPath = Join-Path $PSScriptRoot "quantize-rocmfpx-gui.json"
+        if (Test-Path $localPath) {
+            try {
+                $rawLocal = Get-Content $localPath -Raw -ErrorAction Stop
+                if (-not [string]::IsNullOrWhiteSpace($rawLocal)) {
+                    $localObj = $rawLocal | ConvertFrom-Json
+                    foreach ($prop in $localObj.PSObject.Properties) {
+                        $cfg | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
+                    }
+                }
+            } catch {}
+        }
+    }
+    return $cfg
+}
+
+function Save-GuiConfig {
+    param(
+        [string]$QuantizeExe = "",
+        [string]$ImatrixExe = ""
+    )
+    try {
+        $cfg = Load-GuiConfig
+        if (-not [string]::IsNullOrWhiteSpace($QuantizeExe) -and (Test-Path $QuantizeExe)) {
+            $resolvedQuant = (Resolve-Path $QuantizeExe).Path
+            $cfg | Add-Member -NotePropertyName "QuantizeExe" -NotePropertyValue $resolvedQuant -Force
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ImatrixExe) -and (Test-Path $ImatrixExe)) {
+            $resolvedImatrix = (Resolve-Path $ImatrixExe).Path
+            $cfg | Add-Member -NotePropertyName "ImatrixExe" -NotePropertyValue $resolvedImatrix -Force
+        }
+        $cfgPath = Get-GuiConfigPath
+        $cfgDir = Split-Path -Parent $cfgPath
+        if ($cfgDir -and -not (Test-Path $cfgDir)) {
+            New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+        }
+        $cfg | ConvertTo-Json -Depth 4 | Set-Content -Path $cfgPath -Force -Encoding utf8
+    } catch {}
+}
+
 # ==============================================================================
 # Business Logic
 # ==============================================================================
 
 function Find-QuantizeBinary {
     param([string]$ScriptDir)
+
+    $savedCfg = Load-GuiConfig
+    if ($savedCfg.PSObject.Properties['QuantizeExe'] -and $savedCfg.QuantizeExe -and (Test-Path $savedCfg.QuantizeExe)) {
+        return [PSCustomObject]@{
+            Path = (Resolve-Path $savedCfg.QuantizeExe).Path
+            Origin = "Saved Settings"
+        }
+    }
 
     $Candidates = @(
         [PSCustomObject]@{ Path = (Join-Path $ScriptDir "llama-quantize.exe"); Source = "Script Directory" },
@@ -62,6 +213,14 @@ function Find-ImatrixBinary {
         [string]$KnownQuantizeBin = ""
     )
 
+    $savedCfg = Load-GuiConfig
+    if ($savedCfg.PSObject.Properties['ImatrixExe'] -and $savedCfg.ImatrixExe -and (Test-Path $savedCfg.ImatrixExe)) {
+        return [PSCustomObject]@{
+            Path = (Resolve-Path $savedCfg.ImatrixExe).Path
+            Origin = "Saved Settings"
+        }
+    }
+
     $Candidates = @()
     if ($KnownQuantizeBin -and (Test-Path $KnownQuantizeBin)) {
         $binDir = Split-Path -Parent $KnownQuantizeBin
@@ -96,6 +255,36 @@ function Find-ImatrixBinary {
     return $null
 }
 
+function Set-RocmExecutionEnvironment {
+    param([int]$GpuLayers = 0)
+
+    if ($GpuLayers -le 0) {
+        # Pure CPU execution: isolate ROCm to prevent device initialization crashes
+        $env:HIP_VISIBLE_DEVICES = ""
+        return "CPU (ROCm bypassed)"
+    }
+
+    # Detect multi-GPU setups where Device 0 is an unsupported iGPU (gfx1036) and Device 1 is a dedicated AMD GPU (e.g. RX 9060 XT / gfx1200)
+    try {
+        $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+        $hasDgpu = $gpus | Where-Object { $_ -match 'Radeon RX' }
+        $hasIgpu = $gpus | Where-Object { $_ -match 'Radeon\(TM\) Graphics' -or $_ -match 'Radeon Graphics' }
+        if ($hasDgpu -and $hasIgpu) {
+            # Dedicated RX 9060 XT is Device 1; iGPU Device 0 causes gfx1036 kernel image invalid aborts
+            $env:HIP_VISIBLE_DEVICES = "1"
+            return "Device 1 (Dedicated RX 9060 XT isolated)"
+        }
+    } catch {}
+
+    # If HIP_VISIBLE_DEVICES is already explicitly set to something specific (not default 0,1), preserve it
+    if (-not [string]::IsNullOrWhiteSpace($env:HIP_VISIBLE_DEVICES) -and $env:HIP_VISIBLE_DEVICES -ne "0,1") {
+        return "Custom ($env:HIP_VISIBLE_DEVICES)"
+    }
+
+    $env:HIP_VISIBLE_DEVICES = "0"
+    return "Device 0"
+}
+
 function Get-SuggestedOutputPath {
     param(
         [string]$SourcePath,
@@ -110,8 +299,10 @@ function Get-SuggestedOutputPath {
     $filename = Split-Path -Leaf $SourcePath
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension($filename)
 
+    # Strip split markers if present (e.g., -00001-of-00002)
+    $cleanBase = $baseName -replace "-\d{5}-of-\d{5}$", ""
     # Strip existing quant tags if present (e.g., -F16, -BF16, -Q8_0, -Q4_K_M)
-    $cleanBase = $baseName -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
+    $cleanBase = $cleanBase -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
     $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
 
     $newName = "$cleanBase-$Preset.gguf"
@@ -132,7 +323,9 @@ function Get-SuggestedImatrixPath {
     $filename = Split-Path -Leaf $SourcePath
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension($filename)
 
-    $cleanBase = $baseName -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
+    # Strip split markers if present (e.g., -00001-of-00002)
+    $cleanBase = $baseName -replace "-\d{5}-of-\d{5}$", ""
+    $cleanBase = $cleanBase -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
     $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
 
     $newName = "$cleanBase-imatrix.gguf"
@@ -140,6 +333,40 @@ function Get-SuggestedImatrixPath {
         return Join-Path $dir $newName
     }
     return $newName
+}
+
+function Test-GgufSplitsComplete {
+    param([string]$FilePath)
+
+    if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path $FilePath)) {
+        return @{ Complete = $true; Missing = @() }
+    }
+
+    $fileName = Split-Path -Leaf $FilePath
+    $dir = Split-Path -Parent $FilePath
+
+    # Pattern: Name-00001-of-00002.gguf
+    if ($fileName -match '^(.*)-(\d{5})-of-(\d{5})\.gguf$') {
+        $prefix = $Matches[1]
+        $totalDigits = $Matches[3]
+        $totalSplits = [int]$totalDigits
+        $missing = @()
+
+        for ($i = 1; $i -le $totalSplits; $i++) {
+            $splitIndex = "{0:D5}" -f $i
+            $splitName = "$prefix-$splitIndex-of-$totalDigits.gguf"
+            $splitPath = if ($dir) { Join-Path $dir $splitName } else { $splitName }
+            if (-not (Test-Path $splitPath)) {
+                $missing += $splitName
+            }
+        }
+
+        if ($missing.Count -gt 0) {
+            return @{ Complete = $false; Missing = $missing }
+        }
+    }
+
+    return @{ Complete = $true; Missing = @() }
 }
 
 function Build-QuantizeArguments {
@@ -212,34 +439,177 @@ function Build-QuantizeArguments {
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="6,4"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#1A1A22"/>
+                    <Setter Property="Foreground" Value="#64748B"/>
+                    <Setter Property="BorderBrush" Value="#2D2D3B"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
-        <Style TargetType="Button">
+        <Style TargetType="{x:Type Button}">
             <Setter Property="Background" Value="#2E2E3D"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#45455A"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,5"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="contentPresenter"
+                                              Focusable="False"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"
+                                              RecognizesAccessKey="True"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.75"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#20202A"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#2D2D3B"/>
+                                <Setter Property="Foreground" Value="#64748B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="#22222C"/>
-            <Setter Property="Foreground" Value="#F0F0F5"/>
-            <Setter Property="BorderBrush" Value="#383848"/>
-            <Setter Property="Padding" Value="6,4"/>
+        <ControlTemplate x:Key="ComboBoxToggleButtonTemplate" TargetType="{x:Type ToggleButton}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="26" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="border"
+                        Grid.ColumnSpan="2"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="4"
+                        SnapsToDevicePixels="True" />
+                <Path x:Name="arrow"
+                      Grid.Column="1"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Data="M 0 0 L 4 4 L 8 0 Z"
+                      Fill="#94A3B8" />
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="border" Property="BorderBrush" Value="#60A5FA" />
+                    <Setter TargetName="arrow" Property="Fill" Value="#F8FAFC" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="border" Property="BorderBrush" Value="#3B82F6" />
+                    <Setter TargetName="arrow" Property="Fill" Value="#3B82F6" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter TargetName="border" Property="Background" Value="#1A1A22" />
+                    <Setter TargetName="border" Property="BorderBrush" Value="#2D2D3B" />
+                    <Setter TargetName="arrow" Property="Fill" Value="#4B5563" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="Background" Value="#22222C" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="BorderBrush" Value="#383848" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBox}">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Focusable="False"
+                                          IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Template="{StaticResource ComboBoxToggleButtonTemplate}" />
+                            <ContentPresenter x:Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              Margin="8,4,28,4"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left">
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="{x:Type TextBlock}">
+                                        <Setter Property="Foreground" Value="#F8FAFC" />
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                            <Popup x:Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Grid x:Name="DropDown"
+                                      SnapsToDevicePixels="True"
+                                      MinWidth="{TemplateBinding ActualWidth}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border x:Name="DropDownBorder"
+                                            Background="#1E1E28"
+                                            BorderBrush="#3B82F6"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Margin="0,2,0,2">
+                                        <ScrollViewer SnapsToDevicePixels="True">
+                                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="95" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#60A5FA" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#64748B" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
-        <Style TargetType="ComboBoxItem">
-            <Setter Property="Background" Value="#20202A"/>
-            <Setter Property="Foreground" Value="#F0F0F5"/>
-            <Setter Property="Padding" Value="8,6"/>
-            <Setter Property="BorderThickness" Value="0"/>
+        <Style TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="Background" Value="#1E1E28" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
             <Style.Triggers>
                 <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Background" Value="#3B82F6"/>
-                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter Property="Background" Value="#2563EB" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#2563EB"/>
-                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter Property="Background" Value="#1D4ED8" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -290,7 +660,7 @@ function Build-QuantizeArguments {
                 <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Quantization Executable (llama-quantize.exe)" FontWeight="SemiBold" Margin="0,0,0,6" ToolTip="Path to the llama-quantize binary that performs weight quantization"/>
                 
                 <TextBox Grid.Row="1" Grid.Column="0" Name="TxtExePath" Height="30" Margin="0,0,8,0" ToolTip="Full path to llama-quantize.exe binary"/>
-                <Button Grid.Row="1" Grid.Column="1" Name="BtnBrowseExe" Content="Browse..." Width="90" Height="30" ToolTip="Browse filesystem for llama-quantize.exe"/>
+                <Button Grid.Row="1" Grid.Column="1" Name="BtnBrowseExe" Content="Browse..." Width="100" Height="30" HorizontalAlignment="Right" ToolTip="Browse filesystem for llama-quantize.exe"/>
 
                 <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="LblExeStatus" Text="Searching for llama-quantize.exe..." FontSize="11" Foreground="#10B981" Margin="2,5,0,0"/>
             </Grid>
@@ -314,7 +684,7 @@ function Build-QuantizeArguments {
                 <!-- Source Model -->
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Source Model:" VerticalAlignment="Center" Margin="0,0,0,10" ToolTip="Path to input GGUF model (F16/BF16 or existing quantized model)"/>
                 <TextBox Grid.Row="0" Grid.Column="1" Name="TxtSourceModel" Height="30" Margin="0,0,8,10" ToolTip="Input GGUF model path (typically unquantized F16/BF16, or Q8_0/Q4_K_M if requantizing)"/>
-                <Button Grid.Row="0" Grid.Column="2" Name="BtnBrowseSource" Content="Browse..." Width="90" Height="30" Margin="0,0,0,10" ToolTip="Browse filesystem for input GGUF model file"/>
+                <Button Grid.Row="0" Grid.Column="2" Name="BtnBrowseSource" Content="Browse..." Width="100" Height="30" Margin="0,0,0,10" HorizontalAlignment="Right" ToolTip="Browse filesystem for input GGUF model file"/>
 
                 <!-- Preset Selection -->
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Quant Preset:" VerticalAlignment="Center" Margin="0,0,0,10" ToolTip="Target quantization format (ROCmFP4, ROCmFPX, TurboQuant, or upstream standard)"/>
@@ -347,19 +717,19 @@ function Build-QuantizeArguments {
                     <ComboBoxItem Content="Q8_0 - Upstream 8-Bit Standard" Tag="Q8_0" ToolTip="7.96 bpw. Upstream standard 8-bit quantization. Highest accuracy among standard integer quants."/>
                     <ComboBoxItem Content="IQ3_S - Upstream 3-Bit I-Quant (Needs Imatrix)" Tag="IQ3_S" ToolTip="3.44 bpw. Upstream 3-bit importance matrix quant. Requires an imatrix file for acceptable quality."/>
                 </ComboBox>
-                <Button Grid.Row="1" Grid.Column="2" Name="BtnSuggestOutput" Content="Auto-Name" Width="90" Height="30" Margin="0,0,0,10" ToolTip="Regenerate output path based on source and preset"/>
+                <Button Grid.Row="1" Grid.Column="2" Name="BtnSuggestOutput" Content="Auto-Name" Width="100" Height="30" Margin="0,0,0,10" HorizontalAlignment="Right" ToolTip="Regenerate output path based on source and preset"/>
 
                 <!-- Output Model -->
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Output Model:" VerticalAlignment="Center" Margin="0,0,0,10" ToolTip="Destination path for the quantized GGUF file"/>
                 <TextBox Grid.Row="2" Grid.Column="1" Name="TxtOutputModel" Height="30" Margin="0,0,8,10" ToolTip="Path where the quantized GGUF model will be saved"/>
-                <Button Grid.Row="2" Grid.Column="2" Name="BtnBrowseOutput" Content="Save As..." Width="90" Height="30" Margin="0,0,0,10" ToolTip="Choose destination path and filename for output GGUF"/>
+                <Button Grid.Row="2" Grid.Column="2" Name="BtnBrowseOutput" Content="Save As..." Width="100" Height="30" Margin="0,0,0,10" HorizontalAlignment="Right" ToolTip="Choose destination path and filename for output GGUF"/>
 
                 <!-- Importance Matrix -->
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Imatrix (Optional):" VerticalAlignment="Center" ToolTip="Importance matrix file to preserve accuracy in low-bit quants"/>
                 <TextBox Grid.Row="3" Grid.Column="1" Name="TxtImatrix" Height="30" Margin="0,0,8,0" ToolTip="Optional importance matrix (.gguf or .dat). Greatly improves 3-bit and 4-bit quantization quality."/>
-                <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal">
-                    <Button Name="BtnBrowseImatrix" Content="Browse..." Width="70" Height="30" Margin="0,0,6,0" ToolTip="Select an existing importance matrix file"/>
-                    <Button Name="BtnCreateImatrix" Content="Generate..." Width="75" Height="30" Background="#0D9488" BorderBrush="#14B8A6" ToolTip="Calculate importance matrix from calibration text dataset using GPU-accelerated llama-imatrix"/>
+                <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Name="BtnBrowseImatrix" Content="Browse..." Width="85" Height="30" Margin="0,0,6,0" ToolTip="Select an existing importance matrix file"/>
+                    <Button Name="BtnCreateImatrix" Content="Generate..." Width="110" Height="30" Background="#0D9488" BorderBrush="#14B8A6" ToolTip="Calculate importance matrix from calibration text dataset using GPU-accelerated llama-imatrix"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -370,7 +740,7 @@ function Build-QuantizeArguments {
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="105"/>
                 </Grid.ColumnDefinitions>
 
                 <CheckBox Grid.Column="0" Name="ChkAllowRequantize" Content="Allow Requantize (--allow-requantize)" ToolTip="Check if source is already quantized (e.g. Q8_0 or Q4_K_M) rather than F16/BF16. Requantization runs on CPU."/>
@@ -425,6 +795,15 @@ function Build-QuantizeArguments {
 # Parse XAML
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [System.Windows.Markup.XamlReader]::Load($reader)
+$window.Add_SourceInitialized({
+    try {
+        $helper = New-Object System.Windows.Interop.WindowInteropHelper($window)
+        $src = [System.Windows.Interop.HwndSource]::FromHwnd($helper.Handle)
+        if ($src -and $src.CompositionTarget) {
+            $src.CompositionTarget.RenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly
+        }
+    } catch {}
+})
 
 # Map controls
 $txtExePath           = $window.FindName("TxtExePath")
@@ -448,22 +827,34 @@ $txtLog               = $window.FindName("TxtLog")
 $prgBar               = $window.FindName("PrgBar")
 $lblProgressText      = $window.FindName("LblProgressText")
 
-# Store running process reference
-$script:RunningProcess = $null
+# Store running process and timer references
+$script:RunningRunner = $null
+$script:QuantTimer = $null
+$script:QuantOutputFile = $null
 
 # ==============================================================================
 # Controller & Event Wiring
 # ==============================================================================
 
 # 1. Initialize Executable Detection
-$foundExe = Find-QuantizeBinary -ScriptDir $PSScriptRoot
-if ($foundExe) {
-    $txtExePath.Text = $foundExe.Path
-    $lblExeStatus.Text = "Auto-detected ($($foundExe.Origin)): $($foundExe.Path)"
+$guiConfig = Load-GuiConfig
+$savedQuant = if ($guiConfig.PSObject.Properties['QuantizeExe']) { $guiConfig.QuantizeExe } else { "" }
+
+if ($savedQuant -and (Test-Path $savedQuant)) {
+    $txtExePath.Text = $savedQuant
+    $lblExeStatus.Text = "Saved executable: $savedQuant"
     $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
 } else {
-    $lblExeStatus.Text = "llama-quantize.exe not found automatically. Please browse and select it."
-    $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+    $foundExe = Find-QuantizeBinary -ScriptDir $PSScriptRoot
+    if ($foundExe) {
+        $txtExePath.Text = $foundExe.Path
+        $lblExeStatus.Text = "Auto-detected ($($foundExe.Origin)): $($foundExe.Path)"
+        $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
+        Save-GuiConfig -QuantizeExe $foundExe.Path
+    } else {
+        $lblExeStatus.Text = "llama-quantize.exe not found automatically. Please browse and select it."
+        $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+    }
 }
 
 # Apply initial values if provided
@@ -504,8 +895,19 @@ $btnBrowseExe.Add_Click({
     }
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $txtExePath.Text = $dlg.FileName
-        $lblExeStatus.Text = "Custom executable: $($dlg.FileName)"
-        $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::LightSkyBlue
+        $lblExeStatus.Text = "Saved executable: $($dlg.FileName)"
+        $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
+        Save-GuiConfig -QuantizeExe $dlg.FileName
+    }
+})
+
+# Event: Executable Path Lost Focus (Manual Input)
+$txtExePath.Add_LostFocus({
+    $trimmed = $txtExePath.Text.Trim()
+    if ($trimmed -and (Test-Path $trimmed)) {
+        Save-GuiConfig -QuantizeExe $trimmed
+        $lblExeStatus.Text = "Saved executable: $trimmed"
+        $lblExeStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
     }
 })
 
@@ -520,6 +922,11 @@ $btnBrowseSource.Add_Click({
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $txtSourceModel.Text = $dlg.FileName
         $txtOutputModel.Text = Get-SuggestedOutputPath -SourcePath $dlg.FileName -Preset (Get-SelectedPresetTag)
+        $splitCheck = Test-GgufSplitsComplete -FilePath $dlg.FileName
+        if (-not $splitCheck.Complete) {
+            $missingNames = $splitCheck.Missing -join "`r`n  - "
+            [System.Windows.MessageBox]::Show("Achtung: Dies ist ein mehrteiliges GGUF-Modell, aber folgende Split-Dateien fehlen im Ordner:`r`n  - $missingNames`r`n`r`nBitte laden Sie alle Teile vor Beginn der Quantisierung herunter.", "Unvollstaendiges Modell", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        }
     }
 })
 
@@ -577,8 +984,19 @@ function Show-ImatrixDialog {
         [string]$CurrentCalibration = ""
     )
 
-    $imatrixBinObj = Find-ImatrixBinary -ScriptDir $PSScriptRoot -KnownQuantizeBin $CurrentBin
-    $defaultImatrixBin = if ($imatrixBinObj) { $imatrixBinObj.Path } else { "" }
+    $guiConfig = Load-GuiConfig
+    $savedImatrix = if ($guiConfig.PSObject.Properties['ImatrixExe']) { $guiConfig.ImatrixExe } else { "" }
+
+    $defaultImatrixBin = ""
+    if ($savedImatrix -and (Test-Path $savedImatrix)) {
+        $defaultImatrixBin = $savedImatrix
+    } else {
+        $imatrixBinObj = Find-ImatrixBinary -ScriptDir $PSScriptRoot -KnownQuantizeBin $CurrentBin
+        if ($imatrixBinObj) {
+            $defaultImatrixBin = $imatrixBinObj.Path
+            Save-GuiConfig -ImatrixExe $defaultImatrixBin
+        }
+    }
     $defaultImatrixOut = Get-SuggestedImatrixPath -SourcePath $CurrentSource
 
     $dialogXaml = @"
@@ -608,13 +1026,53 @@ function Show-ImatrixDialog {
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="6,4"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#1A1A22"/>
+                    <Setter Property="Foreground" Value="#64748B"/>
+                    <Setter Property="BorderBrush" Value="#2D2D3B"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
-        <Style TargetType="Button">
+        <Style TargetType="{x:Type Button}">
             <Setter Property="Background" Value="#3B82F6"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#60A5FA"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="contentPresenter"
+                                              Focusable="False"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"
+                                              RecognizesAccessKey="True"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.75"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#20202A"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#2D2D3B"/>
+                                <Setter Property="Foreground" Value="#64748B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
     <Grid Margin="16">
@@ -720,6 +1178,15 @@ function Show-ImatrixDialog {
     $dialogReader = New-Object System.Xml.XmlNodeReader ([xml]$dialogXaml)
     $dialog = [System.Windows.Markup.XamlReader]::Load($dialogReader)
     $dialog.Owner = $OwnerWindow
+    $dialog.Add_SourceInitialized({
+        try {
+            $helper = New-Object System.Windows.Interop.WindowInteropHelper($dialog)
+            $src = [System.Windows.Interop.HwndSource]::FromHwnd($helper.Handle)
+            if ($src -and $src.CompositionTarget) {
+                $src.CompositionTarget.RenderMode = [System.Windows.Interop.RenderMode]::SoftwareOnly
+            }
+        } catch {}
+    })
 
     # Dialog Controls
     $dlgTxtBin = $dialog.FindName("DlgTxtBin")
@@ -747,7 +1214,9 @@ function Show-ImatrixDialog {
     $dlgTxtCalibration.Text = $CurrentCalibration
     $dlgTxtOutput.Text = $defaultImatrixOut
 
-    $dlgRunningProcess = $null
+    $script:DlgRunner = $null
+    $script:DlgTimer = $null
+    $script:DlgTargetOutput = $null
     $script:GeneratedImatrixResult = $null
 
     # Dialog Browse Events
@@ -760,6 +1229,14 @@ function Show-ImatrixDialog {
         }
         if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $dlgTxtBin.Text = $fbd.FileName
+            Save-GuiConfig -ImatrixExe $fbd.FileName
+        }
+    })
+
+    $dlgTxtBin.Add_LostFocus({
+        $trimmed = $dlgTxtBin.Text.Trim()
+        if ($trimmed -and (Test-Path $trimmed)) {
+            Save-GuiConfig -ImatrixExe $trimmed
         }
     })
 
@@ -773,6 +1250,11 @@ function Show-ImatrixDialog {
         if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $dlgTxtSource.Text = $fbd.FileName
             $dlgTxtOutput.Text = Get-SuggestedImatrixPath -SourcePath $fbd.FileName
+            $splitCheck = Test-GgufSplitsComplete -FilePath $fbd.FileName
+            if (-not $splitCheck.Complete) {
+                $missingNames = $splitCheck.Missing -join "`r`n  - "
+                [System.Windows.MessageBox]::Show("Achtung: Dies ist ein mehrteiliges GGUF-Modell, aber folgende Split-Dateien fehlen im Ordner:`r`n  - $missingNames`r`n`r`nBitte laden Sie alle Teile vor Beginn der Berechnung herunter.", "Unvollstaendiges Modell", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            }
         }
     })
 
@@ -804,9 +1286,10 @@ function Show-ImatrixDialog {
 
     # Dialog Cancel Event
     $dlgBtnCancel.Add_Click({
-        if ($dlgRunningProcess -and -not $dlgRunningProcess.HasExited) {
+        if ($script:DlgRunner -and -not $script:DlgRunner.HasExited) {
             $dlgTxtLog.AppendText("`r`n[ABORT] Cancelling llama-imatrix process...`r`n")
-            try { $dlgRunningProcess.Kill() } catch { }
+            $script:DlgRunner.Kill()
+            if ($script:DlgTimer) { $script:DlgTimer.Stop() }
             $dlgLblStatus.Text = "Calculation aborted."
             $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
             $dlgPrgBar.Value = 0
@@ -832,8 +1315,15 @@ function Show-ImatrixDialog {
             [System.Windows.MessageBox]::Show("Valid llama-imatrix executable not found.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
             return
         }
+        Save-GuiConfig -ImatrixExe $bin
         if (-not $src -or -not (Test-Path $src)) {
             [System.Windows.MessageBox]::Show("Source model file not found.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        $splitCheck = Test-GgufSplitsComplete -FilePath $src
+        if (-not $splitCheck.Complete) {
+            $missingNames = $splitCheck.Missing -join "`r`n  - "
+            [System.Windows.MessageBox]::Show("GGUF Split-Modell unvollstaendig!`r`n`r`nFolgende Split-Teile fehlen im Verzeichnis:`r`n  - $missingNames`r`n`r`nllama-imatrix benoetigt alle Teile eines mehrteiligen Modells. Bitte laden Sie die fehlenden Dateien in denselben Ordner herunter.", "Split-Dateien fehlen", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
             return
         }
         if (-not $cal -or -not (Test-Path $cal)) {
@@ -854,6 +1344,10 @@ function Show-ImatrixDialog {
         $ctx = if ($dlgTxtContext.Text) { $dlgTxtContext.Text.Trim() } else { "2048" }
         $chunks = if ($dlgTxtChunks.Text) { $dlgTxtChunks.Text.Trim() } else { "64" }
         $threads = if ($dlgTxtThreads.Text) { $dlgTxtThreads.Text.Trim() } else { "0" }
+
+        $nglVal = 0
+        [int]::TryParse($ngl, [ref]$nglVal) | Out-Null
+        $rocmDevDesc = Set-RocmExecutionEnvironment -GpuLayers $nglVal
 
         $argsList = New-Object System.Collections.Generic.List[string]
         $argsList.Add("-m"); $argsList.Add($src)
@@ -887,56 +1381,63 @@ function Show-ImatrixDialog {
         $dlgTxtLog.AppendText("Dataset:    $cal`r`n")
         $dlgTxtLog.AppendText("Output:     $out`r`n")
         $dlgTxtLog.AppendText("GPU Layers: $ngl`r`n")
+        $dlgTxtLog.AppendText("ROCm Mode:  $rocmDevDesc`r`n")
         $dlgTxtLog.AppendText("Context:    $ctx`r`n")
         $dlgTxtLog.AppendText("Chunks:     $chunks`r`n")
         $dlgTxtLog.AppendText("Command:    `"$bin`" $argString`r`n")
         $dlgTxtLog.AppendText("==================================================`r`n`r`n")
 
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo.FileName = $bin
-        $proc.StartInfo.Arguments = $argString
-        $proc.StartInfo.UseShellExecute = $false
-        $proc.StartInfo.RedirectStandardOutput = $true
-        $proc.StartInfo.RedirectStandardError = $true
-        $proc.StartInfo.CreateNoWindow = $true
-        $proc.EnableRaisingEvents = $true
+        $script:DlgTargetOutput = $out
+        $script:DlgRunner = New-Object LlamaAsyncProcessRunner
 
-        $dlgRunningProcess = $proc
+        if ($script:DlgTimer) { $script:DlgTimer.Stop() }
+        $script:DlgTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:DlgTimer.Interval = [TimeSpan]::FromMilliseconds(50)
+        $script:DlgTimer.Add_Tick({
+            $runner = $script:DlgRunner
+            if ($null -eq $runner) { return }
 
-        $dlgOutputHandler = {
-            param($sender, $e)
-            if ($e.Data) {
-                $line = $e.Data
-                $dlgTxtLog.Dispatcher.Invoke([Action]{
-                    $dlgTxtLog.AppendText($line + "`r`n")
-                    $dlgTxtLog.ScrollToEnd()
+            $line = $null
+            $hasNew = $false
+            while ($runner.OutputLines.TryDequeue([ref]$line)) {
+                $hasNew = $true
+                $dlgTxtLog.AppendText($line + "`r`n")
 
-                    if ($line -match 'computing over\s+(\d+)\s+chunks') {
-                        $totChunks = [int]$Matches[1]
+                if ($line -match 'computing over\s+(\d+)\s+chunks') {
+                    $totChunks = [int]$Matches[1]
+                    $dlgPrgBar.Maximum = $totChunks
+                    $dlgPrgBar.Value = 0
+                    $dlgLblProgressText.Text = "0 / $totChunks chunks (0%)"
+                } elseif ($line -match 'processing chunk\s+(\d+)\s*[/:]\s*(\d+)' -or $line -match '\[\s*(\d+)\s*/\s*(\d+)\s*\]') {
+                    $curChunk = [int]$Matches[1]
+                    $totChunks = [int]$Matches[2]
+                    if ($totChunks -gt 0) {
+                        $pct = [math]::Round(($curChunk / $totChunks) * 100)
                         $dlgPrgBar.Maximum = $totChunks
-                        $dlgPrgBar.Value = 0
-                        $dlgLblProgressText.Text = "0 / $totChunks chunks (0%)"
+                        $dlgPrgBar.Value = $curChunk
+                        $dlgLblProgressText.Text = "$pct% ($curChunk / $totChunks chunks)"
+                        $dlgLblStatus.Text = "Computing: $pct% ($curChunk/$totChunks)"
                     }
-                })
+                }
             }
-        }
+            if ($hasNew) {
+                $dlgTxtLog.ScrollToEnd()
+            }
 
-        $proc.add_OutputDataReceived($dlgOutputHandler)
-        $proc.add_ErrorDataReceived($dlgOutputHandler)
-
-        $proc.add_Exited({
-            $exitCode = $proc.ExitCode
-            $dlgTxtLog.Dispatcher.Invoke([Action]{
+            if ($runner.HasExited -and $runner.OutputLines.IsEmpty) {
+                $script:DlgTimer.Stop()
+                $exitCode = $runner.ExitCode
+                $targetFile = $script:DlgTargetOutput
                 $dlgTxtLog.AppendText("`r`n--------------------------------------------------`r`n")
-                if ($exitCode -eq 0 -and (Test-Path $out)) {
-                    $mb = [math]::Round((Get-Item $out).Length / 1MB, 2)
+                if ($exitCode -eq 0 -and ($targetFile -and (Test-Path $targetFile))) {
+                    $mb = [math]::Round((Get-Item $targetFile).Length / 1MB, 2)
                     $dlgTxtLog.AppendText("[SUCCESS] Importance matrix calculation complete!`r`n")
-                    $dlgTxtLog.AppendText("Created: $out ($mb MB)`r`n")
+                    $dlgTxtLog.AppendText("Created: $targetFile ($mb MB)`r`n")
                     $dlgLblStatus.Text = "Finished: $mb MB generated"
                     $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
                     $dlgPrgBar.Value = $dlgPrgBar.Maximum
                     $dlgLblProgressText.Text = "100% Complete"
-                    $script:GeneratedImatrixResult = $out
+                    $script:GeneratedImatrixResult = $targetFile
                     $dlgBtnApply.IsEnabled = $true
                 } else {
                     $dlgTxtLog.AppendText("[ERROR] Calculation failed with exit code $exitCode.`r`n")
@@ -946,13 +1447,22 @@ function Show-ImatrixDialog {
                 }
                 $dlgBtnStart.IsEnabled = $true
                 $dlgBtnCancel.IsEnabled = $false
-            })
+            }
         })
 
         try {
-            $proc.Start() | Out-Null
-            $proc.BeginOutputReadLine()
-            $proc.BeginErrorReadLine()
+            $binDir = Split-Path -Parent $bin
+            $started = $script:DlgRunner.Start($bin, $argString, $binDir)
+            if ($started) {
+                $script:DlgTimer.Start()
+            } else {
+                $dlgTxtLog.AppendText("[ERROR] Failed to start llama-imatrix process.`r`n")
+                $dlgLblStatus.Text = "Execution failed"
+                $dlgLblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
+                $dlgLblProgressText.Text = "Failed"
+                $dlgBtnStart.IsEnabled = $true
+                $dlgBtnCancel.IsEnabled = $false
+            }
         } catch {
             $dlgTxtLog.AppendText("[ERROR] Failed to start process: $($_.Exception.Message)`r`n")
             $dlgLblStatus.Text = "Execution failed"
@@ -967,8 +1477,9 @@ function Show-ImatrixDialog {
     $dialog.ShowDialog() | Out-Null
 
     # Clean up process if still somehow running when dialog closed
-    if ($dlgRunningProcess -and -not $dlgRunningProcess.HasExited) {
-        try { $dlgRunningProcess.Kill() } catch { }
+    if ($script:DlgTimer) { $script:DlgTimer.Stop() }
+    if ($script:DlgRunner -and -not $script:DlgRunner.HasExited) {
+        $script:DlgRunner.Kill()
     }
 
     return $script:GeneratedImatrixResult
@@ -986,13 +1497,10 @@ $btnCreateImatrix.Add_Click({
 
 # Event: Cancel Process
 $btnCancel.Add_Click({
-    if ($script:RunningProcess -and -not $script:RunningProcess.HasExited) {
+    if ($script:RunningRunner -and -not $script:RunningRunner.HasExited) {
         $txtLog.AppendText("`r`n[ABORT] Cancelling quantization process...`r`n")
-        try {
-            $script:RunningProcess.Kill()
-        } catch {
-            $txtLog.AppendText("[WARN] Could not kill process: $($_.Exception.Message)`r`n")
-        }
+        $script:RunningRunner.Kill()
+        if ($script:QuantTimer) { $script:QuantTimer.Stop() }
         $lblStatus.Text = "Cancelled"
         $lblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
         $prgBar.Value = 0
@@ -1010,10 +1518,17 @@ $btnStart.Add_Click({
         [System.Windows.MessageBox]::Show("Quantization executable not found!`nPlease select a valid llama-quantize.exe.", "Executable Missing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         return
     }
+    Save-GuiConfig -QuantizeExe $exe
 
     $source = $txtSourceModel.Text.Trim()
     if (-not (Test-Path $source)) {
         [System.Windows.MessageBox]::Show("Source model file not found!`nPlease select an existing GGUF model.", "Source Missing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        return
+    }
+    $splitCheck = Test-GgufSplitsComplete -FilePath $source
+    if (-not $splitCheck.Complete) {
+        $missingNames = $splitCheck.Missing -join "`r`n  - "
+        [System.Windows.MessageBox]::Show("GGUF Split-Modell unvollstaendig!`r`n`r`nFolgende Split-Teile fehlen im Verzeichnis:`r`n  - $missingNames`r`n`r`nllama-quantize benoetigt alle Teile eines mehrteiligen Modells. Bitte laden Sie die fehlenden Dateien in denselben Ordner herunter.", "Split-Dateien fehlen", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         return
     }
 
@@ -1065,56 +1580,51 @@ $btnStart.Add_Click({
     $txtLog.AppendText("Command:   `"$exe`" $argString`r`n")
     $txtLog.AppendText("==================================================`r`n`r`n")
 
-    # Start process asynchronously with redirected streams
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo.FileName = $exe
-    $proc.StartInfo.Arguments = $argString
-    $proc.StartInfo.UseShellExecute = $false
-    $proc.StartInfo.RedirectStandardOutput = $true
-    $proc.StartInfo.RedirectStandardError = $true
-    $proc.StartInfo.CreateNoWindow = $true
-    $proc.EnableRaisingEvents = $true
+    $rocmDevDesc = Set-RocmExecutionEnvironment -GpuLayers 0
 
-    $script:RunningProcess = $proc
+    $script:QuantOutputFile = $output
+    $script:RunningRunner = New-Object LlamaAsyncProcessRunner
 
-    # Live output handler
-    $outputHandler = {
-        param($sender, $e)
-        if ($e.Data) {
-            $line = $e.Data
-            $txtLog.Dispatcher.Invoke([Action]{
-                $txtLog.AppendText($line + "`r`n")
-                $txtLog.ScrollToEnd()
+    if ($script:QuantTimer) { $script:QuantTimer.Stop() }
+    $script:QuantTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:QuantTimer.Interval = [TimeSpan]::FromMilliseconds(50)
+    $script:QuantTimer.Add_Tick({
+        $runner = $script:RunningRunner
+        if ($null -eq $runner) { return }
 
-                # Parse [   1/ 291] tensor progress
-                if ($line -match '\[\s*(\d+)\s*/\s*(\d+)\s*\]') {
-                    $curTensor = [int]$Matches[1]
-                    $totTensors = [int]$Matches[2]
-                    if ($totTensors -gt 0) {
-                        $pct = [math]::Round(($curTensor / $totTensors) * 100)
-                        $prgBar.Maximum = $totTensors
-                        $prgBar.Value = $curTensor
-                        $lblProgressText.Text = "$pct% ($curTensor / $totTensors tensors)"
-                        $lblStatus.Text = "Quantizing: $pct% ($curTensor/$totTensors)"
-                    }
+        $line = $null
+        $hasNew = $false
+        while ($runner.OutputLines.TryDequeue([ref]$line)) {
+            $hasNew = $true
+            $txtLog.AppendText($line + "`r`n")
+
+            # Parse [   1/ 291] tensor progress
+            if ($line -match '\[\s*(\d+)\s*/\s*(\d+)\s*\]') {
+                $curTensor = [int]$Matches[1]
+                $totTensors = [int]$Matches[2]
+                if ($totTensors -gt 0) {
+                    $pct = [math]::Round(($curTensor / $totTensors) * 100)
+                    $prgBar.Maximum = $totTensors
+                    $prgBar.Value = $curTensor
+                    $lblProgressText.Text = "$pct% ($curTensor / $totTensors tensors)"
+                    $lblStatus.Text = "Quantizing: $pct% ($curTensor/$totTensors)"
                 }
-            })
+            }
         }
-    }
+        if ($hasNew) {
+            $txtLog.ScrollToEnd()
+        }
 
-    $proc.add_OutputDataReceived($outputHandler)
-    $proc.add_ErrorDataReceived($outputHandler)
-
-    # Process exit handler
-    $proc.add_Exited({
-        $exitCode = $script:RunningProcess.ExitCode
-        $txtLog.Dispatcher.Invoke([Action]{
+        if ($runner.HasExited -and $runner.OutputLines.IsEmpty) {
+            $script:QuantTimer.Stop()
+            $exitCode = $runner.ExitCode
+            $targetFile = $script:QuantOutputFile
             $txtLog.AppendText("`r`n--------------------------------------------------`r`n")
-            if ($exitCode -eq 0 -and (Test-Path $output)) {
-                $sizeBytes = (Get-Item $output).Length
+            if ($exitCode -eq 0 -and ($targetFile -and (Test-Path $targetFile))) {
+                $sizeBytes = (Get-Item $targetFile).Length
                 $sizeMB = [math]::Round($sizeBytes / 1MB, 2)
                 $txtLog.AppendText("[SUCCESS] Quantization complete!`r`n")
-                $txtLog.AppendText("File: $output ($sizeMB MB)`r`n")
+                $txtLog.AppendText("File: $targetFile ($sizeMB MB)`r`n")
                 $lblStatus.Text = "Finished: $sizeMB MB created"
                 $lblStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
                 $prgBar.Value = $prgBar.Maximum
@@ -1127,14 +1637,14 @@ $btnStart.Add_Click({
             }
             $btnStart.IsEnabled = $true
             $btnCancel.IsEnabled = $false
-        })
+        }
     })
 
     try {
-        $started = $proc.Start()
+        $binDir = Split-Path -Parent $exe
+        $started = $script:RunningRunner.Start($exe, $argString, $binDir)
         if ($started) {
-            $proc.BeginOutputReadLine()
-            $proc.BeginErrorReadLine()
+            $script:QuantTimer.Start()
         } else {
             $txtLog.AppendText("[ERROR] Failed to start process.`r`n")
             $btnStart.IsEnabled = $true
@@ -1150,6 +1660,14 @@ $btnStart.Add_Click({
         $lblStatus.Text = "Exception"
         $lblStatus.Foreground = [System.Windows.Media.Brushes]::Salmon
         $lblProgressText.Text = "Exception"
+    }
+})
+
+# Window Closing Event: clean up background processes
+$window.Add_Closing({
+    if ($script:QuantTimer) { $script:QuantTimer.Stop() }
+    if ($script:RunningRunner -and -not $script:RunningRunner.HasExited) {
+        $script:RunningRunner.Kill()
     }
 })
 
