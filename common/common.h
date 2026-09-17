@@ -325,7 +325,8 @@ struct common_params_model {
 struct common_params_speculative_draft {
     int32_t n_max = 3; // maximum number of tokens to draft during speculative decoding
     int32_t n_min = 0; // minimum number of draft tokens to use for speculative decoding
-    int32_t n_min_adaptive = 3; // minimum adaptive MTP draft depth (also the starting depth)
+    int32_t n_min_adaptive = 3; // minimum adaptive MTP draft depth (the default cold start is three steps below --spec-draft-n-max, bounded by this floor)
+    int32_t n_start        = 0; // explicit initial adaptive MTP draft depth; 0 = the default (clamped to [n_min_adaptive, n_max])
 
     float p_split = 0.1f; // speculative decoding split probability
     float p_min   = 0.0f; // minimum speculative decoding probability (greedy)

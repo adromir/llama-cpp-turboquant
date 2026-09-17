@@ -36,26 +36,33 @@ struct common_speculative_adaptive {
     int n_cur    = 0;  // current adaptive draft depth N
     int n_bucket = 0;  // accumulated bucket: net accepted surplus over the depth
 
-    // accumulated (n_cur - n_accepted) needed to drop one step from depth N;
-    // flat 20 at the floor and mid depths, then growing 4 per step so a deep
-    // depth still falls in ~4 total misses instead of collapsing instantly
+    // accumulated (n_cur - n_accepted) needed to drop one step from depth N
     int drop_pressure(void) const {
-        return std::max(20, n_cur * 4);
+        return std::max(60, n_cur * 10);
+    }
+
+    // net full-accept-equivalents needed to climb one step from depth N; grows
+    // with depth so one lucky streak cannot cascade the depth upward
+    int climb_budget(void) const {
+        return 20 + 6 * (n_cur - 1);
     }
 
     // bucket cap: drop pressure plus the climb budget, so climbing from the
-    // reset point costs 20 net full-accept-equivalents
+    // reset point costs climb_budget() net full-accept-equivalents
     int bucket_cap(void) const {
-        return drop_pressure() + 20;
+        return drop_pressure() + climb_budget();
     }
 
-    // reset to the floor max(1, n_min_adaptive), bounded by the ceiling n_max;
-    // the controller climbs from there once acceptance feedback arrives
-    void reset(int n_max, int n_min_adaptive) {
+    // cold start; the default is three steps below the ceiling, bounded by the
+    // floor, and n_start > 0 overrides it (--spec-draft-n-start, clamped to
+    // [floor, cap]); the drift then settles the depth in whichever direction the
+    // workload calls for
+    void reset(int n_max, int n_min_adaptive, int n_start = 0) {
         const int cap   = std::max(1, n_max);
         const int floor = std::max(1, n_min_adaptive);
 
-        n_cur    = std::min(floor, cap);
+        n_cur    = n_start > 0 ? std::min(cap, std::max(floor, n_start))
+                               : std::min(cap, std::max(floor, cap - 3));
         n_bucket = drop_pressure();
     }
 

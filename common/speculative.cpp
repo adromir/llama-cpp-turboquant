@@ -1546,9 +1546,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             adaptive_ctrl.assign(n_seq, common_speculative_adaptive());
             for (uint32_t s = 0; s < n_seq; ++s) {
-                // start at the floor max(1, n_min_adaptive), bounded by n_max;
-                // the controller climbs from there once acceptance feedback arrives
-                adaptive_ctrl[s].reset(this->params.n_max, this->params.n_min_adaptive);
+                // start at --spec-draft-n-start when set, otherwise the default cold
+                // start (cap - 3, bounded by the floor); the controller settles from
+                // there once acceptance feedback arrives
+                adaptive_ctrl[s].reset(this->params.n_max, this->params.n_min_adaptive, this->params.n_start);
+            }
+            if (this->params.n_min > 0) {
+                SPC_WRN("%s", "--spec-draft-n-min is not used in adaptive mode; use --spec-draft-n-min-adaptive for the floor\n");
             }
             SPC_TRC("%s", "adaptive draft depth enabled (draft-mtp-adaptive)\n");
         }
@@ -1675,6 +1679,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+        // new generation: the depth learned for the previous content is stale,
+        // so the controller starts over from --spec-draft-n-start (or the default
+        // cold start), even for an empty prompt
+        if (adaptive) {
+            adaptive_ctrl[seq_id].reset(this->params.n_max, this->params.n_min_adaptive, this->params.n_start);
+        }
+
         // note: the server calls begin() after the prefill decode, so stale defer
         // rows are already handled by the position-rewind trim in process(). Rows
         // that remain here belong to this prompt and feed the next draft decode.
