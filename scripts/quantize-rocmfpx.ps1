@@ -22,7 +22,7 @@ param(
 
     [Parameter(Position=2)]
     [ValidateSet(
-        "Q4_0_ROCMFP4", "Q4_0_ROCMFP4_FAST", "Q4_0_ROCMFP4_COHERENT", "Q4_0_ROCMFP4_STRIX", "Q4_0_ROCMFP4_STRIX_LEAN",
+        "Q4_0_ROCMFP4", "Q4_0_ROCMFP4_FAST", "Q4_0_ROCMFP4_FAST_COHERENT", "Q4_0_ROCMFP4_COHERENT", "Q4_0_ROCMFP4_STRIX", "Q4_0_ROCMFP4_STRIX_LEAN",
         "Q3_0_ROCMFPX", "Q3_0_ROCMFPX_AGENT",
         "Q6_0_ROCMFPX", "Q6_0_ROCMFPX_AGENT", "Q6_0_ROCMFPX_LEAN",
         "Q8_0_ROCMFPX", "Q8_0_ROCMFPX_AGENT",
@@ -48,6 +48,9 @@ param(
 
     [Parameter()]
     [int]$ImatrixNgl = 99,
+
+    [Parameter()]
+    [string]$GpuDevice = "auto",
 
     [Parameter()]
     [string]$ImatrixBin = "",
@@ -158,6 +161,33 @@ $baseName = [System.IO.Path]::GetFileNameWithoutExtension($Source)
 $cleanBase = $baseName -replace "-(BF16|F16|Q8_0|Q4_K_M|Q4_0|Q6_K|Q5_K_M|f16|bf16)$", ""
 $cleanBase = $cleanBase -replace "-(Q[0-9]_[0-9A-Z_]+|tq[0-9]_[0-9a-z]+)$", ""
 
+function Set-UniversalGpuEnvironment {
+    param([string]$Device = "auto", [int]$GpuLayers = -1)
+
+    $d = if ([string]::IsNullOrWhiteSpace($Device)) { "auto" } else { $Device.ToLower().Trim() }
+    if ($d -eq "cpu" -or $GpuLayers -eq 0) {
+        $env:HIP_VISIBLE_DEVICES = "-1"
+        $env:CUDA_VISIBLE_DEVICES = "-1"
+        return "CPU Only (GPU isolated)"
+    }
+    if ($d -eq "all") {
+        Remove-Item env:HIP_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        Remove-Item env:CUDA_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        return "All GPUs (System Default)"
+    }
+    if ($d -eq "auto") {
+        if (-not [string]::IsNullOrWhiteSpace($env:HIP_VISIBLE_DEVICES)) {
+            return "Environment (HIP=$env:HIP_VISIBLE_DEVICES)"
+        }
+        Remove-Item env:HIP_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        Remove-Item env:CUDA_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        return "Auto (Driver Default)"
+    }
+    $env:HIP_VISIBLE_DEVICES = $Device
+    $env:CUDA_VISIBLE_DEVICES = $Device
+    return "Device $Device"
+}
+
 # Generate Importance Matrix if requested
 if ($NeedImatrixGen) {
     if ([string]::IsNullOrWhiteSpace($Imatrix)) {
@@ -169,6 +199,8 @@ if ($NeedImatrixGen) {
     if ($imatrixDir -and -not (Test-Path $imatrixDir)) {
         New-Item -ItemType Directory -Path $imatrixDir -Force | Out-Null
     }
+
+    $imatrixDevDesc = Set-UniversalGpuEnvironment -Device $GpuDevice -GpuLayers $ImatrixNgl
 
     $ImatrixArgs = @(
         "-m", $Source,
@@ -190,6 +222,7 @@ if ($NeedImatrixGen) {
     Write-Host "Dataset:    $CalibrationData"
     Write-Host "Output:     $Imatrix"
     Write-Host "GPU Layers: $ImatrixNgl"
+    Write-Host "Device:     $imatrixDevDesc"
     Write-Host "Context:    $ImatrixContext"
     Write-Host "Chunks:     $ImatrixChunks"
     if ($Threads -gt 0) { Write-Host "Threads:    $Threads" }
@@ -252,6 +285,8 @@ if ($Threads -gt 0) {
     $QuantArgs += $Threads.ToString()
 }
 
+$quantDevDesc = Set-UniversalGpuEnvironment -Device $GpuDevice
+
 Write-Host "=================================================="
 Write-Host " ROCmFPX & TurboQuant Quantizer"
 Write-Host "=================================================="
@@ -260,6 +295,7 @@ Write-Host "Source:  $Source"
 Write-Host "Output:  $Output"
 Write-Host "Preset:  $Preset"
 if ($Imatrix) { Write-Host "Imatrix: $Imatrix" }
+Write-Host "Device:  $quantDevDesc"
 Write-Host "=================================================="
 
 & $QuantizeBin @QuantArgs

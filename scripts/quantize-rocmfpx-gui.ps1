@@ -255,34 +255,75 @@ function Find-ImatrixBinary {
     return $null
 }
 
-function Set-RocmExecutionEnvironment {
-    param([int]$GpuLayers = 0)
-
-    if ($GpuLayers -le 0) {
-        # Pure CPU execution: isolate ROCm to prevent device initialization crashes
-        $env:HIP_VISIBLE_DEVICES = ""
-        return "CPU (ROCm bypassed)"
-    }
-
-    # Detect multi-GPU setups where Device 0 is an unsupported iGPU (gfx1036) and Device 1 is a dedicated AMD GPU (e.g. RX 9060 XT / gfx1200)
+function Get-AvailableGpuDevices {
+    $devices = [System.Collections.Generic.List[PSObject]]::new()
     try {
-        $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-        $hasDgpu = $gpus | Where-Object { $_ -match 'Radeon RX' }
-        $hasIgpu = $gpus | Where-Object { $_ -match 'Radeon\(TM\) Graphics' -or $_ -match 'Radeon Graphics' }
-        if ($hasDgpu -and $hasIgpu) {
-            # Dedicated RX 9060 XT is Device 1; iGPU Device 0 causes gfx1036 kernel image invalid aborts
-            $env:HIP_VISIBLE_DEVICES = "1"
-            return "Device 1 (Dedicated RX 9060 XT isolated)"
+        $controllers = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
+        $idx = 0
+        foreach ($ctrl in $controllers) {
+            if (-not [string]::IsNullOrWhiteSpace($ctrl.Name)) {
+                $devices.Add([PSCustomObject]@{
+                    Index = $idx
+                    Name  = $ctrl.Name.Trim()
+                    Driver = $ctrl.DriverVersion
+                })
+                $idx++
+            }
         }
     } catch {}
+    return $devices
+}
 
-    # If HIP_VISIBLE_DEVICES is already explicitly set to something specific (not default 0,1), preserve it
-    if (-not [string]::IsNullOrWhiteSpace($env:HIP_VISIBLE_DEVICES) -and $env:HIP_VISIBLE_DEVICES -ne "0,1") {
-        return "Custom ($env:HIP_VISIBLE_DEVICES)"
+function Set-UniversalExecutionEnvironment {
+    param(
+        [string]$DeviceSelection = "auto",
+        [int]$GpuLayers = -1
+    )
+
+    $dev = if ([string]::IsNullOrWhiteSpace($DeviceSelection)) { "auto" } else { $DeviceSelection.ToLower().Trim() }
+
+    # Pure CPU mode: If user chose "cpu" or explicitly passed 0 GPU layers for imatrix
+    if ($dev -eq "cpu" -or $GpuLayers -eq 0) {
+        $env:HIP_VISIBLE_DEVICES = "-1"
+        $env:CUDA_VISIBLE_DEVICES = "-1"
+        return "CPU Only (GPU isolated)"
     }
 
-    $env:HIP_VISIBLE_DEVICES = "0"
-    return "Device 0"
+    if ($dev -eq "all") {
+        $gpus = Get-AvailableGpuDevices
+        if ($gpus.Count -gt 0) {
+            $indices = (0..($gpus.Count - 1)) -join ","
+            $env:HIP_VISIBLE_DEVICES = $indices
+            $env:CUDA_VISIBLE_DEVICES = $indices
+            return "All GPUs ($indices)"
+        }
+        Remove-Item env:HIP_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        Remove-Item env:CUDA_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        return "All GPUs (System Default)"
+    }
+
+    if ($dev -eq "auto") {
+        # Preserve user's external environment variable if explicitly set
+        if (-not [string]::IsNullOrWhiteSpace($env:HIP_VISIBLE_DEVICES)) {
+            return "Environment (HIP=$env:HIP_VISIBLE_DEVICES)"
+        }
+        Remove-Item env:HIP_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        Remove-Item env:CUDA_VISIBLE_DEVICES -ErrorAction SilentlyContinue
+        return "Auto (Driver Default)"
+    }
+
+    # Specific numeric index or custom device string (e.g. "0", "1", "0,1")
+    $env:HIP_VISIBLE_DEVICES = $DeviceSelection
+    $env:CUDA_VISIBLE_DEVICES = $DeviceSelection
+    return "Device $DeviceSelection"
+}
+
+function Set-RocmExecutionEnvironment {
+    param(
+        [string]$DeviceSelection = "auto",
+        [int]$GpuLayers = -1
+    )
+    return Set-UniversalExecutionEnvironment -DeviceSelection $DeviceSelection -GpuLayers $GpuLayers
 }
 
 function Get-SuggestedOutputPath {
@@ -691,6 +732,7 @@ function Build-QuantizeArguments {
                 <ComboBox Grid.Row="1" Grid.Column="1" Name="CmbPreset" Height="30" Margin="0,0,8,10" ToolTip="Select quantization preset format">
                     <!-- ROCmFP4 -->
                     <ComboBoxItem Content="Q4_0_ROCMFP4_FAST - Fastest 4-Bit FP4 (Recommended)" Tag="Q4_0_ROCMFP4_FAST" IsSelected="True" ToolTip="4.25 bpw. Fastest 4-bit floating-point format for AMD RDNA3 and RDNA4 GPUs. Native single-scale speed layout."/>
+                    <ComboBoxItem Content="Q4_0_ROCMFP4_FAST_COHERENT - Fast 4-Bit FP4 + Q6_K Embeddings" Tag="Q4_0_ROCMFP4_FAST_COHERENT" ToolTip="~4.45 bpw. Fast single-scale FP4 speed layout with Q6_K token embeddings for improved response coherence."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4 - Standard 4-Bit FP4" Tag="Q4_0_ROCMFP4" ToolTip="4.50 bpw. Standard ROCm FP4 format with UE4M3 dual scales. Balanced performance and quality."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4_COHERENT - Coherent 4-Bit FP4 (Higher Quality)" Tag="Q4_0_ROCMFP4_COHERENT" ToolTip="4.70 bpw. Coherent 4-bit FP4 with Q6_K token embeddings for improved response coherence."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX - Tuned for Strix Point iGPU" Tag="Q4_0_ROCMFP4_STRIX" ToolTip="~4.49 bpw. Optimized for AMD Strix Point / Strix Halo APUs (Zen 5 + RDNA 3.5 iGPU) with high-quality attention K/V recipe."/>
@@ -737,16 +779,20 @@ function Build-QuantizeArguments {
         <!-- 4. Options Section -->
         <Border Grid.Row="3" Background="#20202A" CornerRadius="6" Padding="12" Margin="0,0,0,12" BorderBrush="#2D2D3B" BorderThickness="1">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="105"/>
                 </Grid.ColumnDefinitions>
 
-                <CheckBox Grid.Column="0" Name="ChkAllowRequantize" Content="Allow Requantize (--allow-requantize)" ToolTip="Check if source is already quantized (e.g. Q8_0 or Q4_K_M) rather than F16/BF16. Requantization runs on CPU."/>
+                <CheckBox Grid.Row="0" Grid.Column="0" Name="ChkAllowRequantize" Content="Allow Requantize (--allow-requantize)" ToolTip="Check if source is already quantized (e.g. Q8_0 or Q4_K_M) rather than F16/BF16. Requantization runs on CPU."/>
 
-                <TextBlock Grid.Column="1" Text="CPU Threads:" VerticalAlignment="Center" Margin="0,0,8,0" ToolTip="Number of CPU worker threads (0 = auto-detect based on CPU cores)"/>
-                <ComboBox Grid.Column="2" Name="CmbThreads" Height="28" ToolTip="CPU threads to use for quantization (offline quantization runs on CPU)">
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="CPU Threads:" VerticalAlignment="Center" Margin="0,0,8,0" ToolTip="Number of CPU worker threads (0 = auto-detect based on CPU cores)"/>
+                <ComboBox Grid.Row="0" Grid.Column="2" Name="CmbThreads" Height="28" ToolTip="CPU threads to use for quantization (offline quantization runs on CPU)">
                     <ComboBoxItem Content="0 (Auto)" Tag="0" IsSelected="True" ToolTip="Automatically detect and use all available CPU logical cores"/>
                     <ComboBoxItem Content="4" Tag="4" ToolTip="Use 4 CPU threads"/>
                     <ComboBoxItem Content="8" Tag="8" ToolTip="Use 8 CPU threads"/>
@@ -755,6 +801,19 @@ function Build-QuantizeArguments {
                     <ComboBoxItem Content="24" Tag="24" ToolTip="Use 24 CPU threads"/>
                     <ComboBoxItem Content="32" Tag="32" ToolTip="Use 32 CPU threads"/>
                 </ComboBox>
+
+                <!-- Row 1: Target GPU / Device Selection -->
+                <Grid Grid.Row="1" Grid.ColumnSpan="3" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Compute Device / GPU:" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Select which GPU device to expose (via HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES). 'Auto' leaves driver default. 'CPU Only' disables GPU enumeration."/>
+                    <ComboBox Grid.Column="1" Name="CmbGpuDevice" Height="28" ToolTip="Select the active GPU device for quantization / imatrix runtime">
+                        <ComboBoxItem Content="Auto (System Default)" Tag="auto" IsSelected="True" ToolTip="Let ROCm / CUDA driver enumerate devices normally"/>
+                        <ComboBoxItem Content="CPU Only (Isolate GPU)" Tag="cpu" ToolTip="Disable GPU access completely to avoid device enumeration errors"/>
+                    </ComboBox>
+                </Grid>
             </Grid>
         </Border>
 
@@ -820,6 +879,7 @@ $btnBrowseImatrix     = $window.FindName("BtnBrowseImatrix")
 $btnCreateImatrix     = $window.FindName("BtnCreateImatrix")
 $chkAllowRequantize   = $window.FindName("ChkAllowRequantize")
 $cmbThreads           = $window.FindName("CmbThreads")
+$cmbGpuDevice         = $window.FindName("CmbGpuDevice")
 $lblStatus            = $window.FindName("LblStatus")
 $btnStart             = $window.FindName("BtnStart")
 $btnCancel            = $window.FindName("BtnCancel")
@@ -857,6 +917,43 @@ if ($savedQuant -and (Test-Path $savedQuant)) {
     }
 }
 
+# 2. Populate GPU / Compute Devices dynamically from system
+try {
+    $detectedGpus = Get-AvailableGpuDevices
+    if ($cmbGpuDevice) {
+        $cmbGpuDevice.Items.Clear()
+
+        $itAuto = New-Object System.Windows.Controls.ComboBoxItem
+        $itAuto.Content = "Auto (System Default)"
+        $itAuto.Tag = "auto"
+        $itAuto.IsSelected = $true
+        $itAuto.ToolTip = "Let ROCm / CUDA driver enumerate devices normally"
+        $null = $cmbGpuDevice.Items.Add($itAuto)
+
+        foreach ($g in $detectedGpus) {
+            $itGpu = New-Object System.Windows.Controls.ComboBoxItem
+            $itGpu.Content = "GPU $($g.Index): $($g.Name)"
+            $itGpu.Tag = "$($g.Index)"
+            $itGpu.ToolTip = "Expose only GPU $($g.Index) ($($g.Name)) via HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES"
+            $null = $cmbGpuDevice.Items.Add($itGpu)
+        }
+
+        if ($detectedGpus.Count -gt 1) {
+            $itAll = New-Object System.Windows.Controls.ComboBoxItem
+            $itAll.Content = "All GPUs ($($detectedGpus.Count) detected - Multi-GPU)"
+            $itAll.Tag = "all"
+            $itAll.ToolTip = "Expose all detected GPU devices"
+            $null = $cmbGpuDevice.Items.Add($itAll)
+        }
+
+        $itCpu = New-Object System.Windows.Controls.ComboBoxItem
+        $itCpu.Content = "CPU Only (Isolate GPU)"
+        $itCpu.Tag = "cpu"
+        $itCpu.ToolTip = "Disable GPU device enumeration to avoid driver errors or for CPU-only execution"
+        $null = $cmbGpuDevice.Items.Add($itCpu)
+    }
+} catch {}
+
 # Apply initial values if provided
 if ($InitialSource) {
     $txtSourceModel.Text = $InitialSource
@@ -881,6 +978,14 @@ function Get-SelectedThreads {
         return [int]$cmbThreads.SelectedItem.Tag
     }
     return 0
+}
+
+# Helper to get selected GPU device tag
+function Get-SelectedGpuDeviceTag {
+    if ($cmbGpuDevice -and $cmbGpuDevice.SelectedItem -and $cmbGpuDevice.SelectedItem.Tag) {
+        return $cmbGpuDevice.SelectedItem.Tag.ToString()
+    }
+    return "auto"
 }
 
 # Event: Browse Executable
@@ -1074,6 +1179,131 @@ function Show-ImatrixDialog {
                 </Setter.Value>
             </Setter>
         </Style>
+        <ControlTemplate x:Key="DlgComboBoxToggleButtonTemplate" TargetType="{x:Type ToggleButton}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="26" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="border"
+                        Grid.ColumnSpan="2"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="4"
+                        SnapsToDevicePixels="True" />
+                <Path x:Name="arrow"
+                      Grid.Column="1"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Data="M 0 0 L 4 4 L 8 0 Z"
+                      Fill="#94A3B8" />
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="border" Property="BorderBrush" Value="#14B8A6" />
+                    <Setter TargetName="arrow" Property="Fill" Value="#F8FAFC" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="border" Property="BorderBrush" Value="#0D9488" />
+                    <Setter TargetName="arrow" Property="Fill" Value="#0D9488" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter TargetName="border" Property="Background" Value="#1A1A22" />
+                    <Setter TargetName="border" Property="BorderBrush" Value="#2D2D3B" />
+                    <Setter TargetName="arrow" Property="Fill" Value="#4B5563" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="Background" Value="#22222C" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="BorderBrush" Value="#383848" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBox}">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Focusable="False"
+                                          IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Template="{StaticResource DlgComboBoxToggleButtonTemplate}" />
+                            <ContentPresenter x:Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              Margin="8,4,28,4"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left">
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="{x:Type TextBlock}">
+                                        <Setter Property="Foreground" Value="#F8FAFC" />
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                            <Popup x:Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Grid x:Name="DropDown"
+                                      SnapsToDevicePixels="True"
+                                      MinWidth="{TemplateBinding ActualWidth}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border x:Name="DropDownBorder"
+                                            Background="#1E1E28"
+                                            BorderBrush="#14B8A6"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Margin="0,2,0,2">
+                                        <ScrollViewer SnapsToDevicePixels="True">
+                                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="95" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#14B8A6" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#64748B" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="Background" Value="#1E1E28" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#0D9488" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#0F766E" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
     <Grid Margin="16">
         <Grid.RowDefinitions>
@@ -1121,6 +1351,10 @@ function Show-ImatrixDialog {
 
         <Border Grid.Row="2" Background="#20202A" CornerRadius="6" Padding="12" Margin="0,0,0,10" BorderBrush="#2D2D3B" BorderThickness="1">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="65"/>
@@ -1132,17 +1366,27 @@ function Show-ImatrixDialog {
                     <ColumnDefinition Width="70"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="GPU Layers (-ngl):" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Number of layers to offload to GPU/VRAM. 99 offloads all layers for maximum GPU acceleration."/>
-                <TextBox Grid.Column="1" Name="DlgTxtNgl" Text="99" Height="28" Margin="0,0,12,0" ToolTip="GPU layer offload count (-ngl). Use 99 for full GPU offload."/>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="GPU Layers (-ngl):" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Number of layers to offload to GPU/VRAM. 99 = full GPU offload, 0 = pure CPU, intermediate (e.g. 32) = Hybrid CPU/GPU."/>
+                <TextBox Grid.Row="0" Grid.Column="1" Name="DlgTxtNgl" Text="99" Height="28" Margin="0,0,12,0" ToolTip="GPU layer offload count (-ngl). Use 99 for full GPU, 0 for pure CPU, or intermediate for hybrid CPU/GPU."/>
 
-                <TextBlock Grid.Column="2" Text="Context (-c):" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Context window length (-c) for processing tokens during calibration"/>
-                <TextBox Grid.Column="3" Name="DlgTxtContext" Text="2048" Height="28" Margin="0,0,12,0" ToolTip="Context window length (default: 2048)"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Context (-c):" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Context window length (-c) for processing tokens during calibration"/>
+                <TextBox Grid.Row="0" Grid.Column="3" Name="DlgTxtContext" Text="2048" Height="28" Margin="0,0,12,0" ToolTip="Context window length (default: 2048)"/>
 
-                <TextBlock Grid.Column="4" Text="Chunks:" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Number of text chunks to process from the dataset"/>
-                <TextBox Grid.Column="5" Name="DlgTxtChunks" Text="64" Height="28" Margin="0,0,12,0" ToolTip="Calibration chunk count (default: 64; higher increases accuracy but takes longer)"/>
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Chunks:" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Number of text chunks to process from the dataset"/>
+                <TextBox Grid.Row="0" Grid.Column="5" Name="DlgTxtChunks" Text="64" Height="28" Margin="0,0,12,0" ToolTip="Calibration chunk count (default: 64; higher increases accuracy but takes longer)"/>
 
-                <TextBlock Grid.Column="6" Text="Threads:" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="CPU threads to use during imatrix computation (0 = auto)"/>
-                <TextBox Grid.Column="7" Name="DlgTxtThreads" Text="0" Height="28" ToolTip="Thread count (-t); 0 for automatic CPU core detection"/>
+                <TextBlock Grid.Row="0" Grid.Column="6" Text="Threads:" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="CPU threads to use during imatrix computation (0 = auto)"/>
+                <TextBox Grid.Row="0" Grid.Column="7" Name="DlgTxtThreads" Text="0" Height="28" ToolTip="Thread count (-t); 0 for automatic CPU core detection"/>
+
+                <!-- Row 1: Target GPU / Device Selection for Imatrix -->
+                <Grid Grid.Row="1" Grid.ColumnSpan="8" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Imatrix Device / GPU:" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Target GPU device for running forward calibration inference"/>
+                    <ComboBox Grid.Column="1" Name="DlgCmbGpuDevice" Height="28" ToolTip="Select which GPU device to execute imatrix calibration on"/>
+                </Grid>
             </Grid>
         </Border>
 
@@ -1201,6 +1445,7 @@ function Show-ImatrixDialog {
     $dlgTxtContext = $dialog.FindName("DlgTxtContext")
     $dlgTxtChunks = $dialog.FindName("DlgTxtChunks")
     $dlgTxtThreads = $dialog.FindName("DlgTxtThreads")
+    $dlgCmbGpuDevice = $dialog.FindName("DlgCmbGpuDevice")
     $dlgLblStatus = $dialog.FindName("DlgLblStatus")
     $dlgBtnCancel = $dialog.FindName("DlgBtnCancel")
     $dlgBtnStart = $dialog.FindName("DlgBtnStart")
@@ -1213,6 +1458,55 @@ function Show-ImatrixDialog {
     $dlgTxtSource.Text = $CurrentSource
     $dlgTxtCalibration.Text = $CurrentCalibration
     $dlgTxtOutput.Text = $defaultImatrixOut
+
+    # Populate Imatrix Compute Devices dynamically
+    try {
+        $dlgGpus = Get-AvailableGpuDevices
+        if ($dlgCmbGpuDevice) {
+            $dlgCmbGpuDevice.Items.Clear()
+
+            $dAuto = New-Object System.Windows.Controls.ComboBoxItem
+            $dAuto.Content = "Auto (System Default)"
+            $dAuto.Tag = "auto"
+            $dAuto.IsSelected = $true
+            $dAuto.ToolTip = "Let ROCm / CUDA driver enumerate devices normally"
+            $null = $dlgCmbGpuDevice.Items.Add($dAuto)
+
+            foreach ($g in $dlgGpus) {
+                $dGpu = New-Object System.Windows.Controls.ComboBoxItem
+                $dGpu.Content = "GPU $($g.Index): $($g.Name)"
+                $dGpu.Tag = "$($g.Index)"
+                $dGpu.ToolTip = "Offload matrix forward passes to GPU $($g.Index) ($($g.Name))"
+                if ($cmbGpuDevice -and $cmbGpuDevice.SelectedItem -and $cmbGpuDevice.SelectedItem.Tag -eq "$($g.Index)") {
+                    $dGpu.IsSelected = $true
+                    $dAuto.IsSelected = $false
+                }
+                $null = $dlgCmbGpuDevice.Items.Add($dGpu)
+            }
+
+            if ($dlgGpus.Count -gt 1) {
+                $dAll = New-Object System.Windows.Controls.ComboBoxItem
+                $dAll.Content = "All GPUs ($($dlgGpus.Count) detected - Multi-GPU)"
+                $dAll.Tag = "all"
+                $dAll.ToolTip = "Expose all detected GPU devices"
+                if ($cmbGpuDevice -and $cmbGpuDevice.SelectedItem -and $cmbGpuDevice.SelectedItem.Tag -eq "all") {
+                    $dAll.IsSelected = $true
+                    $dAuto.IsSelected = $false
+                }
+                $null = $dlgCmbGpuDevice.Items.Add($dAll)
+            }
+
+            $dCpu = New-Object System.Windows.Controls.ComboBoxItem
+            $dCpu.Content = "CPU Only (Disable GPU)"
+            $dCpu.Tag = "cpu"
+            $dCpu.ToolTip = "Run imatrix inference purely on CPU"
+            if ($cmbGpuDevice -and $cmbGpuDevice.SelectedItem -and $cmbGpuDevice.SelectedItem.Tag -eq "cpu") {
+                $dCpu.IsSelected = $true
+                $dAuto.IsSelected = $false
+            }
+            $null = $dlgCmbGpuDevice.Items.Add($dCpu)
+        }
+    } catch {}
 
     $script:DlgRunner = $null
     $script:DlgTimer = $null
@@ -1347,7 +1641,8 @@ function Show-ImatrixDialog {
 
         $nglVal = 0
         [int]::TryParse($ngl, [ref]$nglVal) | Out-Null
-        $rocmDevDesc = Set-RocmExecutionEnvironment -GpuLayers $nglVal
+        $selectedDlgGpuTag = if ($dlgCmbGpuDevice -and $dlgCmbGpuDevice.SelectedItem -and $dlgCmbGpuDevice.SelectedItem.Tag) { [string]$dlgCmbGpuDevice.SelectedItem.Tag } else { "auto" }
+        $rocmDevDesc = Set-UniversalExecutionEnvironment -DeviceSelection $selectedDlgGpuTag -GpuLayers $nglVal
 
         $argsList = New-Object System.Collections.Generic.List[string]
         $argsList.Add("-m"); $argsList.Add($src)
@@ -1381,7 +1676,7 @@ function Show-ImatrixDialog {
         $dlgTxtLog.AppendText("Dataset:    $cal`r`n")
         $dlgTxtLog.AppendText("Output:     $out`r`n")
         $dlgTxtLog.AppendText("GPU Layers: $ngl`r`n")
-        $dlgTxtLog.AppendText("ROCm Mode:  $rocmDevDesc`r`n")
+        $dlgTxtLog.AppendText("Device:     $rocmDevDesc`r`n")
         $dlgTxtLog.AppendText("Context:    $ctx`r`n")
         $dlgTxtLog.AppendText("Chunks:     $chunks`r`n")
         $dlgTxtLog.AppendText("Command:    `"$bin`" $argString`r`n")
@@ -1567,6 +1862,9 @@ $btnStart.Add_Click({
     $prgBar.Maximum = 100
     $prgBar.Value = 0
     $lblProgressText.Text = "Starting..."
+    $selectedGpuTag = Get-SelectedGpuDeviceTag
+    $rocmDevDesc = Set-UniversalExecutionEnvironment -DeviceSelection $selectedGpuTag
+
     $txtLog.Clear()
     $txtLog.AppendText("==================================================`r`n")
     $txtLog.AppendText(" ROCmFPX & TurboQuant Model Quantizer`r`n")
@@ -1577,10 +1875,9 @@ $btnStart.Add_Click({
     $txtLog.AppendText("Preset:    $preset`r`n")
     if ($imatrix) { $txtLog.AppendText("Imatrix:   $imatrix`r`n") }
     if ($allowRequant) { $txtLog.AppendText("Requant:   Allowed`r`n") }
+    $txtLog.AppendText("Device:    $rocmDevDesc`r`n")
     $txtLog.AppendText("Command:   `"$exe`" $argString`r`n")
     $txtLog.AppendText("==================================================`r`n`r`n")
-
-    $rocmDevDesc = Set-RocmExecutionEnvironment -GpuLayers 0
 
     $script:QuantOutputFile = $output
     $script:RunningRunner = New-Object LlamaAsyncProcessRunner
