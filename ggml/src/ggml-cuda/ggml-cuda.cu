@@ -3181,10 +3181,19 @@ static bool ggml_cuda_graph_check_compability(ggml_cgraph * cgraph) {
             // takes a device-routed path. TQ weights now have a capture-safe device-routed matvec at
             // small batch with contiguous src1 (ggml_cuda_mul_mat_id_tq); only the large-batch cuBLAS
             // fallback still synchronizes. Other quantized weights use mmvq up to mmvq_mmid_max.
+            // On AMD, unquantized weights use device-routed mmvf (ggml_cuda_mul_mat_vec_f) without sync.
             // Keep this condition in sync with the dispatch in ggml_cuda_mul_mat_id.
-            const bool needs_sync = is_tq_w
-                ? (node->ne[2] > MMVQ_MAX_BATCH_SIZE || !ggml_is_contiguous(node->src[1]))
-                : (!ggml_is_quantized(node->src[0]->type) || node->ne[2] > mmvq_mmid_max);
+            bool needs_sync = true;
+            if (is_tq_w) {
+                needs_sync = (node->ne[2] > MMVQ_MAX_BATCH_SIZE || !ggml_is_contiguous(node->src[1]));
+            } else if (ggml_is_quantized(node->src[0]->type)) {
+                needs_sync = (node->ne[2] > mmvq_mmid_max);
+            } else if (GGML_CUDA_CC_IS_AMD(cc) &&
+                       node->src[1]->type == GGML_TYPE_F32 && node->type == GGML_TYPE_F32 &&
+                       node->ne[2] <= MMVF_MAX_BATCH_SIZE &&
+                       ggml_cuda_should_use_mmvf(node->src[0]->type, cc, node->src[0]->ne, node->src[0]->nb, node->src[1]->ne[2])) {
+                needs_sync = false;
+            }
             if (needs_sync) {
                 // TODO: figure out a way to enable for larger batch sizes, without hurting performance
                 // ref: https://github.com/ggml-org/llama.cpp/pull/18958
@@ -3274,8 +3283,11 @@ static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx
     return res;
 }
 
-static void ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_ctx, uint64_t graph_key) {
+static bool ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_ctx, uint64_t graph_key) {
     ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
+    if (graph->instance == nullptr || graph->graph == nullptr) {
+        return false;
+    }
 
 #if CUDART_VERSION >= 12000
     cudaGraphExecUpdateResultInfo result_info;
@@ -3286,20 +3298,34 @@ static void ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_c
     cudaError_t stat = cudaGraphExecUpdate(graph->instance, graph->graph, &errorNode, &result_info);
 #endif // CUDART_VERSION >= 12000
 
+    if (stat == cudaSuccess) {
+        return true;
+    }
+
     if (stat == cudaErrorGraphExecUpdateFailure) {
 #ifndef NDEBUG
-        GGML_LOG_DEBUG("%s: CUDA graph update failed\n", __func__);
+        GGML_LOG_DEBUG("%s: CUDA/HIP graph update failed, attempting re-instantiation\n", __func__);
 #endif
 
         // The pre-existing graph exec cannot be updated due to violated constraints
         // so instead clear error and re-instantiate
         (void)cudaGetLastError();
-        CUDA_CHECK(cudaGraphExecDestroy(graph->instance));
+        (void)cudaGraphExecDestroy(graph->instance);
         graph->instance = nullptr;
-        CUDA_CHECK(cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0));
-    } else {
-        GGML_ASSERT(stat == cudaSuccess);
+
+        cudaError_t inst_err = cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0);
+        if (inst_err == cudaSuccess) {
+            return true;
+        }
+        (void)cudaGetLastError();
+        return false;
     }
+
+    // Other unexpected error from cudaGraphExecUpdate
+    (void)cudaGetLastError();
+    (void)cudaGraphExecDestroy(graph->instance);
+    graph->instance = nullptr;
+    return false;
 }
 #endif // USE_CUDA_GRAPH
 
@@ -5751,7 +5777,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
         if (use_cuda_graph && cuda_graph_update_required) { // End CUDA graph capture
             if (graph->graph != nullptr) {
-                CUDA_CHECK(cudaGraphDestroy(graph->graph));
+                (void)cudaGraphDestroy(graph->graph);
                 graph->graph = nullptr;
             }
 
@@ -5767,13 +5793,36 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                                             ggml_nelements(last));
             }
 
-            CUDA_CHECK(cudaStreamEndCapture(cuda_ctx->stream(), &graph->graph));
-            graph_evaluated_or_captured = true; // CUDA graph has been captured
+            cudaError_t end_status = cudaStreamEndCapture(cuda_ctx->stream(), &graph->graph);
 
-            std::lock_guard<std::mutex> lock(ggml_cuda_lock);
-            if (ggml_cuda_lock_counter.fetch_sub(1, std::memory_order_relaxed) == 1) {
-                ggml_cuda_lock_cv.notify_all();
+            {
+                std::lock_guard<std::mutex> lock(ggml_cuda_lock);
+                if (ggml_cuda_lock_counter.fetch_sub(1, std::memory_order_relaxed) == 1) {
+                    ggml_cuda_lock_cv.notify_all();
+                }
             }
+
+            if (end_status != cudaSuccess) {
+                (void)cudaGetLastError();
+                GGML_LOG_WARN("%s: HIP/CUDA stream end capture failed (%s), falling back to direct execution\n",
+                              __func__, cudaGetErrorString(end_status));
+                if (graph->graph != nullptr) {
+                    (void)cudaGraphDestroy(graph->graph);
+                    graph->graph = nullptr;
+                }
+                if (graph->instance != nullptr) {
+                    (void)cudaGraphExecDestroy(graph->instance);
+                    graph->instance = nullptr;
+                }
+                graph->disable_due_to_gpu_arch = true;
+                graph->warmup_complete = false;
+
+                // Fall back to direct non-captured evaluation
+                ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, false, false, graph_key);
+                return;
+            }
+
+            graph_evaluated_or_captured = true; // CUDA graph has been captured
         } else {
             graph_evaluated_or_captured = true; // ggml graph has been directly evaluated
         }
@@ -5782,13 +5831,60 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
     if (use_cuda_graph) {
         ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
         if (graph->instance == nullptr) { // Create executable graph from captured graph.
-            CUDA_CHECK(cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0));
-        }
-        if (cuda_graph_update_required) { // Update graph executable
-            ggml_cuda_graph_update_executable(cuda_ctx, graph_key);
+            cudaError_t inst_err = cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0);
+            if (inst_err != cudaSuccess) {
+                (void)cudaGetLastError();
+                GGML_LOG_WARN("%s: HIP/CUDA graph instantiate failed (%s), falling back to direct execution\n",
+                              __func__, cudaGetErrorString(inst_err));
+                if (graph->instance != nullptr) {
+                    (void)cudaGraphExecDestroy(graph->instance);
+                    graph->instance = nullptr;
+                }
+                if (graph->graph != nullptr) {
+                    (void)cudaGraphDestroy(graph->graph);
+                    graph->graph = nullptr;
+                }
+                graph->disable_due_to_gpu_arch = true;
+                graph->warmup_complete = false;
+                ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, false, false, graph_key);
+                return;
+            }
+        } else if (cuda_graph_update_required) { // Update graph executable
+            if (!ggml_cuda_graph_update_executable(cuda_ctx, graph_key)) {
+                GGML_LOG_WARN("%s: HIP/CUDA graph update failed, falling back to direct execution\n", __func__);
+                if (graph->instance != nullptr) {
+                    (void)cudaGraphExecDestroy(graph->instance);
+                    graph->instance = nullptr;
+                }
+                if (graph->graph != nullptr) {
+                    (void)cudaGraphDestroy(graph->graph);
+                    graph->graph = nullptr;
+                }
+                graph->disable_due_to_gpu_arch = true;
+                graph->warmup_complete = false;
+                ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, false, false, graph_key);
+                return;
+            }
         }
         // Launch graph
-        CUDA_CHECK(cudaGraphLaunch(graph->instance, cuda_ctx->stream()));
+        cudaError_t launch_err = cudaGraphLaunch(graph->instance, cuda_ctx->stream());
+        if (launch_err != cudaSuccess) {
+            (void)cudaGetLastError();
+            GGML_LOG_WARN("%s: HIP/CUDA graph launch failed (%s), falling back to direct execution\n",
+                          __func__, cudaGetErrorString(launch_err));
+            if (graph->instance != nullptr) {
+                (void)cudaGraphExecDestroy(graph->instance);
+                graph->instance = nullptr;
+            }
+            if (graph->graph != nullptr) {
+                (void)cudaGraphDestroy(graph->graph);
+                graph->graph = nullptr;
+            }
+            graph->disable_due_to_gpu_arch = true;
+            graph->warmup_complete = false;
+            ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, false, false, graph_key);
+            return;
+        }
 #else
         GGML_UNUSED(graph_key);
         graph_evaluated_or_captured = true;
@@ -5952,10 +6048,26 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
             GGML_CUDA_CC_IS_RDNA2(ggml_cuda_info().devices[cuda_ctx->device].cc)
                 ? hipStreamCaptureModeThreadLocal
                 : hipStreamCaptureModeRelaxed;
-        CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stream(), capture_mode));
+        cudaError_t capture_status = cudaStreamBeginCapture(cuda_ctx->stream(), capture_mode);
 #else
-        CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stream(), cudaStreamCaptureModeRelaxed));
+        cudaError_t capture_status = cudaStreamBeginCapture(cuda_ctx->stream(), cudaStreamCaptureModeRelaxed);
 #endif
+        if (capture_status != cudaSuccess) {
+            (void)cudaGetLastError();
+            {
+                std::lock_guard<std::mutex> lock(ggml_cuda_lock);
+                if (ggml_cuda_lock_counter.fetch_sub(1, std::memory_order_relaxed) == 1) {
+                    ggml_cuda_lock_cv.notify_all();
+                }
+            }
+            GGML_LOG_WARN("%s: cudaStreamBeginCapture failed (%s), disabling CUDA/HIP graph for this key\n",
+                          __func__, cudaGetErrorString(capture_status));
+            ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
+            graph->disable_due_to_gpu_arch = true;
+            graph->warmup_complete = false;
+            use_cuda_graph = false;
+            cuda_graph_update_required = false;
+        }
     }
 
     ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);

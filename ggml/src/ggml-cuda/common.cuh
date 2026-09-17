@@ -1583,10 +1583,12 @@ struct ggml_cuda_graph {
 #ifdef USE_CUDA_GRAPH
     ~ggml_cuda_graph() {
         if (instance != nullptr) {
-            CUDA_CHECK(cudaGraphExecDestroy(instance));
+            (void)cudaGraphExecDestroy(instance);
+            instance = nullptr;
         }
         if (graph != nullptr) {
-            CUDA_CHECK(cudaGraphDestroy(graph));
+            (void)cudaGraphDestroy(graph);
+            graph = nullptr;
         }
     }
     cudaGraph_t graph = nullptr;
