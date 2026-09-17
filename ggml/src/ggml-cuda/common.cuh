@@ -2023,6 +2023,62 @@ struct ggml_backend_cuda_context {
     hipblasLtHandle_t hipblaslt_handle() {
         return hipblaslt_handle(device);
     }
+
+    struct hipblaslt_shape_key {
+        uint32_t m;
+        uint32_t n;
+        uint32_t k;
+        uint32_t s01;
+        uint32_t s11;
+        uint32_t ne0;
+        uint32_t sma;
+        uint32_t smb;
+        uint32_t smc;
+        uint32_t batch_count;
+        uint16_t type_a;
+        uint16_t type_b;
+        uint16_t type_c;
+        uint16_t compute_type;
+
+        bool operator==(const hipblaslt_shape_key & o) const {
+            return m == o.m && n == o.n && k == o.k &&
+                   s01 == o.s01 && s11 == o.s11 && ne0 == o.ne0 &&
+                   sma == o.sma && smb == o.smb && smc == o.smc &&
+                   batch_count == o.batch_count &&
+                   type_a == o.type_a && type_b == o.type_b &&
+                   type_c == o.type_c && compute_type == o.compute_type;
+        }
+    };
+
+    struct hipblaslt_shape_hash {
+        size_t operator()(const hipblaslt_shape_key & k) const {
+            size_t h = 2166136261u;
+            auto hash_combine = [&h](uint32_t val) {
+                h ^= val;
+                h *= 16777619u;
+            };
+            hash_combine(k.m);
+            hash_combine(k.n);
+            hash_combine(k.k);
+            hash_combine(k.s01);
+            hash_combine(k.s11);
+            hash_combine(k.ne0);
+            hash_combine(k.sma);
+            hash_combine(k.smb);
+            hash_combine(k.smc);
+            hash_combine(k.batch_count);
+            hash_combine(uint32_t(k.type_a) | (uint32_t(k.type_b) << 8) | (uint32_t(k.type_c) << 16) | (uint32_t(k.compute_type) << 24));
+            return h;
+        }
+    };
+
+    struct hipblaslt_cached_algo {
+        hipblasLtMatmulAlgo_t algo;
+        size_t workspace_size = 0;
+        bool valid = false;
+    };
+
+    std::unordered_map<hipblaslt_shape_key, hipblaslt_cached_algo, hipblaslt_shape_hash> hipblaslt_algo_cache;
 #endif
 
     // pool
