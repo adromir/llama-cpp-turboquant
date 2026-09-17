@@ -5,6 +5,8 @@
 #include "ggml-impl.h"
 #include "ggml-cpu/ggml-cpu-impl.h"
 #include "ggml-cpu.h"
+#include "rocmfp4.h"
+#include "rocmfpx.h"
 
 #include <math.h>
 #include <string.h>
@@ -5816,6 +5818,20 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
         case GGML_TYPE_TURBO2_0:
             // WHT-rotated / TurboQuant types: no scalar-domain validation.
             break;
+        case GGML_TYPE_Q4_0_ROCMFP4:
+            return rocmfp4_validate_row_data(data, nbytes);
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST:
+            return rocmfp4_validate_row_data_fast(data, nbytes);
+        case GGML_TYPE_Q6_0_ROCMFPX:
+            return rocmfpx_validate_row_data_fp6(data, nbytes);
+        case GGML_TYPE_Q8_0_ROCMFPX:
+            return rocmfpx_validate_row_data_fp8(data, nbytes);
+        case GGML_TYPE_Q3_0_ROCMFPX:
+            return rocmfpx_validate_row_data_fp3(data, nbytes);
+        case GGML_TYPE_Q2_0_ROCMFPX:
+            return rocmfpx_validate_row_data_fp2(data, nbytes);
+        case GGML_TYPE_Q4_0_ROCMI4:
+            return rocmfpx_validate_row_data_i4(data, nbytes);
         default:
             {
                 fprintf(stderr, "%s: invalid type %d\n", __func__, type);
