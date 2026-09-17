@@ -251,16 +251,25 @@
 #define CDNA // For the entire family
 #endif // defined(CDNA4) || defined(CDNA3) || defined(CDNA2) || defined(CDNA1)
 
-#if defined(__GFX12__)
+#if defined(__GFX12__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx1250__)
+#ifndef RDNA4
 #define RDNA4
+#endif
 #endif // defined(__GFX12__)
 
-#if defined(__GFX11__)
+#if defined(__GFX11__) || defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__)
+#ifndef RDNA3
 #define RDNA3
+#endif
 #endif // defined(__GFX11__)
 
 #if defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1152__) || defined(__gfx1153__)
+#ifndef RDNA3_5
 #define RDNA3_5
+#endif
+#ifndef RDNA3
+#define RDNA3
+#endif
 #endif // defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1152__) || defined(__gfx1153__)
 
 #if defined(RDNA3) && !defined(RDNA3_5)
