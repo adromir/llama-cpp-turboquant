@@ -1769,6 +1769,9 @@ struct ggml_backend_cuda_context {
 
     cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES] = {nullptr};
+#ifdef GGML_USE_HIPBLASLT
+    hipblasLtHandle_t hipblaslt_handles[GGML_CUDA_MAX_DEVICES] = {nullptr};
+#endif
 
     int curr_stream_no = 0;
 
@@ -1999,6 +2002,28 @@ struct ggml_backend_cuda_context {
     cublasHandle_t cublas_handle() {
         return cublas_handle(device);
     }
+
+#ifdef GGML_USE_HIPBLASLT
+    hipblasLtHandle_t hipblaslt_handle(int dev) {
+        if (hipblaslt_handles[dev] == nullptr) {
+            ggml_cuda_set_device(dev);
+#if defined(_WIN32)
+            if (std::getenv("HIPBLASLT_TENSILE_PATH") == nullptr) {
+                _putenv("HIPBLASLT_TENSILE_PATH=C:\\TheRock\\build\\bin\\hipblaslt\\library");
+            }
+#endif
+            hipblasStatus_t status = hipblasLtCreate(&hipblaslt_handles[dev]);
+            if (status != HIPBLAS_STATUS_SUCCESS) {
+                hipblaslt_handles[dev] = nullptr;
+            }
+        }
+        return hipblaslt_handles[dev];
+    }
+
+    hipblasLtHandle_t hipblaslt_handle() {
+        return hipblaslt_handle(device);
+    }
+#endif
 
     // pool
     std::unique_ptr<ggml_cuda_pool> pools[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS];

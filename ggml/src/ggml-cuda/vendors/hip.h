@@ -6,6 +6,10 @@
 #include <hip/hip_fp16.h>
 #include <hip/hip_bf16.h>
 
+#ifdef GGML_USE_HIPBLASLT
+#include <hipblaslt/hipblaslt.h>
+#endif // GGML_USE_HIPBLASLT
+
 #ifdef GGML_USE_NCCL
 #include <rccl/rccl.h>
 #endif // GGML_USE_NCCL

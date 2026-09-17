@@ -801,6 +801,12 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
         if (cublas_handles[i] != nullptr) {
             CUBLAS_CHECK(cublasDestroy(cublas_handles[i]));
         }
+#ifdef GGML_USE_HIPBLASLT
+        if (hipblaslt_handles[i] != nullptr) {
+            hipblasLtDestroy(hipblaslt_handles[i]);
+            hipblaslt_handles[i] = nullptr;
+        }
+#endif
     }
 }
 
@@ -1609,6 +1615,100 @@ struct batched_mul_mat_traits<GGML_TYPE_F16> {
     static inline auto convert_nc(ggml_type src_type) { return ggml_get_to_fp16_nc_cuda(src_type); }
 };
 
+#ifdef GGML_USE_HIPBLASLT
+static bool ggml_hipblaslt_matmul(
+        ggml_backend_cuda_context & ctx,
+        const void * src0, int64_t ne01, int64_t ne10, int64_t s01, hipDataType type_a,
+        const void * src1, int64_t ne11, int64_t s11, hipDataType type_b,
+        void * dst, int64_t ne0, hipDataType type_c,
+        const void * alpha, const void * beta,
+        hipblasComputeType_t compute_type,
+        cudaStream_t stream) {
+
+    hipblasLtHandle_t handle = ctx.hipblaslt_handle();
+    if (!handle) {
+        return false;
+    }
+
+    uint64_t m = ne01;
+    uint64_t n = ne11;
+    uint64_t k = ne10;
+
+    hipblasLtMatrixLayout_t matA = nullptr;
+    hipblasLtMatrixLayout_t matB = nullptr;
+    hipblasLtMatrixLayout_t matC = nullptr;
+    hipblasLtMatmulDesc_t matmulDesc = nullptr;
+    hipblasLtMatmulPreference_t pref = nullptr;
+
+    bool success = false;
+
+    do {
+        if (hipblasLtMatrixLayoutCreate(&matA, type_a, k, m, s01) != HIPBLAS_STATUS_SUCCESS) {
+            break;
+        }
+        if (hipblasLtMatrixLayoutCreate(&matB, type_b, k, n, s11) != HIPBLAS_STATUS_SUCCESS) {
+            break;
+        }
+        if (hipblasLtMatrixLayoutCreate(&matC, type_c, m, n, ne0) != HIPBLAS_STATUS_SUCCESS) {
+            break;
+        }
+
+        if (hipblasLtMatmulDescCreate(&matmulDesc, compute_type, HIP_R_32F) != HIPBLAS_STATUS_SUCCESS) {
+            break;
+        }
+
+        int32_t opA = HIPBLAS_OP_T;
+        int32_t opB = HIPBLAS_OP_N;
+        hipblasLtMatmulDescSetAttribute(matmulDesc, HIPBLASLT_MATMUL_DESC_TRANSA, &opA, sizeof(opA));
+        hipblasLtMatmulDescSetAttribute(matmulDesc, HIPBLASLT_MATMUL_DESC_TRANSB, &opB, sizeof(opB));
+
+        if (hipblasLtMatmulPreferenceCreate(&pref) != HIPBLAS_STATUS_SUCCESS) {
+            break;
+        }
+
+        uint64_t max_ws = 32 * 1024 * 1024;
+        hipblasLtMatmulPreferenceSetAttribute(pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &max_ws, sizeof(max_ws));
+
+        hipblasLtMatmulHeuristicResult_t heuristicResult;
+        int returnedAlgoCount = 0;
+        hipblasStatus_t hstatus = hipblasLtMatmulAlgoGetHeuristic(
+            handle, matmulDesc, matA, matB, matC, matC, pref, 1, &heuristicResult, &returnedAlgoCount);
+
+        if (hstatus != HIPBLAS_STATUS_SUCCESS || returnedAlgoCount == 0 || heuristicResult.state != HIPBLAS_STATUS_SUCCESS) {
+            break;
+        }
+
+        void * workspace = nullptr;
+        ggml_cuda_pool_alloc<char> ws_alloc(ctx.pool());
+        if (heuristicResult.workspaceSize > 0) {
+            workspace = ws_alloc.alloc(heuristicResult.workspaceSize);
+        }
+
+        hipblasStatus_t mstatus = hipblasLtMatmul(
+            handle, matmulDesc,
+            alpha, src0, matA,
+            src1, matB,
+            beta, dst, matC,
+            dst, matC,
+            &heuristicResult.algo,
+            workspace, heuristicResult.workspaceSize,
+            stream);
+
+        if (mstatus == HIPBLAS_STATUS_SUCCESS) {
+            success = true;
+        }
+    } while (false);
+
+    if (pref)       { hipblasLtMatmulPreferenceDestroy(pref); }
+    if (matmulDesc) { hipblasLtMatmulDescDestroy(matmulDesc); }
+    if (matA)       { hipblasLtMatrixLayoutDestroy(matA); }
+    if (matB)       { hipblasLtMatrixLayoutDestroy(matB); }
+    if (matC)       { hipblasLtMatrixLayoutDestroy(matC); }
+
+    return success;
+}
+#endif // GGML_USE_HIPBLASLT
+
 template<ggml_type compute_type>
 static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     using traits = batched_mul_mat_traits<compute_type>;
@@ -1745,21 +1845,43 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
     // However, for some old NVIDIA and AMD GPUs the strided/Ex GEMM is much slower,
     //     probably because the internal kernel selection logic is suboptimal.
     if (compute_type == GGML_TYPE_F32 && ne12 == 1 && ne13 == 1) {
-        CUBLAS_CHECK(
-            cublasSgemm(ctx.cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N,
-                    ne01, ne11, ne10,
-                    (const float *) alpha, (const float *) src0_ptr, s01,
-                                           (const float *) src1_ptr, s11,
-                    (const float *) beta,  (float       *)  dst_ptr, ne0));
+        bool ok = false;
+#ifdef GGML_USE_HIPBLASLT
+        float alpha_f = 1.0f;
+        float beta_f  = 0.0f;
+        ok = ggml_hipblaslt_matmul(ctx, src0_ptr, ne01, ne10, s01, HIP_R_32F,
+                                        src1_ptr, ne11, s11, HIP_R_32F,
+                                        dst_ptr, ne0, HIP_R_32F,
+                                        &alpha_f, &beta_f,
+                                        HIPBLAS_COMPUTE_32F, main_stream);
+#endif
+        if (!ok) {
+            CUBLAS_CHECK(
+                cublasSgemm(ctx.cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N,
+                        ne01, ne11, ne10,
+                        (const float *) alpha, (const float *) src0_ptr, s01,
+                                               (const float *) src1_ptr, s11,
+                        (const float *) beta,  (float       *)  dst_ptr, ne0));
+        }
     } else if (ne12 == 1 && ne13 == 1) {
-        CUBLAS_CHECK(
-            cublasGemmEx(ctx.cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N,
-                    ne01, ne11, ne10,
-                    alpha, src0_ptr, cu_data_type_a, s01,
-                           src1_ptr, cu_data_type_b, s11,
-                    beta,   dst_ptr, cu_data_type,   ne0,
-                    cu_compute_type,
-                    CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        bool ok = false;
+#ifdef GGML_USE_HIPBLASLT
+        ok = ggml_hipblaslt_matmul(ctx, src0_ptr, ne01, ne10, s01, cu_data_type_a,
+                                        src1_ptr, ne11, s11, cu_data_type_b,
+                                        dst_ptr, ne0, cu_data_type,
+                                        alpha, beta,
+                                        cu_compute_type, main_stream);
+#endif
+        if (!ok) {
+            CUBLAS_CHECK(
+                cublasGemmEx(ctx.cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N,
+                        ne01, ne11, ne10,
+                        alpha, src0_ptr, cu_data_type_a, s01,
+                               src1_ptr, cu_data_type_b, s11,
+                        beta,   dst_ptr, cu_data_type,   ne0,
+                        cu_compute_type,
+                        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        }
     } else if (r2 == 1 && r3 == 1 && is_src0_cont_2 && is_src1_cont_2) {
         // with a [0, 2, 1, 3] perm. and ne02==1 the matrix strides need to be determined from dim 3:
         const int64_t sma = ne02 == 1 ? s03 : s02;
