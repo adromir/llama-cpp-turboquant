@@ -6946,8 +6946,16 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
         case GGML_OP_CUMSUM:
         case GGML_OP_TRI:
         case GGML_OP_DIAG:
+            return true;
+#if defined(GGML_USE_HIP)
+        case GGML_OP_SOLVE_TRI:
+            // rocBLAS trsm batched lacks kernel images for RDNA architectures (e.g. gfx1200).
+            // Only fast kernel handles n <= 64 && k <= 32 on device; larger shapes fall back to CPU.
+            return op->src[0]->ne[0] <= 64 && op->src[1]->ne[0] <= 32;
+#else
         case GGML_OP_SOLVE_TRI:
             return true;
+#endif
         case GGML_OP_LIGHTNING_INDEXER:
             return ggml_cuda_lightning_indexer_supported(dev_ctx->device, op);
 
