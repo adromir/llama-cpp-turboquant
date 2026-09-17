@@ -333,11 +333,14 @@ TurboQuant exposes fine-tuning knobs via environment variables:
 
 If you prefer building from source, ensure you have CMake and Ninja installed.
 
-### Windows (AMD ROCm 10 TheRock)
+### Windows (AMD ROCm 10 / HIP)
+
+You can build with AMD ROCm 10 (TheRock), official AMD ROCm 6.x+, or any custom installation.
+The build snippet automatically detects your ROCm root from `$env:HIP_PATH` or `$env:ROCM_PATH`, or allows defining your custom path:
 
 ```powershell
-# Set path to AMD ROCm installation
-$RocmPath = "C:/TheRock/build"
+# Auto-detect ROCm installation path, or set custom path
+$RocmPath = if ($env:HIP_PATH) { $env:HIP_PATH } elseif ($env:ROCM_PATH) { $env:ROCM_PATH } else { "C:/TheRock/build" }
 $ClangBin = "$RocmPath/lib/llvm/bin"
 
 mkdir build
@@ -364,8 +367,8 @@ cmake --build . --config Release --parallel
 ### Linux (ROCm / HIP)
 
 ```bash
-export ROCM_PATH=/opt/rocm
-export HIP_PATH=/opt/rocm
+export ROCM_PATH=${ROCM_PATH:-/opt/rocm}
+export HIP_PATH=${HIP_PATH:-/opt/rocm}
 
 mkdir build && cd build
 
@@ -386,6 +389,28 @@ cmake -G "Ninja" \
 
 cmake --build . --config Release --parallel $(nproc)
 ```
+
+---
+
+## AMD ROCm Runtime & Environment Configuration
+
+The ROCm backend supports automatic detection across diverse environments, but offers fine-grained control via standard environment variables:
+
+| Environment Variable | Description | Example / Default |
+| :--- | :--- | :--- |
+| `HIP_PATH` / `ROCM_PATH` | Base path of the AMD ROCm SDK installation. Used by the build system and runtime path discovery. | `C:\TheRock\build` or `C:\Program Files\AMD\ROCm\6.2` or `/opt/rocm` |
+| `HIPBLASLT_TENSILE_PATH` | Path to hipBLASLt Tensile library kernels (`TensileLibrary_*.dat.zlib`). **Auto-discovered** from `$HIP_PATH\bin\hipblaslt\library` or `$HIP_PATH\lib\hipblaslt\library`. Can be manually overridden if using custom kernel packaging. | `$env:HIPBLASLT_TENSILE_PATH = "D:\CustomTensile"` |
+| `HIP_VISIBLE_DEVICES` | Controls which AMD GPU devices are visible to the process. Useful on systems with both integrated APUs and discrete GPUs. | `1` (Discrete GPU), `0` (APU/iGPU), `0,1` (All), `-1` (CPU Isolation) |
+| `GGML_CUDA_GRAPHS` / `GGML_HIP_GRAPHS` | Enables HIP/CUDA Graph execution during single-token autoregressive decoding to eliminate CPU submission jitter. | `1` (default ON) |
+| `GGML_TQ_NATIVE` | Native TQ DP4A matrix-vector decode kernels without runtime dequantization. | `1` |
+
+### High-Performance `hipBLASLt` GEMM & Shape Cache
+
+On RDNA3, RDNA3.5, RDNA4, and CDNA, this distribution automatically links and utilizes `hipBLASLt` (the AMD counterpart to NVIDIA cuBLASLt) for single and batched matrix multiplications:
+- **Heuristic Kernel Search**: Dynamically selects the fastest TensileLt tile configurations for the active matrix dimensions with up to 32 MB workspace.
+- **In-Memory Algorithm Shape Cache**: Caches selected kernel configurations across step evaluations, completely eliminating heuristic query latency during inference.
+- **Strided Batched GEMM**: Native acceleration for multi-head attention projections and batched GEMMs via `HIPBLASLT_MATRIX_LAYOUT_BATCH_COUNT` and `HIPBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET`.
+- **Fail-Safe Fallback**: Any non-standard shapes or unsupported dimension splits automatically and transparently fall back to `cublasGemmEx` / `cublasGemmStridedBatchedEx` / `cublasSgemm` with zero regression.
 
 ---
 
