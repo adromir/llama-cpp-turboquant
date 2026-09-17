@@ -159,3 +159,4 @@ AGENTS.local.md
 MEMORY.md
 docs/development/adaptive-kv-streaming-concept.md
 *quantize-rocmfpx-gui.json
+docs/ROCM10-OPTIMIZATION-PLAN.md
