@@ -187,6 +187,7 @@ namespace ggml_cuda_mma {
             if (I == 16 && J == 16) return true;
             if (I == 16 && J == 8) return true;
             if (I == 16 && J == 4) return true;
+            if (I == 16 && J == 2) return true;
             return false;
         }
 
@@ -217,6 +218,8 @@ namespace ggml_cuda_mma {
                 // mmq input for RDNA4
                 return ne * (threadIdx.x / 16) + l;
             } else if constexpr (I == 16 && J == 4) {
+                return ne * (threadIdx.x / 16) + l;
+            } else if constexpr (I == 16 && J == 2) {
                 return ne * (threadIdx.x / 16) + l;
             } else {
                 NO_DEVICE_CODE;
@@ -1452,5 +1455,32 @@ namespace ggml_cuda_mma {
         GGML_UNUSED(B);
         NO_DEVICE_CODE;
 #endif // AMD_WMMA_AVAILABLE
+    }
+
+    static __device__ __forceinline__ void mma(
+            tile<16, 16, int> & D, const tile<16, 2, int> & A, const tile<16, 2, int> & B) {
+#if defined(AMD_WMMA_AVAILABLE) && defined(RDNA4)
+        using int32x8_t = __attribute__((__vector_size__(8 * sizeof(int)))) int;
+        int32x8_t * acc = (int32x8_t *) D.x;
+        acc[0] = __builtin_amdgcn_wmma_i32_16x16x16_iu4_w32_gfx12(true, A.x[0], true, B.x[0], acc[0], true);
+#else
+        GGML_UNUSED_VARS(D, A, B);
+        NO_DEVICE_CODE;
+#endif // defined(AMD_WMMA_AVAILABLE) && defined(RDNA4)
+    }
+
+    static __device__ __forceinline__ void mma(
+            tile<16, 16, int, DATA_LAYOUT_J_MAJOR> & D, const tile<16, 2, int, DATA_LAYOUT_I_MAJOR> & A,
+            const tile<16, 2, int, DATA_LAYOUT_I_MAJOR> & B) {
+#if defined(AMD_WMMA_AVAILABLE) && defined(RDNA4)
+        using int32x8_t = __attribute__((__vector_size__(8 * sizeof(int)))) int;
+        int32x8_t * acc = (int32x8_t *) D.x;
+        acc[0] = __builtin_amdgcn_wmma_i32_16x16x16_iu4_w32_gfx12(true, A.x[0], true, B.x[0], acc[0], false);
+#else
+        GGML_UNUSED(D);
+        GGML_UNUSED(A);
+        GGML_UNUSED(B);
+        NO_DEVICE_CODE;
+#endif // defined(AMD_WMMA_AVAILABLE) && defined(RDNA4)
     }
 }

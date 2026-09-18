@@ -305,8 +305,16 @@ static const char * cu_get_error_str(CUresult err) {
 #define AMD_MFMA_AVAILABLE
 #endif // defined(GGML_USE_HIP) && defined(CDNA) && !defined(GGML_HIP_NO_MMQ_MFMA)
 
+#if defined(GGML_USE_HIP) && defined(__clang__) && (__clang_major__ >= 19)
+#define GGML_HIP_CLANG_WMMA_INTRINSICS
+#endif
+
 #if defined(GGML_USE_HIP) && (defined(RDNA4) || defined(RDNA3))
 #define AMD_WMMA_AVAILABLE
+#endif // defined(GGML_USE_HIP) && (defined(RDNA4) || defined(RDNA3))
+
+#if defined(GGML_USE_HIP) && defined(RDNA4)
+#define AMD_WMMA_IU4_AVAILABLE
 #endif // defined(GGML_USE_HIP) && defined(RDNA4)
 
 // The Volta instructions are in principle available on Turing or newer but they are effectively unusable:
@@ -925,7 +933,11 @@ static __device__ __forceinline__ void ggml_cuda_mad(float & acc, const float2 v
 
 static __device__ __forceinline__ void ggml_cuda_mad(float & acc, const half2 v, const half2 u) {
 #ifdef V_DOT2_F32_F16_AVAILABLE
+#if defined(__has_builtin) && __has_builtin(__builtin_amdgcn_fdot2)
+    acc = __builtin_amdgcn_fdot2(v, u, acc, false);
+#else
     asm volatile("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(acc) : "v"(v), "v"(u));
+#endif
 #else
 #ifdef FAST_FP16_AVAILABLE
     const float2 tmp = __half22float2(v*u);
@@ -962,9 +974,10 @@ static __device__ __forceinline__ void ggml_cuda_mad(float & acc, const nv_bfloa
 // The %2, %1 operand order was verified on RDNA3 (gfx1100), RDNA3.5 (gfx1151), and RDNA4 (gfx120x).
 static __device__ __forceinline__ nv_bfloat162 ggml_cuda_bf16_perm_ll(const nv_bfloat162 v0, const nv_bfloat162 v1) {
 #ifdef V_DOT2_F32_BF16_AVAILABLE
-    nv_bfloat162 dst;
-    asm volatile("v_perm_b32 %0, %2, %1, 0x05040100" : "=v"(dst) : "v"(v0), "v"(v1));
-    return dst;
+    const uint32_t a = *reinterpret_cast<const uint32_t *>(&v0);
+    const uint32_t b = *reinterpret_cast<const uint32_t *>(&v1);
+    const uint32_t res = __builtin_amdgcn_perm(b, a, 0x05040100);
+    return *reinterpret_cast<const nv_bfloat162 *>(&res);
 #else
     uint32_t a, b, r;
     memcpy(&a, &v0, sizeof(a));
@@ -978,9 +991,10 @@ static __device__ __forceinline__ nv_bfloat162 ggml_cuda_bf16_perm_ll(const nv_b
 
 static __device__ __forceinline__ nv_bfloat162 ggml_cuda_bf16_perm_hh(const nv_bfloat162 v0, const nv_bfloat162 v1) {
 #ifdef V_DOT2_F32_BF16_AVAILABLE
-    nv_bfloat162 dst;
-    asm volatile("v_perm_b32 %0, %2, %1, 0x07060302" : "=v"(dst) : "v"(v0), "v"(v1));
-    return dst;
+    const uint32_t a = *reinterpret_cast<const uint32_t *>(&v0);
+    const uint32_t b = *reinterpret_cast<const uint32_t *>(&v1);
+    const uint32_t res = __builtin_amdgcn_perm(b, a, 0x07060302);
+    return *reinterpret_cast<const nv_bfloat162 *>(&res);
 #else
     uint32_t a, b, r;
     memcpy(&a, &v0, sizeof(a));
