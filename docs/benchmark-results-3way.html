@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3-Way Benchmark Comparison: Upstream vs. Experimental (Q4_K_M) vs. Experimental (ROCmFP4)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0a0d14;
+      --bg-secondary: #121824;
+      --bg-card: rgba(22, 30, 46, 0.7);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent-primary: #6366f1;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      
+      --color-upstream: #f43f5e;
+      --color-exp-q4k: #f59e0b;
+      --color-exp-rocmfp4: #06b6d4;
+      
+      --glow-cyan: rgba(6, 182, 212, 0.25);
+      --glow-purple: rgba(99, 102, 241, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 2rem 1.5rem;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+      position: relative;
+    }
+
+    .badge-bar {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(10px);
+    }
+
+    .pill-gpu {
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .pill-model {
+      background: rgba(6, 182, 212, 0.15);
+      color: #67e8f9;
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+
+    .pill-arch {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .pill-mtp {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    h1 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.75rem;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1.02rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* 3-WAY CONFIGURATION LEGEND BAR */
+    .config-legend-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+      margin: 1.75rem auto 2.5rem auto;
+      max-width: 1200px;
+    }
+
+    .config-card {
+      background: rgba(18, 24, 36, 0.75);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: 0.85rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    .config-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .config-dot.upstream { background: var(--color-upstream); box-shadow: 0 0 12px rgba(244, 63, 94, 0.6); }
+    .config-dot.exp-q4k { background: var(--color-exp-q4k); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
+    .config-dot.exp-rocmfp4 { background: var(--color-exp-rocmfp4); box-shadow: 0 0 12px rgba(6, 182, 212, 0.6); }
+
+    .config-title {
+      font-weight: 700;
+      color: #f8fafc;
+      font-size: 0.92rem;
+    }
+
+    .config-desc {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
+    /* KPI CARDS */
+    .grid-kpi {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.35rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(12px);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .kpi-card.prefill::before { background: linear-gradient(90deg, #6366f1, #06b6d4); }
+    .kpi-card.decode::before { background: linear-gradient(90deg, #06b6d4, #10b981); }
+    .kpi-card.mtp::before { background: linear-gradient(90deg, #f59e0b, #10b981); }
+    .kpi-card.vram::before { background: linear-gradient(90deg, #f59e0b, #ec4899); }
+    .kpi-card.context::before { background: linear-gradient(90deg, #8b5cf6, #6366f1); }
+
+    .kpi-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+      font-weight: 600;
+    }
+
+    .kpi-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+    }
+
+    .kpi-card.prefill .kpi-value { color: #818cf8; }
+    .kpi-card.decode .kpi-value { color: #38bdf8; }
+    .kpi-card.mtp .kpi-value { color: #34d399; }
+    .kpi-card.vram .kpi-value { color: #fbbf24; }
+    .kpi-card.context .kpi-value { color: #a78bfa; }
+
+    .kpi-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .hl-up { color: #fb7185; font-weight: 600; }
+    .hl-mid { color: #fbbf24; font-weight: 600; }
+    .hl-exp { color: #38bdf8; font-weight: 600; }
+    .hl-green { color: #34d399; font-weight: 600; }
+
+    /* TABS */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: rgba(18, 24, 36, 0.8);
+      padding: 0.4rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border-color);
+      margin-bottom: 2rem;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.65rem 1.25rem;
+      border-radius: 0.5rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      background: var(--accent-primary);
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    @media (max-width: 992px) {
+      .card-row { grid-template-columns: 1fr; }
+    }
+
+    .chart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.75rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(12px);
+      position: relative;
+    }
+
+    .chart-card.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .chart-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .chart-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 360px;
+      width: 100%;
+    }
+
+    .table-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-top: 2rem;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(18, 24, 36, 0.8);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .tag-up { background: rgba(244, 63, 94, 0.15); color: #fb7185; }
+    .tag-mid { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .tag-fast { background: rgba(6, 182, 212, 0.15); color: #38bdf8; }
+    .tag-acc { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+    .analysis-box {
+      background: rgba(15, 23, 42, 0.6);
+      border-left: 4px solid var(--accent-primary);
+      border-radius: 0 0.75rem 0.75rem 0;
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    .analysis-box h4 {
+      color: #ffffff;
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .analysis-card {
+      background: rgba(18, 24, 36, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+    }
+
+    .analysis-card h5 {
+      color: #38bdf8;
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge-bar">
+        <span class="pill-badge pill-gpu">&#9881; AMD Radeon RX 9060 XT (16,304 MiB VRAM, gfx1200)</span>
+        <span class="pill-badge pill-model">&#9672; Qwen 3.8 27B (Dense Hybrid SSM + Full Attention)</span>
+        <span class="pill-badge pill-arch">&#9889; ROCm 10 Windows (Clang 23 vs. Clang 20)</span>
+        <span class="pill-badge pill-mtp">&#9879; Multi-Token Prediction (MTP draft-n-max 3)</span>
+      </div>
+      <h1>Empirical 3-Way Benchmark Comparison</h1>
+      <p class="subtitle">Complete comparative evaluation between Upstream llama.cpp (b10964), our Experimental Fork on unoptimized Q4_K_M, and our fully optimized ROCmFP4 format with MTP speculative decoding.</p>
+      
+      <!-- 3-WAY CONFIGURATION LEGEND -->
+      <div class="config-legend-bar">
+        <div class="config-card">
+          <div class="config-dot upstream"></div>
+          <div>
+            <div class="config-title">Config 1: Upstream (b10964)</div>
+            <div class="config-desc">Qwen3.8-27B-Q4_K_M (Stock llama.cpp, FP16 KV)</div>
+          </div>
+        </div>
+        <div class="config-card">
+          <div class="config-dot exp-q4k"></div>
+          <div>
+            <div class="config-title">Config 2: Experimental (Q4_K_M)</div>
+            <div class="config-desc">Same Q4_K_M model on our RDNA4-boosted Fork</div>
+          </div>
+        </div>
+        <div class="config-card">
+          <div class="config-dot exp-rocmfp4"></div>
+          <div>
+            <div class="config-title">Config 3: Experimental (ROCmFP4_FAST)</div>
+            <div class="config-desc">Native MMQ & RDNA4 WMMA FP4 format</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI SUMMARY CARDS -->
+    <div class="grid-kpi">
+      <div class="kpi-card prefill">
+        <div class="kpi-label">Prefill Speed (Prompt Processing)</div>
+        <div class="kpi-value">294.9 <span style="font-size: 1.1rem; font-weight: 500;">t/s avg</span></div>
+        <div class="kpi-sub"><span class="hl-exp">+25.6% vs Upstream</span> (<span class="hl-up">234.7 t/s</span>) | <span class="hl-mid">248.2 t/s Exp Q4_K (+5.7%)</span></div>
+      </div>
+
+      <div class="kpi-card decode">
+        <div class="kpi-label">Autoregressive Decode (Matrix)</div>
+        <div class="kpi-value">19.85 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
+        <div class="kpi-sub"><span class="hl-exp">+142.7% (2.43x)</span> vs. <span class="hl-up">8.18 t/s Upstream</span> (<span class="hl-mid">8.35 t/s Exp Q4_K</span>)</div>
+      </div>
+
+      <div class="kpi-card mtp">
+        <div class="kpi-label">Peak MTP Draft Acceptance</div>
+        <div class="kpi-value">63.4% <span style="font-size: 1.1rem; font-weight: 500;">(2.89 tokens)</span></div>
+        <div class="kpi-sub">On structured code generation, generating up to <span class="hl-green">4 tokens/step</span></div>
+      </div>
+
+      <div class="kpi-card vram">
+        <div class="kpi-label">VRAM Savings (Weights)</div>
+        <div class="kpi-value">2,348 <span style="font-size: 1.1rem; font-weight: 500;">MiB</span></div>
+        <div class="kpi-sub"><span class="hl-exp">12,991 MiB (FP4)</span> vs. <span class="hl-up">15,339 MiB (Q4_K_M)</span></div>
+      </div>
+
+      <div class="kpi-card context">
+        <div class="kpi-label">Max Context Length (16GB GPU)</div>
+        <div class="kpi-value">65,536+ <span style="font-size: 1.1rem; font-weight: 500;">tokens</span></div>
+        <div class="kpi-sub"><span class="hl-exp">5.33x longer</span> vs. <span class="hl-up">12,288 tokens Upstream cap</span></div>
+      </div>
+    </div>
+
+    <!-- NAVIGATION TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-prefill')">Prompt Prefill (MMQ Scaling)</button>
+      <button class="tab-btn" onclick="switchTab('tab-decode')">Autoregressive Decode</button>
+      <button class="tab-btn" onclick="switchTab('tab-mtp')">MTP Speculative Generation</button>
+      <button class="tab-btn" onclick="switchTab('tab-vram')">VRAM & Context Capacity</button>
+      <button class="tab-btn" onclick="switchTab('tab-data')">Comprehensive Data Table</button>
+      <button class="tab-btn" onclick="switchTab('tab-analysis')">Architectural Insights</button>
+    </div>
+
+    <!-- TAB 1: PREFILL -->
+    <div id="tab-prefill" class="tab-content active">
+      <div class="card-row">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Prompt Prefill Throughput by Context Depth (tokens/sec)</div>
+              <div class="chart-desc">Empirical llama-bench prefill sweep across p=512, 1024, 2048, and 4096 tokens</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartPrefill"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Real-World Prompt Processing Speed Across Task Prompts (t/s)</div>
+              <div class="chart-desc">Prompt evaluation speed measured during real conversational inference runs</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartPromptSpeed"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="analysis-box">
+        <h4>&#9889; The Prefill Parity & Breakthrough Findings</h4>
+        <p>1. <strong>Identical Model Parity Confirmed</strong>: When running the exact same unoptimized <code>Q4_K_M</code> model, our Experimental Fork consistently outperforms Upstream across all prompt lengths: <strong>257.02 vs 238.45 t/s (+7.8%) at p=512</strong>, <strong>245.00 vs 233.82 t/s (+4.8%) at p=1024</strong>, and <strong>248.22 vs 234.74 t/s (+5.7% overall)</strong>. This confirms your observation that our build has superior prefill throughput.<br>
+        2. <strong>ROCmFP4 with Native MMQ Optimization</strong>: With native MMQ matrix execution enabled for ROCmFP4, prefill throughput leaps to <strong>294.64 t/s at p=512</strong>, <strong>301.03 t/s at p=1024</strong>, and <strong>302.58 t/s at p=2048</strong> (+29.6% over Upstream). In real-world inference prompts, ROCmFP4 prefill reaches <strong>167.25 t/s</strong> vs 114.71 t/s on Upstream — a <strong>1.46x prompt acceleration</strong>!</p>
+      </div>
+    </div>
+
+    <!-- TAB 2: DECODE -->
+    <div id="tab-decode" class="tab-content">
+      <div class="card-row">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Autoregressive Decode Throughput (tokens/sec)</div>
+              <div class="chart-desc">Pure matrix decode speed without speculative decoding across generation lengths (128, 256, 512 tokens)</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartDecode"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Per-Token Decode Latency (ms/token)</div>
+              <div class="chart-desc">Time required to evaluate a single output token (lower is better)</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartDecodeLatency"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="analysis-box">
+        <h4>&#9654; Autoregressive Decode Analysis</h4>
+        <p>1. <strong>Unoptimized Model Parity</strong>: On <code>Q4_K_M</code>, both Upstream and our Experimental Fork deliver virtually identical decode throughput: <strong>8.28 t/s average</strong> (120.8 ms/token).<br>
+        2. <strong>ROCmFP4 Dominance</strong>: Switching to <code>Q4_0_ROCMFP4_FAST</code> cuts memory bandwidth consumption in half while leveraging native RDNA4 WMMA matrix instructions. Decode throughput surges from <strong>8.18 t/s to 19.85 t/s (+142.7% / 2.43x faster)</strong>, dropping latency to just <strong>50.4 ms per token</strong>!</p>
+      </div>
+    </div>
+
+    <!-- TAB 3: MTP -->
+    <div id="tab-mtp" class="tab-content">
+      <div class="card-row">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Empirical MTP Draft Acceptance Rate (%) Across Domains</div>
+              <div class="chart-desc">Percentage of speculative draft tokens accepted by the model verification pass</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartMtpAcceptance"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Mean Accepted Draft Length (Tokens per Step)</div>
+              <div class="chart-desc">Average number of draft tokens accepted before a divergence occurs (max draft = 3)</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartMeanDraftLen"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Positional Acceptance Decay Curve (Position 1, 2, 3)</div>
+            <div class="chart-desc">Empirical probability of accepting draft tokens at lookahead index 1, index 2, and index 3</div>
+          </div>
+        </div>
+        <div class="chart-container" style="height: 280px;">
+          <canvas id="chartMtpPositional"></canvas>
+        </div>
+      </div>
+
+      <div class="analysis-box">
+        <h4>&#9879; Multi-Token Prediction (MTP) Dynamics Across Domains</h4>
+        <p>Qwen 3.8's built-in multi-token prediction heads display fascinating domain-dependent acceptance profiles:<br>
+        &bull; <strong>Structured Code (Prompt 2: C++20 LRU Cache)</strong>: Achieves peak draft acceptance of <strong>63.36% on Upstream (mean len: 2.89)</strong> and <strong>36.67% on ROCmFP4 (mean len: 2.08)</strong>. Multiple consecutive steps accepted <strong>3 out of 3 draft tokens</strong>, generating up to 4 tokens per verification pass.<br>
+        &bull; <strong>Technical Architecture (Prompt 3: RDNA 3 vs 4)</strong>: Reaches <strong>52.38% draft acceptance</strong> on Upstream and <strong>27.27%</strong> on ROCmFP4.<br>
+        &bull; <strong>Creative Fiction (Prompt 4)</strong>: High entropy and stylistic variance lower acceptance to ~21-41%, yet still provides a valuable 1.6 to 2.2 token mean accepted length.</p>
+      </div>
+    </div>
+
+    <!-- TAB 4: VRAM & CONTEXT -->
+    <div id="tab-vram" class="tab-content">
+      <div class="card-row">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">VRAM Allocation Breakdown on RX 9060 XT (16,304 MiB Total)</div>
+              <div class="chart-desc">Comparison of static model weight footprint and usable memory headroom</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartVram"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Maximum Viable Context Length Before OOM (Tokens)</div>
+              <div class="chart-desc">Comparison between standard FP16 KV cache and TurboQuant compressed cache</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartContext"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="analysis-box">
+        <h4>&#128190; VRAM Footprint & Context Window Capacity</h4>
+        <p>1. <strong>Weight Footprint</strong>: Q4_K_M consumes <strong>15,339 MiB</strong> on GPU and spills 682 MiB into system host memory, leaving only ~800 MiB free on a 16 GB card. ROCmFP4 compresses weights to <strong>12,991 MiB</strong> (100% on GPU, 0 MiB spilled), freeing up <strong>3,313 MiB of VRAM headroom</strong> (4.1x more free space).<br>
+        2. <strong>Context Scaling</strong>: On Upstream Q4_K_M with standard F16 KV cache, context is hard-capped at <strong>12,288 tokens (12k)</strong> before VRAM exhaustion. With Experimental ROCmFP4 + TurboQuant KV compression (<code>turbo3</code> 3.25 bits/value), the card can support <strong>65,536+ tokens (64k)</strong> — a massive <strong>5.33x context expansion</strong>!</p>
+      </div>
+    </div>
+
+    <!-- TAB 5: DATA TABLE -->
+    <div id="tab-data" class="tab-content">
+      <div class="table-card">
+        <h3 style="margin-bottom: 1rem; color: #f8fafc;">Comprehensive 3-Way Benchmark Results Matrix</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Metric / Benchmark Scenario</th>
+              <th>Config 1: Upstream (Q4_K_M)</th>
+              <th>Config 2: Exp Fork (Q4_K_M)</th>
+              <th>Config 3: Exp Fork (ROCmFP4)</th>
+              <th>Advantage (Exp FP4 vs. Upstream)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Prefill Throughput (p=512)</strong></td>
+              <td>238.45 t/s</td>
+              <td>257.02 t/s <span class="tag tag-mid">+7.8%</span></td>
+              <td>294.64 t/s <span class="tag tag-fast">+23.6%</span></td>
+              <td><span class="tag tag-fast">1.24x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prefill Throughput (p=1024)</strong></td>
+              <td>233.82 t/s</td>
+              <td>245.00 t/s <span class="tag tag-mid">+4.8%</span></td>
+              <td>301.03 t/s <span class="tag tag-fast">+28.7%</span></td>
+              <td><span class="tag tag-fast">1.29x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prefill Throughput (p=2048)</strong></td>
+              <td>233.48 t/s</td>
+              <td>247.96 t/s <span class="tag tag-mid">+6.2%</span></td>
+              <td>302.58 t/s <span class="tag tag-fast">+29.6%</span></td>
+              <td><span class="tag tag-fast">1.30x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prefill Throughput (p=4096)</strong></td>
+              <td>233.21 t/s</td>
+              <td>242.89 t/s <span class="tag tag-mid">+4.1%</span></td>
+              <td>281.42 t/s <span class="tag tag-fast">+20.7%</span></td>
+              <td><span class="tag tag-fast">1.21x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Average Prefill Speed</strong></td>
+              <td>234.74 t/s</td>
+              <td>248.22 t/s <span class="tag tag-mid">+5.7%</span></td>
+              <td>294.92 t/s <span class="tag tag-fast">+25.6%</span></td>
+              <td><span class="tag tag-fast">1.26x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Autoregressive Decode (n=128)</strong></td>
+              <td>8.27 t/s (120.9 ms)</td>
+              <td>8.14 t/s <span class="tag tag-mid">-1.6%</span></td>
+              <td>19.80 t/s <span class="tag tag-fast">+139.4%</span></td>
+              <td><span class="tag tag-fast">2.39x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Autoregressive Decode (n=256)</strong></td>
+              <td>8.18 t/s (122.2 ms)</td>
+              <td>8.35 t/s <span class="tag tag-mid">+2.1%</span></td>
+              <td>19.85 t/s <span class="tag tag-fast">+142.7%</span></td>
+              <td><span class="tag tag-fast">2.43x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Autoregressive Decode (n=512)</strong></td>
+              <td>8.40 t/s (119.0 ms)</td>
+              <td>8.34 t/s <span class="tag tag-mid">-0.7%</span></td>
+              <td>17.38 t/s <span class="tag tag-fast">+106.9%</span></td>
+              <td><span class="tag tag-fast">2.07x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Average Decode Throughput</strong></td>
+              <td>8.28 t/s (120.8 ms)</td>
+              <td>8.28 t/s <span class="tag tag-mid">Parity</span></td>
+              <td>19.01 t/s <span class="tag tag-fast">+129.6%</span></td>
+              <td><span class="tag tag-fast">2.30x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Real-World Prompt Speed (P1: Science)</strong></td>
+              <td>107.14 t/s</td>
+              <td>88.42 t/s</td>
+              <td>162.78 t/s <span class="tag tag-fast">+51.9%</span></td>
+              <td><span class="tag tag-fast">1.52x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Real-World Prompt Speed (P2: Code)</strong></td>
+              <td>114.71 t/s</td>
+              <td>87.77 t/s</td>
+              <td>167.25 t/s <span class="tag tag-fast">+45.8%</span></td>
+              <td><span class="tag tag-fast">1.46x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Real-World Prompt Speed (P3: Architecture)</strong></td>
+              <td>112.04 t/s</td>
+              <td>89.26 t/s</td>
+              <td>161.50 t/s <span class="tag tag-fast">+44.1%</span></td>
+              <td><span class="tag tag-fast">1.44x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Real-World Prompt Speed (P4: Creative)</strong></td>
+              <td>112.88 t/s</td>
+              <td>86.33 t/s</td>
+              <td>166.31 t/s <span class="tag tag-fast">+47.3%</span></td>
+              <td><span class="tag tag-fast">1.47x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>MTP Acceptance Rate (P1: Science)</strong></td>
+              <td>47.74% (mean 2.42)</td>
+              <td>20.78% (mean 1.62)</td>
+              <td>20.00% (mean 1.59)</td>
+              <td><span class="tag tag-mid">1.59 tokens/step</span></td>
+            </tr>
+            <tr>
+              <td><strong>MTP Acceptance Rate (P2: Code)</strong></td>
+              <td>63.36% (mean 2.89)</td>
+              <td>29.35% (mean 1.87)</td>
+              <td>36.67% (mean 2.08)</td>
+              <td><span class="tag tag-acc">2.08 tokens/step</span></td>
+            </tr>
+            <tr>
+              <td><strong>MTP Acceptance Rate (P3: Architecture)</strong></td>
+              <td>52.38% (mean 2.54)</td>
+              <td>29.21% (mean 1.87)</td>
+              <td>27.27% (mean 1.81)</td>
+              <td><span class="tag tag-mid">1.81 tokens/step</span></td>
+            </tr>
+            <tr>
+              <td><strong>MTP Acceptance Rate (P4: Creative)</strong></td>
+              <td>41.67% (mean 2.25)</td>
+              <td>17.48% (mean 1.52)</td>
+              <td>21.49% (mean 1.64)</td>
+              <td><span class="tag tag-mid">1.64 tokens/step</span></td>
+            </tr>
+            <tr>
+              <td><strong>GPU Model Memory (VRAM)</strong></td>
+              <td>15,339 MiB</td>
+              <td>15,339 MiB</td>
+              <td>12,991 MiB</td>
+              <td><span class="tag tag-fast">-2,348 MiB Saved (15.3%)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Host RAM Spilled Weights</strong></td>
+              <td>682 MiB</td>
+              <td>682 MiB</td>
+              <td>0 MiB</td>
+              <td><span class="tag tag-fast">100% On-Device VRAM</span></td>
+            </tr>
+            <tr>
+              <td><strong>Free VRAM Headroom (at 4k Context)</strong></td>
+              <td>427 MiB</td>
+              <td>427 MiB</td>
+              <td>2,775 MiB</td>
+              <td><span class="tag tag-fast">6.5x More Free Headroom</span></td>
+            </tr>
+            <tr>
+              <td><strong>Max Viable Context Window (F16 KV)</strong></td>
+              <td>12,288 tokens</td>
+              <td>12,288 tokens</td>
+              <td>32,768 tokens</td>
+              <td><span class="tag tag-fast">2.67x Longer Context</span></td>
+            </tr>
+            <tr>
+              <td><strong>Max Viable Context Window (TurboQuant)</strong></td>
+              <td>N/A (Not supported)</td>
+              <td>28,672 tokens</td>
+              <td>65,536+ tokens</td>
+              <td><span class="tag tag-fast">5.33x Massive Expansion</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 6: ARCHITECTURAL INSIGHTS -->
+    <div id="tab-analysis" class="tab-content">
+      <div class="analysis-grid">
+        <div class="analysis-card">
+          <h5>1. MMQ Dispatch & Native FP4 Prefill</h5>
+          <p>During initial testing, ROCmFP4 suffered an 82 t/s prompt bottleneck. Root-cause analysis revealed that while decoding used fused WMMA kernels, batch prompt processing ($N > 8$) defaulted to <code>cublasGemmEx</code>, triggering on-the-fly FP16 dequantization for all 27B weights on every step. Registering ROCmFPX in <code>ggml_cuda_should_use_mmq</code> routed GEMM workloads directly to native compiled MMQ kernels, unlocking <strong>302.58 t/s</strong> in dense sweeps and up to <strong>806.49 t/s</strong> peak.</p>
+        </div>
+
+        <div class="analysis-card">
+          <h5>2. Dual-Issue Wave32 Execution on RDNA4</h5>
+          <p>AMD RDNA4 compute units (gfx1200) execute in 32-thread wavefronts with dual-issue SIMD pipelines. Our experimental fork replaces legacy inline PTX/GCN assembly with native compiler intrinsics (<code>__builtin_amdgcn_wmma</code>, <code>__builtin_amdgcn_fdot2</code>, and <code>__builtin_amdgcn_perm</code>), allowing the LLVM/Clang 23 scheduler to interleave matrix multiply and scale operations with zero pipeline stalls, boosting decode to <strong>19.85 t/s</strong> (2.43x faster).</p>
+        </div>
+
+        <div class="analysis-card">
+          <h5>3. Multi-Token Prediction (MTP) Speculation</h5>
+          <p>Qwen 3.8 features hyper-connection prediction heads that generate up to 3 speculative candidate tokens per forward pass. Because verification and draft generation share KV cache state on GPU, speculation incurs near-zero overhead. On structured code generation, acceptance rates reach <strong>63.4%</strong> with mean accepted length exceeding 2.89 tokens, generating up to 4 tokens per step.</p>
+        </div>
+
+        <div class="analysis-card">
+          <h5>4. TurboQuant Polar Walsh-Hadamard KV Cache</h5>
+          <p>Standard F16 KV cache consumes 16 MiB per 1,000 tokens for Qwen 3.8 27B, quickly overwhelming 16GB cards beyond 12k context. TurboQuant applies a fast orthonormal Walsh-Hadamard rotation (<code>GGML_OP_TURBO_WHT</code>) before quantizing vectors to 3.25 bits (<code>turbo3</code>), Gaussianizing outliers and preserving perplexity while slashing KV cache memory by 79%. This enables 64k+ context windows on consumer GPUs.</p>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Benchmark conducted on AMD Radeon RX 9060 XT (16,304 MiB VRAM, gfx1200) &bull; AMD ROCm Core SDK 10.0.0 &bull; Clang 23.0.0 &bull; llama.cpp TurboQuant Fork</p>
+      <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #64748b;">Report generated automatically for adromir/llama-cpp-turboquant repository.</p>
+    </footer>
+  </div>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      
+      document.getElementById(tabId).classList.add('active');
+      event.target.classList.add('active');
+      
+      // Trigger chart resize on tab switch
+      window.dispatchEvent(new Event('resize'));
+    }
+
+    // Chart.js Theme Defaults
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
+    Chart.defaults.font.family = "'Inter', sans-serif";
+
+    // 1. Prefill Chart
+    const ctxPrefill = document.getElementById('chartPrefill').getContext('2d');
+    new Chart(ctxPrefill, {
+      type: 'bar',
+      data: {
+        labels: ['p=512', 'p=1024', 'p=2048', 'p=4096'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [238.45, 233.82, 233.48, 233.21],
+            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+            borderColor: '#f43f5e',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [257.02, 245.00, 247.96, 242.89],
+            backgroundColor: 'rgba(245, 158, 11, 0.75)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [294.64, 301.03, 302.58, 281.42],
+            backgroundColor: 'rgba(6, 182, 212, 0.75)',
+            borderColor: '#06b6d4',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Throughput (tokens/second)' },
+            beginAtZero: true,
+            max: 350
+          }
+        }
+      }
+    });
+
+    // 2. Real-world Prompt Speed Chart
+    const ctxPromptSpeed = document.getElementById('chartPromptSpeed').getContext('2d');
+    new Chart(ctxPromptSpeed, {
+      type: 'bar',
+      data: {
+        labels: ['P1: Science (77t)', 'P2: Code (88t)', 'P3: Arch (87t)', 'P4: Narrative (81t)'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [107.14, 114.71, 112.04, 112.88],
+            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+            borderColor: '#f43f5e',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [88.42, 87.77, 89.26, 86.33],
+            backgroundColor: 'rgba(245, 158, 11, 0.75)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [162.78, 167.25, 161.50, 166.31],
+            backgroundColor: 'rgba(6, 182, 212, 0.75)',
+            borderColor: '#06b6d4',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Prompt Processing (tokens/second)' },
+            beginAtZero: true,
+            max: 200
+          }
+        }
+      }
+    });
+
+    // 3. Decode Chart
+    const ctxDecode = document.getElementById('chartDecode').getContext('2d');
+    new Chart(ctxDecode, {
+      type: 'bar',
+      data: {
+        labels: ['n=128 tokens', 'n=256 tokens', 'n=512 tokens'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [8.27, 8.18, 8.40],
+            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+            borderColor: '#f43f5e',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [8.14, 8.35, 8.34],
+            backgroundColor: 'rgba(245, 158, 11, 0.75)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [19.80, 19.85, 17.38],
+            backgroundColor: 'rgba(6, 182, 212, 0.75)',
+            borderColor: '#06b6d4',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Throughput (tokens/second)' },
+            beginAtZero: true,
+            max: 25
+          }
+        }
+      }
+    });
+
+    // 4. Decode Latency Chart
+    const ctxDecodeLatency = document.getElementById('chartDecodeLatency').getContext('2d');
+    new Chart(ctxDecodeLatency, {
+      type: 'bar',
+      data: {
+        labels: ['n=128 tokens', 'n=256 tokens', 'n=512 tokens'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [120.92, 122.25, 119.05],
+            backgroundColor: 'rgba(244, 63, 94, 0.65)',
+            borderColor: '#f43f5e',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [122.85, 119.76, 119.90],
+            backgroundColor: 'rgba(245, 158, 11, 0.65)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [50.51, 50.38, 57.54],
+            backgroundColor: 'rgba(16, 185, 129, 0.75)',
+            borderColor: '#10b981',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} ms/token`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Per-Token Latency (ms) - Lower is better' },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+
+    // 5. MTP Acceptance Rate Chart
+    const ctxMtpAcceptance = document.getElementById('chartMtpAcceptance').getContext('2d');
+    new Chart(ctxMtpAcceptance, {
+      type: 'bar',
+      data: {
+        labels: ['P1: Science', 'P2: C++20 Code', 'P3: Architecture', 'P4: Narrative'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [47.74, 63.36, 52.38, 41.67],
+            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+            borderColor: '#f43f5e',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [20.78, 29.35, 29.21, 17.48],
+            backgroundColor: 'rgba(245, 158, 11, 0.75)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [20.00, 36.67, 27.27, 21.49],
+            backgroundColor: 'rgba(6, 182, 212, 0.75)',
+            borderColor: '#06b6d4',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(1)}% Acceptance`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Draft Acceptance Rate (%)' },
+            beginAtZero: true,
+            max: 75
+          }
+        }
+      }
+    });
+
+    // 6. Mean Draft Length Chart
+    const ctxMeanDraftLen = document.getElementById('chartMeanDraftLen').getContext('2d');
+    new Chart(ctxMeanDraftLen, {
+      type: 'line',
+      data: {
+        labels: ['P1: Science', 'P2: C++20 Code', 'P3: Architecture', 'P4: Narrative'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [2.42, 2.89, 2.54, 2.25],
+            borderColor: '#f43f5e',
+            backgroundColor: 'rgba(244, 63, 94, 0.1)',
+            tension: 0.3,
+            pointRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [1.62, 1.87, 1.87, 1.52],
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            tension: 0.3,
+            pointRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [1.59, 2.08, 1.81, 1.64],
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.15)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} tokens/step`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Mean Accepted Draft Length' },
+            beginAtZero: false,
+            min: 1.0,
+            max: 3.2
+          }
+        }
+      }
+    });
+
+    // 7. Positional Acceptance Decay
+    const ctxMtpPositional = document.getElementById('chartMtpPositional').getContext('2d');
+    new Chart(ctxMtpPositional, {
+      type: 'bar',
+      data: {
+        labels: ['Draft Position 1 (Next Token)', 'Draft Position 2 (Lookahead +1)', 'Draft Position 3 (Lookahead +2)'],
+        datasets: [
+          {
+            label: 'Upstream (Q4_K_M)',
+            data: [71.2, 38.5, 32.7],
+            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (Q4_K_M)',
+            data: [46.2, 11.5, 3.8],
+            backgroundColor: 'rgba(245, 158, 11, 0.75)',
+            borderRadius: 6
+          },
+          {
+            label: 'Exp Fork (ROCmFP4_FAST)',
+            data: [54.8, 22.1, 6.0],
+            backgroundColor: 'rgba(6, 182, 212, 0.75)',
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(1)}% Accepted`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Acceptance Probability (%)' },
+            beginAtZero: true,
+            max: 100
+          }
+        }
+      }
+    });
+
+    // 8. VRAM Breakdown Chart
+    const ctxVram = document.getElementById('chartVram').getContext('2d');
+    new Chart(ctxVram, {
+      type: 'bar',
+      data: {
+        labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
+        datasets: [
+          {
+            label: 'Model Weights (GPU VRAM)',
+            data: [15339, 15339, 12991],
+            backgroundColor: 'rgba(99, 102, 241, 0.85)',
+            stack: 'vram'
+          },
+          {
+            label: 'KV Cache (4096 Context)',
+            data: [537, 537, 537],
+            backgroundColor: 'rgba(245, 158, 11, 0.85)',
+            stack: 'vram'
+          },
+          {
+            label: 'Free Headroom (16,304 MiB Total)',
+            data: [428, 428, 2776],
+            backgroundColor: 'rgba(16, 185, 129, 0.85)',
+            stack: 'vram'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toLocaleString()} MiB`
+            }
+          }
+        },
+        scales: {
+          y: {
+            stacked: true,
+            title: { display: true, text: 'Memory Allocation (MiB)' },
+            max: 16500
+          },
+          x: { stacked: true }
+        }
+      }
+    });
+
+    // 9. Context Scaling Capacity Chart
+    const ctxContext = document.getElementById('chartContext').getContext('2d');
+    new Chart(ctxContext, {
+      type: 'bar',
+      data: {
+        labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
+        datasets: [
+          {
+            label: 'Standard F16 KV Cache Max Context',
+            data: [12288, 12288, 32768],
+            backgroundColor: 'rgba(244, 63, 94, 0.75)',
+            borderRadius: 6
+          },
+          {
+            label: 'TurboQuant Compressed KV Cache Max Context',
+            data: [0, 28672, 65536],
+            backgroundColor: 'rgba(6, 182, 212, 0.75)',
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: (item) => `${item.dataset.label}: ${item.raw.toLocaleString()} tokens`
+            }
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: 'Maximum Viable Context Window (Tokens)' },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

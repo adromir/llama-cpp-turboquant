@@ -212,14 +212,34 @@ jobs:
         $zipName = "llama-rocm-${{ matrix.flavor }}-windows.zip"
         Write-Host "Creating archive $zipName for flavor ${{ matrix.flavor }}..."
 
+        # Copy ROCm runtime libraries and Tensile kernels
         Copy-Item "C:\TheRock\build\bin\rocblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         if (Test-Path "C:\TheRock\build\bin\rocblas") {
             Copy-Item "C:\TheRock\build\bin\rocblas" -Destination build\bin\ -Recurse -Force -ErrorAction SilentlyContinue
         }
         Copy-Item "C:\TheRock\build\bin\libhipblaslt.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        if (Test-Path "C:\TheRock\build\bin\hipblaslt") {
+            Copy-Item "C:\TheRock\build\bin\hipblaslt" -Destination build\bin\ -Recurse -Force -ErrorAction SilentlyContinue
+        } elseif (Test-Path "C:\TheRock\build\lib\hipblaslt") {
+            Copy-Item "C:\TheRock\build\lib\hipblaslt" -Destination build\bin\ -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Copy-Item "C:\TheRock\build\bin\hipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\libhipblas.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\origami.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\rocsolver.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\amd_comgr.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        Copy-Item "C:\TheRock\build\bin\rocm_kpack.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
         Copy-Item "C:\TheRock\build\bin\amdhip64*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+
+        # Copy OpenSSL runtime libraries for standalone llama-server execution
+        if (Test-Path "C:\Program Files\OpenSSL-Win64\bin") {
+            Copy-Item "C:\Program Files\OpenSSL-Win64\bin\libcrypto*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+            Copy-Item "C:\Program Files\OpenSSL-Win64\bin\libssl*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        } elseif (Test-Path "C:\Program Files\OpenSSL\bin") {
+            Copy-Item "C:\Program Files\OpenSSL\bin\libcrypto*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+            Copy-Item "C:\Program Files\OpenSSL\bin\libssl*.dll" -Destination build\bin\ -ErrorAction SilentlyContinue
+        }
+
         Compress-Archive -Path build\bin\* -DestinationPath $zipName
 
     - name: Upload Build Artifact
@@ -339,11 +359,17 @@ jobs:
         ZIP_NAME="llama-rocm-${{ matrix.flavor }}-linux.zip"
         echo "Creating archive ${ZIP_NAME} for flavor ${{ matrix.flavor }}..."
 
+        # Copy ROCm runtime libraries and Tensile kernels
         cp /opt/rocm/lib/librocblas.so* build/bin/ 2>/dev/null || true
         cp -r /opt/rocm/lib/rocblas build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblaslt.so* build/bin/ 2>/dev/null || true
+        cp -r /opt/rocm/lib/hipblaslt build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libhipblas.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/librocsolver.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/liborigami.so* build/bin/ 2>/dev/null || true
         cp /opt/rocm/lib/libamdhip64.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/libamd_comgr.so* build/bin/ 2>/dev/null || true
+        cp /opt/rocm/lib/librocm_kpack.so* build/bin/ 2>/dev/null || true
 
         cd build/bin
         zip -r "../../${ZIP_NAME}" ./*

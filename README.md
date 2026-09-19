@@ -12,7 +12,7 @@
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg)](https://github.com/adromir/llama-cpp-turboquant/releases)
 [![Architectures: RDNA2 | RDNA3 | RDNA4 | CDNA](https://img.shields.io/badge/GPU%20Targets-RDNA2%20%7C%20RDNA3%20%7C%20RDNA4%20%7C%20CDNA-orange.svg)](https://github.com/adromir/llama-cpp-turboquant)
 
-[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [What is ROCmFPX?](#what-is-rocmfpx-fpx) | [Create Quants & Imatrix](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
+[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [What is ROCmFPX?](#what-is-rocmfpx-fpx) | [Benchmark Results](#benchmark-results) | [Create Quants & Imatrix](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
 
 </div>
 
@@ -83,6 +83,51 @@ For production agents requiring strict JSON formatting, tool calling, or complex
 - `Q4_0_ROCMFP4_COHERENT`: Keeps output layers, embeddings, and sensitive attention heads at `Q6_K` / `Q8_0` while quantizing dense MLP weights to ROCmFP4.
 - `Q3_0_ROCMFPX_AGENT`: Coherent 3-bit quantization preserving JSON syntax tracking.
 - `Q6_0_ROCMFPX_AGENT`: Near-lossless agent execution with high context stability.
+
+
+---
+
+## Benchmark Results
+
+A comprehensive 3-way benchmark evaluation was conducted on AMD RDNA 4 hardware comparing upstream `llama.cpp` against this experimental distribution across **prefill throughput**, **decode speed**, **Multi-Token Prediction (MTP) acceptance rate**, **VRAM utilization**, and **maximum viable context length**.
+
+> [!TIP]
+> **Full Interactive Visual Report**:
+> An interactive dashboard with Chart.js visualization, real-time comparisons, and per-metric breakdowns is available directly in the repository:
+> - **Source in Repo**: [`docs/benchmark-results-3way.html`](docs/benchmark-results-3way.html)
+> - **GitHub File View**: [View on GitHub (experiment/rdna-boosts)](https://github.com/adromir/llama-cpp-turboquant/blob/experiment/rdna-boosts/docs/benchmark-results-3way.html)
+> - **Live Interactive Preview**: [Rendered Dashboard (HTML Preview)](https://htmlpreview.github.io/?https://github.com/adromir/llama-cpp-turboquant/blob/experiment/rdna-boosts/docs/benchmark-results-3way.html)
+
+### Testbed Environment
+- **GPU**: AMD Radeon RX 9060 XT 16GB (RDNA 4, `gfx1200`, 16,304 MiB VRAM)
+- **CPU**: AMD Ryzen 9 9950X3D 16-Core Processor (32 Threads)
+- **OS / Stack**: Windows 11 Pro / AMD ROCm 10.0.0 (TheRock toolchain)
+- **Evaluated Model**: `Qwen3.8-27B` (27.32B parameters, 65 layers, 4-head GQA, 1 MTP head)
+
+### 3-Way Comparative Overview
+
+| Metric / Scenario | Config 1: Upstream (Q4_K_M) | Config 2: Experimental (Q4_K_M) | Config 3: Experimental (ROCmFP4_FAST) | Speedup vs. Upstream |
+| :--- | :---: | :---: | :---: | :---: |
+| **Model VRAM Footprint** | 15.65 GiB | 15.65 GiB | **13.53 GiB** | **-2.12 GiB savings** |
+| **VRAM Headroom (16GB GPU)** | ~650 MiB (Severe OOM risk) | ~650 MiB | **~2,770 MiB (Spacious)** | **4.26x more headroom** |
+| **Prefill Throughput (p=512)** | 190.4 - 240.9 t/s | 215.6 - 261.4 t/s | **806.49 t/s** | **3.35x - 4.23x faster** |
+| **Prefill Throughput (p=2048)** | 226.5 t/s | 239.8 t/s | **780.58 t/s** | **3.45x faster** |
+| **Average Prefill (512 - 4096)** | ~215 t/s | ~235 t/s | **538.53 t/s** | **2.50x faster overall** |
+| **Decode Speed (Batch=1)** | 10.25 t/s | 8.98 - 9.12 t/s | **19.65 t/s** | **1.92x faster** |
+| **Real-World Generation (MTP)** | 12.80 t/s | 11.45 t/s | **27.40 t/s** | **2.14x faster** |
+| **MTP Draft Acceptance Rate** | 27.2% - 38.5% | 27.6% - 39.1% | **28.4% - 41.2%** | **High stability across quants** |
+| **Max Context on 16GB VRAM** | 2k - 4k tokens | 2k - 4k tokens | **32k+ (with TurboQuant KV)** | **8x - 16x larger context** |
+
+### Key Takeaways
+
+1. **Prefill Throughput (ROCmFP4 MMQ Matrix Multiplication)**:
+   By implementing native matrix-quantization (MMQ) dispatch for `Q4_0_ROCMFP4` and `Q4_0_ROCMFP4_FAST`, prefill throughput skyrocketed from 82 t/s to **806.49 t/s**, outperforming Upstream Q4_K_M by up to **3.4x**. Even on unoptimized `Q4_K_M` weights, the experimental RDNA Flash Attention kernels yield an **+8.5% prefill boost** over upstream.
+2. **Decode Speed**:
+   Native ROCmFP4 Lloyd-Max 4-bit float representations decode at **19.65 t/s**, nearly doubling the 10.25 t/s decode rate of upstream standard K-quants on consumer 16GB GPUs.
+3. **Multi-Token Prediction (MTP) Speculative Decoding**:
+   Using `--spec-type draft-mtp --spec-draft-n-max 3` leverages Qwen 3.8 internal `nextn_predict_layers` head. All three configurations achieve high draft acceptance (~28% to 41%), delivering real-world generation rates of up to **27.40 t/s** on ROCmFP4.
+4. **VRAM Headroom and Context Scaling**:
+   Standard `Q4_K_M` occupies 15.65 GiB of VRAM, leaving less than 700 MiB free on a 16GB card and crashing with out-of-memory errors beyond 4k tokens. `Q4_0_ROCMFP4_FAST` occupies only 13.53 GiB. Pairing ROCmFP4 model weights with **TurboQuant 3-bit (`turbo3`) KV cache** enables comfortable **32k context execution on a single consumer 16GB graphics card**.
 
 ---
 

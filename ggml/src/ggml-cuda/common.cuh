@@ -2026,35 +2026,54 @@ struct ggml_backend_cuda_context {
             ggml_cuda_set_device(dev);
 #if defined(_WIN32)
             if (std::getenv("HIPBLASLT_TENSILE_PATH") == nullptr) {
-                const char * hip_path = std::getenv("HIP_PATH");
-                if (!hip_path) {
-                    hip_path = std::getenv("ROCM_PATH");
-                }
-                if (hip_path) {
-                    std::string p1 = std::string(hip_path) + "\\bin\\hipblaslt\\library";
-                    std::string p2 = std::string(hip_path) + "\\lib\\hipblaslt\\library";
-                    struct _stat st;
-                    static std::string tensile_env;
-                    if (_stat(p1.c_str(), &st) == 0 && (st.st_mode & _S_IFDIR)) {
-                        tensile_env = "HIPBLASLT_TENSILE_PATH=" + p1;
-                        _putenv(tensile_env.c_str());
-                    } else if (_stat(p2.c_str(), &st) == 0 && (st.st_mode & _S_IFDIR)) {
-                        tensile_env = "HIPBLASLT_TENSILE_PATH=" + p2;
-                        _putenv(tensile_env.c_str());
+                struct _stat st;
+                static std::string tensile_env;
+                if (_stat("hipblaslt\\library", &st) == 0 && (st.st_mode & _S_IFDIR)) {
+                    tensile_env = "HIPBLASLT_TENSILE_PATH=hipblaslt\\library";
+                    _putenv(tensile_env.c_str());
+                } else if (_stat("bin\\hipblaslt\\library", &st) == 0 && (st.st_mode & _S_IFDIR)) {
+                    tensile_env = "HIPBLASLT_TENSILE_PATH=bin\\hipblaslt\\library";
+                    _putenv(tensile_env.c_str());
+                } else if (_stat("..\\hipblaslt\\library", &st) == 0 && (st.st_mode & _S_IFDIR)) {
+                    tensile_env = "HIPBLASLT_TENSILE_PATH=..\\hipblaslt\\library";
+                    _putenv(tensile_env.c_str());
+                } else {
+                    const char * hip_path = std::getenv("HIP_PATH");
+                    if (!hip_path) {
+                        hip_path = std::getenv("ROCM_PATH");
+                    }
+                    if (hip_path) {
+                        std::string p1 = std::string(hip_path) + "\\bin\\hipblaslt\\library";
+                        std::string p2 = std::string(hip_path) + "\\lib\\hipblaslt\\library";
+                        if (_stat(p1.c_str(), &st) == 0 && (st.st_mode & _S_IFDIR)) {
+                            tensile_env = "HIPBLASLT_TENSILE_PATH=" + p1;
+                            _putenv(tensile_env.c_str());
+                        } else if (_stat(p2.c_str(), &st) == 0 && (st.st_mode & _S_IFDIR)) {
+                            tensile_env = "HIPBLASLT_TENSILE_PATH=" + p2;
+                            _putenv(tensile_env.c_str());
+                        }
                     }
                 }
             }
 #else
             if (std::getenv("HIPBLASLT_TENSILE_PATH") == nullptr) {
-                const char * rocm_path = std::getenv("ROCM_PATH");
-                if (!rocm_path) {
-                    rocm_path = std::getenv("HIP_PATH");
-                }
-                if (rocm_path) {
-                    std::string p = std::string(rocm_path) + "/lib/hipblaslt/library";
-                    struct stat st;
-                    if (stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-                        setenv("HIPBLASLT_TENSILE_PATH", p.c_str(), 0);
+                struct stat st;
+                if (stat("hipblaslt/library", &st) == 0 && S_ISDIR(st.st_mode)) {
+                    setenv("HIPBLASLT_TENSILE_PATH", "hipblaslt/library", 0);
+                } else if (stat("bin/hipblaslt/library", &st) == 0 && S_ISDIR(st.st_mode)) {
+                    setenv("HIPBLASLT_TENSILE_PATH", "bin/hipblaslt/library", 0);
+                } else if (stat("../hipblaslt/library", &st) == 0 && S_ISDIR(st.st_mode)) {
+                    setenv("HIPBLASLT_TENSILE_PATH", "../hipblaslt/library", 0);
+                } else {
+                    const char * rocm_path = std::getenv("ROCM_PATH");
+                    if (!rocm_path) {
+                        rocm_path = std::getenv("HIP_PATH");
+                    }
+                    if (rocm_path) {
+                        std::string p = std::string(rocm_path) + "/lib/hipblaslt/library";
+                        if (stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+                            setenv("HIPBLASLT_TENSILE_PATH", p.c_str(), 0);
+                        }
                     }
                 }
             }
