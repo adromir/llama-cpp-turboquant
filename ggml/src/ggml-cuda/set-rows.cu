@@ -1303,42 +1303,43 @@ static void set_rows_cuda(
             stream, dst_row_base
         );
     } else if (dst->type == GGML_TYPE_Q4_0_ROCMFP4) {
-        set_rows_cuda_quant<idx_t, block_rocmfp4, QK_ROCMFP4, quantize_f32_rocmfp4_block>(
+        set_rows_cuda_quant<idx_t, block_rocmfp4, QK_ROCMFP4, quantize_f32_rocmfp4_block, DstRowBase>(
             src0_d, src1_d, (block_rocmfp4*)dst->data,
             ne00, ne01, ne02, ne03,
             ne10, ne11, ne12, ne13,
             nb01, nb02, nb03,
             nb10, nb11, nb12,
             nb1, nb2, nb3,
-            stream
+            stream, dst_row_base
         );
     } else if (dst->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
-        set_rows_cuda_quant<idx_t, block_rocmfp4_fast, QK_ROCMFP4, quantize_f32_rocmfp4_fast_block>(
+        set_rows_cuda_quant<idx_t, block_rocmfp4_fast, QK_ROCMFP4, quantize_f32_rocmfp4_fast_block, DstRowBase>(
             src0_d, src1_d, (block_rocmfp4_fast*)dst->data,
             ne00, ne01, ne02, ne03,
             ne10, ne11, ne12, ne13,
             nb01, nb02, nb03,
             nb10, nb11, nb12,
             nb1, nb2, nb3,
-            stream
+            stream, dst_row_base
         );
     } else if (dst->type == GGML_TYPE_Q3_0_ROCMFPX) {
-        set_rows_cuda_quant<idx_t, block_rocmfp3, QK_ROCMFP3, quantize_f32_rocmfpx_fp3_block>(
+        set_rows_cuda_quant<idx_t, block_rocmfp3, QK_ROCMFP3, quantize_f32_rocmfpx_fp3_block, DstRowBase>(
             src0_d, src1_d, (block_rocmfp3*)dst->data,
             ne00, ne01, ne02, ne03,
             ne10, ne11, ne12, ne13,
             nb01, nb02, nb03,
             nb10, nb11, nb12,
             nb1, nb2, nb3,
-            stream
+            stream, dst_row_base
         );
     } else if (dst->type == GGML_TYPE_Q6_0_ROCMFPX) {
         set_rows_cuda_quant<idx_t, block_rocmfp6_device, QK_ROCMFP6,
 #if GGML_ROCMFP6_EXPANDED_DEVICE
-            quantize_f32_rocmfpx_fp6_expanded_block
+            quantize_f32_rocmfpx_fp6_expanded_block,
 #else
-            quantize_f32_rocmfpx_fp6_block
+            quantize_f32_rocmfpx_fp6_block,
 #endif
+            DstRowBase
         >(
             src0_d, src1_d, (block_rocmfp6_device*)dst->data,
             ne00, ne01, ne02, ne03,
@@ -1346,17 +1347,17 @@ static void set_rows_cuda(
             nb01, nb02, nb03,
             nb10, nb11, nb12,
             nb1, nb2, nb3,
-            stream
+            stream, dst_row_base
         );
     } else if (dst->type == GGML_TYPE_Q8_0_ROCMFPX) {
-        set_rows_cuda_quant<idx_t, block_rocmfp8, QK_ROCMFP8, quantize_f32_rocmfpx_fp8_block>(
+        set_rows_cuda_quant<idx_t, block_rocmfp8, QK_ROCMFP8, quantize_f32_rocmfpx_fp8_block, DstRowBase>(
             src0_d, src1_d, (block_rocmfp8*)dst->data,
             ne00, ne01, ne02, ne03,
             ne10, ne11, ne12, ne13,
             nb01, nb02, nb03,
             nb10, nb11, nb12,
             nb1, nb2, nb3,
-            stream
+            stream, dst_row_base
         );
     } else if (dst->type == GGML_TYPE_TURBO3_0) {
         set_rows_cuda_turbo3<idx_t>(ctx, src0, src1, dst);

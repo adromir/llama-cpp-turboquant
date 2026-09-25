@@ -3239,9 +3239,6 @@ void llama_model_base::create_tensor_qkv(llama_layer & layer, int bid,
     }
 }
 
-int32_t llama_model_dflash_selector_top_k(const llama_model * model) {
-    return model->hparams.dflash_selector_top_k;
-}
 
 const int32_t * llama_model_target_layer_ids(const struct llama_model * model) {
     const auto & v = model->target_layer_ids;

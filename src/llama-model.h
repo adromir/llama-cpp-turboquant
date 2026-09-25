@@ -667,9 +667,6 @@ struct llama_model {
     std::vector<int32_t> target_layer_ids;
     // dflash
     struct ggml_tensor * dflash_hidden_norm = nullptr;
-    struct ggml_tensor * dflash_selector_prev   = nullptr;
-    struct ggml_tensor * dflash_selector_next   = nullptr;
-    struct ggml_tensor * dflash_selector_hidden = nullptr;
     struct ggml_tensor * target_output = nullptr;  // reference to target model's lm_head
 
     // Reference to target model's embedding layer

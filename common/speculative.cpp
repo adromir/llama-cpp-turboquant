@@ -945,11 +945,6 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
     // draft-dspark: the draft carries a Markov head and uses an anchor-first block layout
     const bool is_dspark;
 
-    // draft-dflash2: lattice walk via candidate selector instead of sampling
-    bool    is_dflash2     = false;
-    bool    is_mrope       = false;
-    int32_t selector_top_k = 0;
-
     const int32_t * target_layer_ids   = nullptr; // model_dft's extract layer indices
     uint32_t        target_layer_ids_n = 0;
     int32_t         n_layer_tgt        = 0;       // extract id == n_layer_tgt -> pre-final-norm state (nextn)

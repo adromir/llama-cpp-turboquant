@@ -7150,11 +7150,6 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     bool cuda_graph_update_required = false;
     uint64_t graph_key              = 0;
 
-    // [TAG_FA_F16_CUDA_GRAPHS] default: no graph will be captured for this cgraph, so HIP flash-
-    // attention keeps its raw (release-after-use) f16 temp path. Set true below only when the graph
-    // is enabled and compatible, i.e. it will actually be captured.
-    cuda_ctx->fa_f16_use_pool = false;
-
     // op timing instruments each node with stream events, which is not possible during capture
     const bool op_timing = getenv("GGML_CUDA_OP_TIMING") != nullptr;
 
