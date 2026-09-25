@@ -563,12 +563,15 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
 
         // output
         if (std::regex_match(tensor_name, pattern_output_weight)) {
-            if (is_dsv4) {
+            if (is_dsv4 || ud->model->output_replicated) {
                 return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);
             }
             return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1);
         }
         if (std::regex_match(tensor_name, pattern_output_bias)) {
+            if (is_dsv4 || ud->model->output_replicated) {
+                return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+            }
             const ggml_tensor * output_weight = ud->model->get_tensor("output.weight");
             GGML_ASSERT(output_weight != nullptr);
             return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);
@@ -1198,6 +1201,7 @@ struct llama_model::impl {
 };
 
 llama_model::llama_model(const llama_model_params & params) : params(params), pimpl(std::make_unique<impl>()) {
+    output_replicated = params.output_replicated;
     if (params.tensor_split != nullptr) {
         // llama_model_params stores tensor_split as a borrowed pointer, but the model
         // may need it later for tensor-parallel KV-cache split metadata.
@@ -2684,6 +2688,7 @@ llama_model_params llama_model_default_params() {
         /*.no_host                     =*/ false,
         /*.no_alloc                    =*/ false,
         /*.load_mtp                    =*/ false,
+        /*.output_replicated           =*/ false,
     };
 
     return result;

@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "ggml.h"
+#include "gguf.h"
 #include "llama.h"
 #include "log.h"
 #include "ngram-cache.h"
@@ -3397,4 +3398,44 @@ void common_speculative_print_stats(const common_speculative * spec) {
                 str_stats.c_str(),
                 str_perf.c_str());
     }
+}
+
+bool common_speculative_draft_ranks_full_output(const std::string & path) {
+    if (path.empty()) {
+        return false;
+    }
+    struct gguf_init_params params = {
+        /* .no_alloc = */ true,
+        /* .ctx      = */ nullptr,
+    };
+    struct gguf_context * ctx = gguf_init_from_file(path.c_str(), params);
+    if (!ctx) {
+        return false;
+    }
+
+    bool has_dflash = false;
+    const int64_t key_arch = gguf_find_key(ctx, "general.architecture");
+    if (key_arch >= 0) {
+        const char * arch = gguf_get_val_str(ctx, key_arch);
+        if (arch && strcmp(arch, "dflash") == 0) {
+            has_dflash = true;
+        }
+    }
+
+    bool has_selector_or_markov = false;
+    bool has_output = false;
+    if (has_dflash) {
+        const int64_t n_tensors = gguf_get_n_tensors(ctx);
+        for (int64_t i = 0; i < n_tensors; ++i) {
+            const char * name = gguf_get_tensor_name(ctx, i);
+            if (strcmp(name, "selector_hidden.weight") == 0 || strcmp(name, "markov_w1.weight") == 0) {
+                has_selector_or_markov = true;
+            } else if (strcmp(name, "output.weight") == 0) {
+                has_output = true;
+            }
+        }
+    }
+    gguf_free(ctx);
+
+    return has_dflash && has_selector_or_markov && !has_output;
 }

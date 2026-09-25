@@ -125,9 +125,9 @@ A comprehensive 3-way benchmark evaluation was conducted on AMD RDNA 4 hardware 
 2. **Decode Speed**:
    Native ROCmFP4 Lloyd-Max 4-bit float representations decode at **19.65 t/s**, nearly doubling the 10.25 t/s decode rate of upstream standard K-quants on consumer 16GB GPUs.
 3. **Multi-Token Prediction (MTP) Speculative Decoding**:
-   Using `--spec-type draft-mtp --spec-draft-n-max 3` leverages Qwen 3.8 internal `nextn_predict_layers` head. All three configurations achieve high draft acceptance (~28% to 41%), delivering real-world generation rates of up to **27.40 t/s** on ROCmFP4.
+   Using `--spec-type draft-mtp --spec-draft-n-max 6 --spec-draft-p-min 0.00` leverages Qwen 3.8 internal `nextn_predict_layers` head. Empirical sweeps show `--spec-draft-n-max 6` yields a +2.8% to +7.0% decode speedup over the default of 4 across short and long contexts, while disabling probability gating (`--spec-draft-p-min 0.00`) prevents a 4% to 15% decode speed penalty. All configurations achieve high draft acceptance (~28% to 41%), delivering real-world generation rates of up to **27.40 t/s** on ROCmFP4.
 4. **VRAM Headroom and Context Scaling**:
-   Standard `Q4_K_M` occupies 15.65 GiB of VRAM, leaving less than 700 MiB free on a 16GB card and crashing with out-of-memory errors beyond 4k tokens. `Q4_0_ROCMFP4_FAST` occupies only 13.53 GiB. Pairing ROCmFP4 model weights with **TurboQuant 3-bit (`turbo3`) KV cache** enables comfortable **32k context execution on a single consumer 16GB graphics card**.
+   Standard `Q4_K_M` occupies 15.65 GiB of VRAM, leaving less than 700 MiB free on a 16GB card and crashing with out-of-memory errors beyond 4k tokens. `Q4_0_ROCMFP4_FAST` occupies only 13.53 GiB. Furthermore, at deep contexts (128k+ tokens), standard F16 KV cache grows to ~35 GB, exceeding the weight size of the model and causing severe memory paging on consumer GPUs and APUs. Pairing ROCmFP4 model weights with **TurboQuant 3-bit (`turbo3`) KV cache** compresses the cache from ~35 GB down to ~7-9 GB, enabling comfortable **32k to 128k+ context execution without memory thrashing**.
 
 ---
 
@@ -343,12 +343,12 @@ For models with high Grouped-Query Attention ratios, using `q8_0` for Keys and `
 llama-cli -m models/model.gguf -c 65536 -ngl 99 -fa 1 --cache-type-k q8_0 --cache-type-v turbo3
 ```
 
-### 3. OpenAI-Compatible API Server
+### 3. OpenAI-Compatible API Server (with MTP Speculative Decoding)
 
-Launch the web server with web UI on port 8080:
+Launch the web server with MTP speculative decoding, TurboQuant KV cache, and optimized draft parameters on port 8080:
 
 ```bash
-llama-server -m models/model.gguf -c 32768 -ngl 99 -fa 1 --cache-type-k turbo3 --cache-type-v turbo3 --host 0.0.0.0 --port 8080
+llama-server -m models/model.gguf -c 32768 -ngl 99 -fa 1 --cache-type-k q8_0 --cache-type-v turbo3 --spec-type draft-mtp --spec-draft-n-max 6 --spec-draft-p-min 0.00 --host 0.0.0.0 --port 8080
 ```
 
 ### 4. Benchmark Performance
@@ -409,6 +409,10 @@ cmake -G "Ninja" `
 cmake --build . --config Release --parallel
 ```
 
+> [!WARNING]
+> **Windows MSVC Toolset Compatibility with ROCm Clang**:
+> If building with Visual Studio 2026 / 2022, use MSVC toolset version **14.44** (`-T v144` or installed MSVC 14.44). MSVC 14.51 introduced a `_CLANG_BUILTIN` block in `<cmath>` declaring `isgreater/isless/...` as builtins, causing ROCm clang's CUDA/HIP math headers to fail with `"__device__ function cannot overload __host__ __device__ function"`. MSVC 14.44 compiles cleanly without this conflict.
+
 ### Linux (ROCm / HIP)
 
 ```bash
@@ -457,6 +461,19 @@ On RDNA3, RDNA3.5, RDNA4, and CDNA, this distribution automatically links and ut
 - **Strided Batched GEMM**: Native acceleration for multi-head attention projections and batched GEMMs via `HIPBLASLT_MATRIX_LAYOUT_BATCH_COUNT` and `HIPBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET`.
 - **Fail-Safe Fallback**: Any non-standard shapes or unsupported dimension splits automatically and transparently fall back to `cublasGemmEx` / `cublasGemmStridedBatchedEx` / `cublasSgemm` with zero regression.
 
+### AMD Hardware, BIOS & Long-Context Tuning (128k+)
+
+Empirical profiling on AMD RDNA and unified APU architectures (such as Strix Halo / Radeon 8060S and desktop RDNA4) reveals critical settings for long context and speculative execution:
+
+- **IOMMU Disabled in BIOS (+40% Prefill at 128k)**:
+  On systems with unified memory architectures, disabling IOMMU in the motherboard BIOS (or booting with `amd_iommu=off` on Linux) reduces memory address translation overhead. This yields up to a **+40% prefill speedup at 128k context** (+1% at 4k, +6% at 16k, +11% to +21% at 32k) with zero degradation to decode speed.
+- **MTP Draft Depth (`--spec-draft-n-max 6`)**:
+  Empirical sweeps show draft depth `6` provides the best balance between draft acceptance and decode overhead (+2.8% to +7% decode boost over the default of 4). Setting `n-max 8` gains marginally at 32k but regresses on short prompts.
+- **Disable Probability Gating (`--spec-draft-p-min 0.00`)**:
+  Always keep `p-min` at `0.00` for MTP in `llama.cpp`. Adding draft probability filters (e.g. 0.75) causes a 4% to 15% decode speed loss due to prematurely truncated draft sequences.
+- **Unified Memory Split on 128GB APUs**:
+  On 128GB unified APUs, a balanced 64 GB host / 64 GB VRAM BIOS partition outperforms 96 GB / 32 GB for deep contexts because Windows ROCm allocations for large KV caches spill into host memory space.
+
 ---
 
 ## Testing Gates
@@ -490,5 +507,6 @@ This distribution incorporates features, kernel optimizations, and architectural
 - **[TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)**: Tom Turney's revolutionary TurboQuant KV-cache quantization codec, Walsh-Hadamard Transform (WHT) orthonormal rotation, Lloyd-Max centroid optimization, and elementwise chain fusion.
 - **[stew675/llama-cpp-rdna-boosts](https://github.com/stew675/llama-cpp-rdna-boosts)** & **[stew675/llama.cpp](https://github.com/stew675/llama.cpp)**: Stew Forster's comprehensive AMD RDNA optimization suite: native-BF16 Flash Attention tiles, RDNA4 WMMA tensor core acceleration, fused chunked Gated-Delta-Net, fused MoE gate+up GLU kernels, and adaptive MTP speculative decoding.
 - **[charlie12345/ROCmFPX](https://github.com/charlie12345/ROCmFPX)**: Carlo Pasquale's high-performance ROCmFPX sub-8-bit floating-point and integer quantization family (`Q4_0_ROCMFP4`, `Q4_0_ROCMFP4_FAST`, `Q3_0_ROCMFPX`, `Q6_0_ROCMFPX`, `Q8_0_ROCMFPX`, `Q2_0_ROCMFPX`, `Q4_0_ROCMI4`) for AMD RDNA and CDNA architectures.
+- **[daimonionnn/amd-rocmfpx-for-win](https://github.com/daimonionnn/amd-rocmfpx-for-win)**: Empirical profiling, MTP draft tuning benchmarks (`--spec-draft-n-max 6`), and deep-context hardware optimization findings on AMD Strix Halo / ROCm Windows.
 - **[unslothai/llama.cpp](https://github.com/unslothai/llama.cpp)**: Unsloth AI optimizations including shape-aware CUDA/HIP graph keying, contiguous virtual memory run mapping, batched VM readahead, and MTP shared tensor borrowing.
 

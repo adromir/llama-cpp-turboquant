@@ -1295,6 +1295,12 @@ common_init_result::common_init_result(common_params & params, bool model_only) 
         }
     }
 
+    if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR &&
+        !params.speculative.draft.mparams.path.empty() &&
+        common_speculative_draft_ranks_full_output(params.speculative.draft.mparams.path)) {
+        mparams.output_replicated = true;
+    }
+
     llama_model * model = llama_model_load_from_file(params.model.path.c_str(), mparams);
     if (model == NULL) {
         return;

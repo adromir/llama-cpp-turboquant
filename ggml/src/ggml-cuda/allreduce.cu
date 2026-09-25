@@ -1,6 +1,6 @@
 #include "allreduce.cuh"
 
-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+#if !defined(GGML_USE_MUSA)
 
 #include "convert.cuh"
 #include "ggml-impl.h"
@@ -161,7 +161,9 @@ static __global__ void ggml_cuda_ar_kernel(
         __threadfence_system(); // make our signal visible system-wide
 
         while (ggml_cuda_ar_signal_get(other_slot) != token) {
-#if __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
+#if defined(GGML_USE_HIP)
+            __builtin_amdgcn_s_sleep(1);
+#elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
             __nanosleep(100);
 #else
             NO_DEVICE_CODE;
@@ -331,6 +333,12 @@ struct ggml_cuda_ar_pipeline {
     // memory; CPU never reads/writes -- only the kernel and cudaMemset.
     // Use ggml_cuda_ar_arrival_ptr() to index.
     ggml_cuda_ar_host_mapping arrival;
+
+    // Direct P2P path (2 GPUs, peer-to-peer accessible over PCIe / xGMI)
+    cudaStream_t p2p_stream = nullptr;
+    int          p2p_issuer = 0;
+    cudaEvent_t  p2p_done[2][GGML_CUDA_AR_POOL_SIZE] = {};
+    bool         p2p_enabled = false;
 };
 
 // Base pointer for the (slot, rank) per-block token block.  The kernel adds
@@ -402,6 +410,7 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
     }
 
     // The chunked kernel uses __nanosleep, which is sm70+ (Volta+).
+#if !defined(GGML_USE_HIP)
     for (size_t i = 0; i < n_devices; ++i) {
         const int cc = ggml_cuda_info().devices[devices[i]].cc;
         if (cc < GGML_CUDA_CC_VOLTA) {
@@ -411,6 +420,7 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
             return nullptr;
         }
     }
+#endif
 
     auto * p = new ggml_cuda_ar_pipeline{};
     p->n_devices        = n_devices;
@@ -472,6 +482,42 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
                            __func__, p->devices[i]);
             ggml_cuda_ar_pipeline_free(p);
             return nullptr;
+        }
+    }
+
+    // Check for bidirectional P2P access between the 2 devices.
+    if (n_devices == 2) {
+        int can_access_01 = 0;
+        int can_access_10 = 0;
+        if (cudaDeviceCanAccessPeer(&can_access_01, p->devices[0], p->devices[1]) == cudaSuccess &&
+            cudaDeviceCanAccessPeer(&can_access_10, p->devices[1], p->devices[0]) == cudaSuccess &&
+            can_access_01 && can_access_10) {
+            ggml_cuda_set_device(p->devices[0]);
+            cudaError_t e0 = cudaDeviceEnablePeerAccess(p->devices[1], 0);
+            ggml_cuda_set_device(p->devices[1]);
+            cudaError_t e1 = cudaDeviceEnablePeerAccess(p->devices[0], 0);
+            if ((e0 == cudaSuccess || e0 == cudaErrorPeerAccessAlreadyEnabled) &&
+                (e1 == cudaSuccess || e1 == cudaErrorPeerAccessAlreadyEnabled)) {
+                p->p2p_issuer = 0;
+                ggml_cuda_set_device(p->devices[p->p2p_issuer]);
+                if (cudaStreamCreateWithFlags(&p->p2p_stream, cudaStreamNonBlocking) != cudaSuccess) {
+                    GGML_LOG_ERROR("%s: P2P stream creation failed\n", __func__);
+                    ggml_cuda_ar_pipeline_free(p);
+                    return nullptr;
+                }
+                for (int direction = 0; direction < 2; ++direction) {
+                    for (int slot = 0; slot < GGML_CUDA_AR_POOL_SIZE; ++slot) {
+                        if (cudaEventCreateWithFlags(&p->p2p_done[direction][slot], cudaEventDisableTiming) != cudaSuccess) {
+                            GGML_LOG_ERROR("%s: P2P event creation failed\n", __func__);
+                            ggml_cuda_ar_pipeline_free(p);
+                            return nullptr;
+                        }
+                    }
+                }
+                p->p2p_enabled = true;
+            }
+        } else {
+            GGML_LOG_WARN("%s: bidirectional P2P is unavailable; using host staging\n", __func__);
         }
     }
 
@@ -546,6 +592,10 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
             cudaStreamSynchronize(p->streams[i]);
         }
     }
+    if (p->p2p_stream) {
+        ggml_cuda_set_device(p->devices[p->p2p_issuer]);
+        cudaStreamSynchronize(p->p2p_stream);
+    }
 
     for (int i = 0; i < p->n_devices; ++i) {
         p->host_buf[i].free();
@@ -576,6 +626,17 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
             cudaStreamDestroy(p->streams[i]);
         }
     }
+    if (p->p2p_stream) {
+        ggml_cuda_set_device(p->devices[p->p2p_issuer]);
+        for (int direction = 0; direction < 2; ++direction) {
+            for (int slot = 0; slot < GGML_CUDA_AR_POOL_SIZE; ++slot) {
+                if (p->p2p_done[direction][slot]) {
+                    cudaEventDestroy(p->p2p_done[direction][slot]);
+                }
+            }
+        }
+        cudaStreamDestroy(p->p2p_stream);
+    }
     p->arrival.free();
     delete p;
 }
@@ -590,6 +651,69 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
 // (e.g. BF16 wire / F32 accumulator) the add kernel rounds dst through T_src
 // for bit-equivalence between GPUs and we skip the otherwise-needed
 // post-conversion entirely.
+template <typename T_src, typename T_dst>
+static bool ggml_cuda_ar_allreduce_p2p_impl(
+        ggml_cuda_ar_pipeline * p,
+        ggml_backend_t        * backends,
+        T_src * const           src_buf[GGML_CUDA_MAX_DEVICES],
+        T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],
+        const bool              compute[GGML_CUDA_MAX_DEVICES],
+        int64_t                 ne,
+        size_t                  nbytes) {
+    GGML_ASSERT(p->n_devices == 2);
+    GGML_ASSERT(p->p2p_enabled);
+    GGML_ASSERT(nbytes <= p->copy_bytes);
+    GGML_ASSERT(ne <= std::numeric_limits<int>::max());
+
+    const int slot = ggml_cuda_ar_acquire_slot(p).slot;
+    ggml_backend_cuda_context * cuda_ctx[2] = {};
+
+    for (int i = 0; i < 2; ++i) {
+        ggml_cuda_set_device(p->devices[i]);
+        cuda_ctx[i] = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
+        GGML_ASSERT(cuda_ctx[i]->device == p->devices[i]);
+        if (!compute[i]) {
+            CUDA_CHECK(cudaMemsetAsync(src_buf[i], 0, nbytes, cuda_ctx[i]->stream()));
+        }
+        CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].app, cuda_ctx[i]->stream()));
+    }
+
+    cudaStream_t copy_stream[2] = { p->streams[p->p2p_issuer], p->p2p_stream };
+    ggml_cuda_set_device(p->devices[p->p2p_issuer]);
+
+    for (int direction = 0; direction < 2; ++direction) {
+        const int destination = 1 - direction;
+        CUDA_CHECK(cudaStreamWaitEvent(copy_stream[direction], p->ev_pool[direction][slot].app));
+        if (p->dev_tmp_kernel_done_valid) {
+            CUDA_CHECK(cudaStreamWaitEvent(copy_stream[direction], p->dev_tmp_kernel_done[destination]));
+        }
+        CUDA_CHECK(cudaMemcpyPeerAsync(
+            p->dev_tmp[destination], p->devices[destination], src_buf[direction], p->devices[direction], nbytes,
+            copy_stream[direction]));
+        CUDA_CHECK(cudaEventRecord(p->p2p_done[direction][slot], copy_stream[direction]));
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        ggml_cuda_set_device(p->devices[i]);
+        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->p2p_done[0][slot]));
+        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->p2p_done[1][slot]));
+
+        const int block_size = 256;
+        int n_blocks = (int) ((ne + block_size - 1) / block_size);
+        if (n_blocks > 1024) {
+            n_blocks = 1024;
+        }
+        ggml_cuda_ar_add_kernel<T_dst, T_src><<<n_blocks, block_size, 0, cuda_ctx[i]->stream()>>>(
+            dst_buf[i], reinterpret_cast<const T_src *>(p->dev_tmp[i]), (int) ne);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaEventRecord(p->dev_tmp_kernel_done[i], cuda_ctx[i]->stream()));
+        CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, cuda_ctx[i]->stream()));
+    }
+    p->dev_tmp_kernel_done_valid = true;
+
+    return true;
+}
+
 template <typename T_src, typename T_dst>
 static bool ggml_cuda_ar_allreduce_copy_impl(
         ggml_cuda_ar_pipeline * p,
@@ -734,8 +858,13 @@ static bool ggml_cuda_ar_allreduce_copy_outer(
             src[i] = src_buf[i] + outer_start;
             dst[i] = dst_buf[i] + outer_start;
         }
-        ok = ggml_cuda_ar_allreduce_copy_impl<T_src, T_dst>(
-            p, backends, src, dst, compute, outer_ne, outer_nbytes);
+        if (p->p2p_enabled) {
+            ok = ggml_cuda_ar_allreduce_p2p_impl<T_src, T_dst>(
+                p, backends, src, dst, compute, outer_ne, outer_nbytes);
+        } else {
+            ok = ggml_cuda_ar_allreduce_copy_impl<T_src, T_dst>(
+                p, backends, src, dst, compute, outer_ne, outer_nbytes);
+        }
     }
     return ok;
 }
@@ -952,14 +1081,12 @@ bool ggml_cuda_ar_allreduce(
     return ok;
 }
 
-#elif defined(GGML_USE_MUSA)
+#else // defined(GGML_USE_MUSA)
 
-// MUSA lacks the host-mapped pinned-memory APIs (cudaHostAllocPortable
-// / cudaHostAllocMapped / cudaHostGetDevicePointer) that this implementation
-// relies on, so the internal AllReduce is a CUDA/HIP feature (see
-// allreduce-hip.cu for the HIP port).  The dispatcher in ggml-cuda.cu treats
-// a nullptr pipeline as "init failed" and silently falls back to the meta
-// backend's generic AllReduce.
+// MUSA lacks the host-mapped pinned-memory APIs (cudaHostAllocPortable /
+// cudaHostAllocMapped / cudaHostGetDevicePointer) that this implementation uses.
+// The dispatcher in ggml-cuda.cu treats a nullptr pipeline as "init failed"
+// and silently falls back to the meta backend's generic AllReduce.
 ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int *, size_t) {
     return nullptr;
 }
@@ -969,7 +1096,8 @@ bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tens
     return false;
 }
 
-// WIP fused-stage hook: no-op on non-HIP builds (the internal AR is HIP-only).
+#endif // !defined(GGML_USE_MUSA)
+
 void ggml_cuda_ar_stage_hook_set(int device, ggml_cuda_ar_stage_fn fn, void * user_data) {
     GGML_UNUSED(device);
     GGML_UNUSED(fn);
@@ -983,5 +1111,3 @@ void ggml_cuda_ar_stage_hook_run(int device, cudaStream_t stream,
     GGML_UNUSED(data);
     GGML_UNUSED(count);
 }
-
-#endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)

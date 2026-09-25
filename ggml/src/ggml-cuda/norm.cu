@@ -661,7 +661,7 @@ void ggml_cuda_op_rms_norm_q8_1(ggml_backend_cuda_context & ctx, ggml_tensor * n
     const int64_t s01 = src0->nb[1] / ggml_type_size(src0->type);
     const int64_t s02 = src0->nb[2] / ggml_type_size(src0->type);
     const int64_t s03 = src0->nb[3] / ggml_type_size(src0->type);
-    const int64_t mul_s01 = weight->nb[1] / ggml_type_size(weight->type);
+    const int64_t mul_s01 = weight->ne[1] > 1 ? (weight->nb[1] / ggml_type_size(weight->type)) : 0;
 
     // Fill the mmvq quantize cache for the norm output so the following
     // matmuls skip their own quantize kernel. The key must match the mmvq

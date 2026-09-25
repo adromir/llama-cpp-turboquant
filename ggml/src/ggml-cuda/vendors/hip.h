@@ -106,6 +106,10 @@
 #ifndef cudaPeekAtLastError
 #define cudaPeekAtLastError hipPeekAtLastError
 #endif
+#define cudaHostAlloc hipHostMalloc
+#define cudaHostAllocMapped hipHostMallocMapped
+#define cudaHostAllocPortable hipHostMallocPortable
+#define cudaHostGetDevicePointer hipHostGetDevicePointer
 #define cudaHostRegister hipHostRegister
 #define cudaHostRegisterPortable hipHostRegisterPortable
 #define cudaHostRegisterReadOnly hipHostRegisterReadOnly

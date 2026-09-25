@@ -672,6 +672,8 @@ struct llama_model {
     // This allows EAGLE3 to use target model's embeddings without copying
     struct ggml_tensor * target_tok_embd = nullptr;
 
+    bool output_replicated = false;
+
 
     std::vector<llama_layer> layers;
 

@@ -98,3 +98,5 @@ private:
 using common_speculative_init_result_ptr = std::unique_ptr<common_speculative_init_result>;
 
 common_speculative_init_result_ptr common_speculative_init_from_params(common_params & params, llama_model * model_tgt, llama_context * ctx_tgt);
+
+bool common_speculative_draft_ranks_full_output(const std::string & path);

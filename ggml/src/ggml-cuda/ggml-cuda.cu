@@ -4336,7 +4336,20 @@ static bool ggml_cuda_match_moe_weighted_reduction(
 // try and fuse nodes and return the number of nodes to skip
 static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
 
-    static bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
+    const int cc = ggml_cuda_info().devices[cuda_ctx->device].cc;
+
+    static const int fusion_mode = [] {
+        const char * value = getenv("GGML_CUDA_DISABLE_FUSION");
+        if (value != nullptr) {
+            return std::atoi(value) != 0 ? 1 : 0;
+        }
+        return -1;
+    }();
+#if defined(GGML_USE_HIP)
+    const bool disable_fusion = fusion_mode == 1 || (fusion_mode < 0 && GGML_CUDA_CC_IS_RDNA4(cc));
+#else
+    const bool disable_fusion = fusion_mode == 1;
+#endif
     if (disable_fusion) {
         return 0;
     }
@@ -4344,7 +4357,18 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     // fused gate+up+GLU MMQ (prefill): hard opt-out for A/B and regression testing
     static bool disable_moe_mmq = getenv("GGML_CUDA_DISABLE_MOE_MMQ_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_MOE_MMQ_FUSION"));
 
-    const int cc = ggml_cuda_info().devices[cuda_ctx->device].cc;
+    static const int quant_cache_fuse_mode = [] {
+        const char * value = getenv("GGML_CUDA_FUSE_QUANT_CACHE");
+        if (value != nullptr) {
+            return std::atoi(value) != 0 ? 1 : 0;
+        }
+        return -1;
+    }();
+#if defined(GGML_USE_HIP)
+    const bool enable_quant_cache_fuse = quant_cache_fuse_mode == 1 || (quant_cache_fuse_mode < 0 && !GGML_CUDA_CC_IS_RDNA4(cc));
+#else
+    const bool enable_quant_cache_fuse = quant_cache_fuse_mode != 0;
+#endif
 
     ggml_tensor * node = cgraph->nodes[i];
 
@@ -4367,7 +4391,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     // cache. Consumes only the norm+MUL pair; the matmul dispatch that follows
     // finds the cached blocks and skips its own quantize. The matmul need not
     // be adjacent (unrelated nodes may sit between in DFS order).
-    if (node->op == GGML_OP_RMS_NORM && i + 1 < cgraph->n_nodes) {
+    if (enable_quant_cache_fuse && node->op == GGML_OP_RMS_NORM && i + 1 < cgraph->n_nodes) {
         const ggml_tensor * mul = cgraph->nodes[i + 1];
         if (mul->op == GGML_OP_MUL && mul->src[0] == node) {
             // The consumers of the norm output are mostly mmvq matmuls; skip
@@ -5530,7 +5554,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         // no-op reshape), write its Q8_1 quantized value instead of the F32
         // output; the matmul launcher finds it via the quantize cache.
         const ggml_tensor * mm = ggml_cuda_find_mul_q8_1_matmul(cgraph, i + 1, mul_node);
-        if (mm != nullptr) {
+        if (enable_quant_cache_fuse && mm != nullptr) {
             ggml_cuda_op_unary_mul_q8_1(*cuda_ctx, node, mul_node, mm);
             return cgraph->nodes[i + 2] == mm ? 1 : 2;
         }
@@ -7144,8 +7168,10 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
             }
         }
         case GGML_OP_SSM_CONV: {
-            // assumes d_inner % threads == 0
-            return op->src[0]->ne[1] % 128 == 0;
+            // assumes d_inner % threads == 0; d_inner is on ne[1] (time-major) or ne[0] (channels-major)
+            const bool channels_major = ggml_ssm_conv_get_layout(op) == GGML_SSM_CONV_LAYOUT_CHANNELS_MAJOR;
+            const int64_t d_inner = channels_major ? op->src[0]->ne[0] : op->src[0]->ne[1];
+            return d_inner % 128 == 0;
         }
         case GGML_OP_CONT:
             return true;
