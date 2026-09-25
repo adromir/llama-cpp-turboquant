@@ -6590,6 +6590,18 @@ struct test_mul_mat_residual_fusion : public test_case {
 
     bool run_whole_graph() override { return true; }
 
+    // The fusion under test is the ADD epilogue itself. Watch its counter, not a side effect of
+    // the path taken to reach it, so that losing the fusion fails the test rather than passing
+    // on correct unfused arithmetic.
+    //
+    // Measured on CDNA2: the epilogue folds in only on the single-column vector path, and never
+    // when the residual aliases the product, which the dispatch declines rather than read back
+    // what it has written. The remaining cases run unfused and stay numeric-only here, so that a
+    // correct build is not reported as a missing fusion.
+    const char * required_fusion() override {
+        return (n == 1 && !self_add) ? "mul_mat_bias" : nullptr;
+    }
+
     ggml_tensor * build_graph(ggml_context * ctx) override {
         ggml_tensor * a = ggml_new_tensor_2d(ctx, type, k, m);
         ggml_tensor * b = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, n);
@@ -6856,6 +6868,11 @@ struct test_mul_mat_vec_fusion : public test_case {
         s = ggml_repeat_4d(ctx, s, 1, n_mats, m, 1);
         s = ggml_get_rows(ctx, s, ids);
         return ggml_mul(ctx, out, s);
+    }
+
+    // Each case builds exactly one epilogue; require the counter for the one it built.
+    const char * required_fusion() override {
+        return with_gate ? "mul_mat_glu" : (with_bias ? "mul_mat_bias" : nullptr);
     }
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
@@ -10375,6 +10392,17 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
             }
         }
     }
+    for (int k : {4, 8, 16, 32}) {
+        for (int nrows : {1, 8, 16}) {
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {202048, nrows, 1, 1}, k));
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {151936, nrows, 1, 1}, k));
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {8192,   nrows, 1, 1}, k));
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {8193,   nrows, 1, 1}, k));
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {8192,   nrows, 1, 1}, k, true));
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {202048, nrows, 1, 1}, k, true));
+        }
+    }
+
     for (int k : {1, 2, 3, 7, 15}) {
         test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {16, 10, 10, 10}, k));
         test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {60, 10, 10, 10}, k));
@@ -11149,7 +11177,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_argsort(GGML_TYPE_F32, {200000, 16, 1, 1}));
 
     test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {2, 1, 1, 1}, 1));
-    for (auto k : {1, 10, 40, 400}) {
+    // widths around the tiling threshold
+    for (auto cols : {4096, 8192, 12288, 16384, 24576, 32768, 65536, 131072}) {
+        for (auto nrows : {1, 16}) {
+            test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {cols, nrows, 1, 1}, 16));
+        }
+    }
+    for (auto k : {1, 4, 8, 10, 16, 32, 40, 400}) {
         for (auto nrows : {1, 16}) {
             for (auto cols : {k, 1000, 65000, 200000}) {
                 test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {cols, nrows, 1, 1}, k));
@@ -11416,6 +11450,10 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
         output_printer->print_summary(test_summary_info(n_ok, tests_run, false));
         output_printer->print_failed_tests(failed_tests);
 
+        if (tests_run == 0) {
+            return false;
+        }
+
         return n_ok == tests_run;
     }
 
@@ -11434,6 +11472,10 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
             }
         }
         output_printer->print_summary(test_summary_info(n_ok, test_cases.size(), false));
+
+        if (test_cases.empty()) {
+            return false;
+        }
 
         return n_ok == test_cases.size();
     }
