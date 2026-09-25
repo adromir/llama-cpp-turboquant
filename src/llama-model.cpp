@@ -29,6 +29,7 @@
 #include <cfloat>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -2383,7 +2384,10 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             1,
                             cparams.n_rs_seq,
                             nullptr,
-                            nullptr);
+                            nullptr,
+                            params.kv_stream_stage_bytes,
+                            params.kv_stream_phase_arena,
+                            params.kv_stream_maximum_pool_bytes);
                 }
             } break;
         case LLM_ARCH_DFLASH:
@@ -2490,7 +2494,10 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* offload           */ cparams.offload_kqv,
                             /* unified           */ cparams.kv_unified,
                             /* filter_attn       */ std::move(filter_attn),
-                            /* filter_recr       */ std::move(filter_recr));
+                            /* filter_recr       */ std::move(filter_recr),
+                            /* kv_stream_stage_bytes */ params.kv_stream_stage_bytes,
+                            /* kv_stream_phase_arena */ params.kv_stream_phase_arena,
+                            /* kv_stream_maximum_pool_bytes */ params.kv_stream_maximum_pool_bytes);
                     } else if (needs_mem_idx) {
                         // sparse attention over a per-token indexer cache, in its own memory type
                         res = new llama_memory_hybrid_idx(
@@ -2532,7 +2539,10 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* offload           */ cparams.offload_kqv,
                             /* unified           */ cparams.kv_unified,
                             /* filter_attn       */ std::move(filter_attn),
-                            /* filter_recr       */ std::move(filter_recr));
+                            /* filter_recr       */ std::move(filter_recr),
+                            /* kv stream stage   */ params.kv_stream_stage_bytes,
+                            /* kv stream arena   */ params.kv_stream_phase_arena,
+                            /* kv stream maximum */ params.kv_stream_maximum_pool_bytes);
                     }
                 } else {
                     llama_kv_cache::layer_filter_cb filter = nullptr;
@@ -2596,7 +2606,10 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                     mem_other,
                                     filter,
                                     reuse,
-                                    share);
+                                    share,
+                                    params.kv_stream_stage_bytes,
+                                    params.kv_stream_phase_arena,
+                                    params.kv_stream_maximum_pool_bytes);
                         } else {
                             res = new llama_kv_cache_iswa(
                                     *this,
@@ -2613,7 +2626,10 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                     nullptr,
                                     filter,
                                     reuse,
-                                    share);
+                                    share,
+                                    params.kv_stream_stage_bytes,
+                                    params.kv_stream_phase_arena,
+                                    params.kv_stream_maximum_pool_bytes);
                         }
                     } else {
                         GGML_ASSERT(!hparams.is_swa_any());
@@ -2634,7 +2650,11 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                 nullptr,
                                 filter,
                                 nullptr,
-                                nullptr);
+                                nullptr,
+                                "",
+                                params.kv_stream_stage_bytes,
+                                params.kv_stream_phase_arena,
+                                params.kv_stream_maximum_pool_bytes);
                     }
                 }
             }
@@ -2728,6 +2748,10 @@ int32_t llama_model_n_layer(const llama_model * model) {
 
 int32_t llama_model_n_layer_nextn(const llama_model * model) {
     return model->hparams.n_layer_nextn;
+}
+
+int32_t llama_model_dflash_selector_top_k(const llama_model * model) {
+    return model->hparams.dflash_selector_top_k;
 }
 
 int32_t llama_model_n_head(const llama_model * model) {

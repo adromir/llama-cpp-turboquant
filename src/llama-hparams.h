@@ -250,8 +250,9 @@ struct llama_hparams {
     // 0 = full rank (DeepSeek-V4)
     uint32_t hc_low_rank = 0;
 
-    // DFlash2
-    uint32_t dflash_block_size       = 0;
+    // DFlash / DFlash2
+    uint32_t dflash_block_size       = 16;
+    uint32_t dflash_mask_token_id    = 0;
     uint32_t dflash_conv_kernel_size = 0;
     uint32_t dflash_conv_group_size  = 0;
     uint32_t dflash_selector_rank    = 0;
@@ -455,6 +456,7 @@ struct llama_hparams {
     std::array<int, 3> eagle3_extract_layers = {0, 0, 0};
     uint32_t eagle3_target_hidden_size    = 0;
     bool     eagle3_norm_before_residual  = false;
+
 };
 
 static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams must be trivially copyable");

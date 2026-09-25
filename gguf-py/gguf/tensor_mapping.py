@@ -1318,7 +1318,6 @@ class TensorNameMap:
         MODEL_TENSOR.DSPARK_CONF_PROJ: (
             "model.confidence_head.proj", # dspark
         ),
-
         MODEL_TENSOR.DFLASH_ATTN_CONV_BASE: (
             "model.layers.{bid}.attention_conv.base_kernel",
         ),
@@ -1346,7 +1345,6 @@ class TensorNameMap:
         MODEL_TENSOR.DFLASH_SELECTOR_HIDDEN: (
             "model.candidate_selector.hidden_projection",
         ),
-
         MODEL_TENSOR.CLS: (
             "classifier",       # jina
             "classifier.dense", # roberta

@@ -630,6 +630,7 @@ class Qwen3_5MoeTextModel(_Qwen35MRopeMixin, _LinearAttentionVReorderBase):
 
 
 @ModelBase.register("DFlashDraftModel", "DFlash2DraftModel")
+@ModelBase.example("z-lab/Qwen3.5-9B-DFlash")
 class DFlashModel(Qwen3Model):
     model_arch = gguf.MODEL_ARCH.DFLASH
 
@@ -665,7 +666,6 @@ class DFlashModel(Qwen3Model):
         super().set_gguf_parameters()
 
         dflash_config = self.hparams.get("dflash_config", {})
-
         block_size = dflash_config.get("block_size", self.hparams.get("block_size", 16))
         self.gguf_writer.add_block_size(block_size)
 
@@ -751,7 +751,14 @@ class DFlashModel(Qwen3Model):
 
         yield from super().modify_tensors(data_torch, name, bid)
 
-@ModelBase.register("Qwen3DSparkModel")
+@ModelBase.register(
+    "Qwen3DSparkModel",
+    "DSparkDraftModel",
+    "DSparkSpeculator",
+    "Lfm2DSparkDraftModel",
+    "LingDSparkModel",
+)
+@ModelBase.example("satgeze/Qwen3.6-27B-DSpark")
 class DSparkModel(DFlashModel):
     # DSpark = DFlash + a semi-autoregressive Markov head
     model_arch = gguf.MODEL_ARCH.DFLASH
@@ -769,4 +776,3 @@ class DSparkModel(DFlashModel):
         if name.endswith(("embed_tokens.weight", "lm_head.weight")):
             return None
         return super().filter_tensors((name, gen))
-

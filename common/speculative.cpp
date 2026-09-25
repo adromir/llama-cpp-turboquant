@@ -938,6 +938,10 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
     int32_t     block_size    = 0;
     llama_token mask_token_id = 0;
 
+    bool    is_dflash2     = false;
+    bool    is_mrope       = false;
+    int32_t selector_top_k = 0;
+
     // draft-dspark: the draft carries a Markov head and uses an anchor-first block layout
     const bool is_dspark;
 
@@ -985,6 +989,9 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
                 block_size = std::atoi(buf);
             }
         }
+
+        selector_top_k = llama_model_dflash_selector_top_k(model_dft);
+        is_dflash2     = selector_top_k > 0;
         mask_token_id = llama_vocab_mask(llama_model_get_vocab(model_dft));
 
         LOG_INF("%s: adding speculative implementation '%s'\n", __func__, common_speculative_type_to_str(type).c_str());
@@ -1025,6 +1032,8 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
         // equal to the target's layer count means the pre-final-norm hidden state,
         // which is captured through the unmasked nextn path instead
         n_layer_tgt = llama_model_n_layer(model_tgt);
+
+        // turn on extraction of the target layers' input embeddings
         for (uint32_t k = 0; k < target_layer_ids_n; ++k) {
             if (target_layer_ids[k] == n_layer_tgt) {
                 llama_set_embeddings_nextn(ctx_tgt, true, /*masked*/ false);
@@ -1033,15 +1042,18 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
             }
         }
 
+        // DFlash2 reads its selector lattice from h_nextn and never consumes raw logits.
         llama_set_embeddings_nextn(ctx_dft, true, /*masked*/ !is_dflash2);
 
         // generic DFlash drafts with non-causal block attention; Laguna drafters
         // are trained with a causal noise block
         {
             bool causal = false;
-            char buf[32] = {};
-            if (llama_model_meta_val_str(model_dft, "dflash.decoder_arch", buf, sizeof(buf)) >= 0) {
-                causal = strcmp(buf, "laguna") == 0;
+            if (!is_dflash2) {
+                char buf[32] = {};
+                if (llama_model_meta_val_str(model_dft, "dflash.decoder_arch", buf, sizeof(buf)) >= 0) {
+                    causal = strcmp(buf, "laguna") == 0;
+                }
             }
             llama_set_causal_attn(ctx_dft, causal);
         }
@@ -2881,6 +2893,9 @@ common_params common_base_params_to_speculative(const common_params & params) {
 
     result.cache_type_k  = params_spec.cache_type_k;
     result.cache_type_v  = params_spec.cache_type_v;
+    // The first block-streaming implementation owns only the target cache.
+    // MTP keeps its ordinary cache until both contexts can share one pool.
+    result.kv_stream_arena_mib = 0;
     result.n_outputs_max = params.n_parallel;
 
     // chained MTP drafting outputs logits for every chain step in one decode
