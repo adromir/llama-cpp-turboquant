@@ -16,6 +16,7 @@ from .base import MmprojModel, ModelBase, TextModel, gguf
 @ModelBase.register("MiMoV2FlashForCausalLM", "MiMoV2ForCausalLM")
 class MimoV2Model(TextModel):
     model_arch = gguf.MODEL_ARCH.MIMO2
+    supports_mtp_export = True
 
     # MiMo V2-Flash, V2.5 and V2.5-Pro all ship 3 trained MTP layers under model.mtp.layers.{0,1,2}.
     # The HF config does not expose the count, so it's hardcoded to match the count found in the safetensors.
@@ -24,6 +25,8 @@ class MimoV2Model(TextModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        if self.no_mtp:
+            self._n_nextn = 0
         self.block_count = self.hparams["num_hidden_layers"] + self._n_nextn
         self.tensor_map = gguf.get_tensor_name_map(self.model_arch, self.block_count)
 
@@ -100,7 +103,7 @@ class MimoV2Model(TextModel):
         qkv_overrides: dict[str, tuple[Callable, Callable, int]] = {}
         qc = self.hparams.get("quantization_config")
         if isinstance(qc, dict) and qc.get("quant_method") == "fp8":
-            pat = re.compile(r"^model\.layers\.(\d+)\.self_attn\.qkv_proj\.weight_scale_inv$")
+            pat = re.compile(r"^model\.(mtp\.)?layers\.(\d+)\.self_attn\.qkv_proj\.weight_scale_inv$")
             for name in list(self.model_tensors.keys()):
                 m = pat.match(name)
                 if not m:
@@ -108,10 +111,13 @@ class MimoV2Model(TextModel):
                 weight_name = name.removesuffix("_scale_inv")
                 if weight_name not in self.model_tensors:
                     continue
+                bid = int(m.group(2))
+                if m.group(1) is not None:
+                    bid += self.hparams["num_hidden_layers"]
                 qkv_overrides[weight_name] = (
                     self.model_tensors[weight_name],
                     self.model_tensors[name],
-                    int(m.group(1)),
+                    bid,
                 )
 
         super().dequant_model()
@@ -164,7 +170,8 @@ class MimoV2Model(TextModel):
         if v_scale is not None:
             self.gguf_writer.add_attn_value_scale(float(v_scale))
 
-        self.gguf_writer.add_nextn_predict_layers(self._n_nextn)
+        if self._n_nextn > 0:
+            self.gguf_writer.add_nextn_predict_layers(self._n_nextn)
 
     _experts: list[dict[str, Tensor]] | None = None
 
@@ -172,10 +179,31 @@ class MimoV2Model(TextModel):
     def filter_tensors(cls, item: tuple[str, Callable[[], Tensor]]) -> tuple[str, Callable[[], Tensor]] | None:
         name, gen = item
 
+        is_mtp = name.startswith("model.mtp.layers.")
+        if is_mtp and cls.no_mtp:
+            return None
+        if cls.mtp_only and not is_mtp and name not in (
+            "model.embed_tokens.weight", "model.norm.weight", "lm_head.weight",
+        ):
+            return None
+
         if "attention_sink" in name and not name.endswith(".weight"):
             name += ".weight"
 
         return super().filter_tensors((name, gen))
+
+    def prepare_metadata(self, vocab_only: bool):
+        from_dir = self.fname_out.is_dir()
+        super().prepare_metadata(vocab_only=vocab_only)
+
+        if not self.mtp_only or not from_dir:
+            return
+
+        output_type: str = self.ftype.name.partition("_")[2]
+        fname_default: str = gguf.naming_convention(
+            self.metadata.name, self.metadata.basename, self.metadata.finetune,
+            self.metadata.version, size_label=None, output_type=output_type, model_type=None)
+        self.fname_out = self.fname_out.parent / f"mtp-{fname_default}.gguf"
 
     def modify_tensors(self, data_torch, name, bid):
         # Remap MTP/NextN tensors to additional layer slots so the standard tensor map handles them.
