@@ -942,8 +942,9 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
     bool    is_mrope       = false;
     int32_t selector_top_k = 0;
 
-    // draft-dspark: the draft carries a Markov head and uses an anchor-first block layout
-    const bool is_dspark;
+    // draft-dspark: the draft carries a Markov head. Comes from the model, not the
+    // requested type.
+    bool is_dspark = false;
 
     const int32_t * target_layer_ids   = nullptr; // model_dft's extract layer indices
     uint32_t        target_layer_ids_n = 0;
@@ -956,7 +957,6 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
             common_speculative_type type = COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH)
         : common_speculative_impl(type, n_seq)
         , params(params.draft)
-        , is_dspark(type == COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK)
     {
         auto * ctx_tgt = this->params.ctx_tgt;
         auto * ctx_dft = this->params.ctx_dft;
@@ -968,6 +968,19 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
         target_layer_ids   = llama_model_target_layer_ids  (model_dft);
         target_layer_ids_n = llama_model_target_layer_ids_n(model_dft);
         GGML_ASSERT(target_layer_ids_n > 0 && "DFlash model has no target_layer_ids");
+
+        // Both lineages declare general.architecture = dflash, so the requested type cannot
+        // pick the draft path. The Markov head is the on-disk marker and is already loaded.
+        is_dspark = llama_model_has_dspark_markov_head(model_dft);
+        const bool type_says_dspark = (type == COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK);
+        if (type_says_dspark != is_dspark) {
+            LOG_WRN("%s: draft model carries %s, but --spec-type requested %s. Using %s, which is "
+                    "what the model needs. The wrong path drops confidence truncation, and for "
+                    "sample_from_anchor models it also reads the drafts one row late.\n", __func__,
+                    is_dspark ? "a DSpark Markov head" : "no DSpark Markov head",
+                    common_speculative_type_to_str(type).c_str(),
+                    is_dspark ? "DSpark" : "DFlash");
+        }
 
         selector_top_k = llama_model_dflash_selector_top_k(model_dft);
         is_dflash2     = selector_top_k > 0;
