@@ -1517,7 +1517,8 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         const int jt,
         const int zt_gqa,
         const int kb0_start,
-        const int kb0_stop) {
+        const int kb0_stop,
+        const int kb0_step = 1) {
 #if defined(VOLTA_MMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE)
     //In this kernel Q, K, V are matrices while i, j, k are matrix indices.
 
@@ -1678,7 +1679,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
              KQ_max, KQ_rowsum, jt, kb0, k_VKQ_sup);
     } else {
         constexpr bool oob_check = false;
-        for (; kb0 < kb0_stop-1; ++kb0) {
+        for (; kb0 + kb0_step < kb0_stop; kb0 += kb0_step) {
             constexpr bool last_iter = false;
             constexpr int  k_VKQ_sup = nbatch_fa;
             flash_attn_ext_f16_iter
@@ -1837,11 +1838,11 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         if (np == 1) {
             // No combination is needed, the meta data can be directly written from registers to VRAM.
             if (needs_fixup && threadIdx.x < T_B_KQ::I) {
-                float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
+                float2 * dstk_fixup_meta = dstk_fixup + (blockIdx.x*gridDim.y + blockIdx.y)*ncols;
                 dstk_fixup_meta[jc_cwm] = KQ_cmr;
             }
             if (is_fixup && threadIdx.x < T_B_KQ::I) {
-                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x + blockIdx.x)*ncols;
+                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x*gridDim.y + blockIdx.x*gridDim.y + blockIdx.y)*ncols;
                 dstk_fixup_meta[jc_cwm] = KQ_cmr;
             }
         }
@@ -1876,11 +1877,11 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         if (np == 1) {
             // No combination is needed, the meta data can be directly written from registers to VRAM.
             if (needs_fixup && thread_should_write) {
-                float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
+                float2 * dstk_fixup_meta = dstk_fixup + (blockIdx.x*gridDim.y + blockIdx.y)*ncols;
                 dstk_fixup_meta[jc_cwm] = KQ_cmr;
             }
             if (is_fixup && thread_should_write) {
-                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x + blockIdx.x)*ncols;
+                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x*gridDim.y + blockIdx.x*gridDim.y + blockIdx.y)*ncols;
                 dstk_fixup_meta[jc_cwm] = KQ_cmr;
             }
         }
@@ -1949,11 +1950,11 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
             // Combined KQ max + rowsum.
             static_assert(cols_per_warp <= warp_size);
             if (needs_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
-                float2 * dstk_fixup_meta = dstk_fixup + blockIdx.x*ncols;
+                float2 * dstk_fixup_meta = dstk_fixup + (blockIdx.x*gridDim.y + blockIdx.y)*ncols;
                 dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
             }
             if (is_fixup && (cols_per_warp == warp_size || threadIdx.x < cols_per_warp)) {
-                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x + blockIdx.x)*ncols;
+                float2 * dstk_fixup_meta = dstk_fixup + (gridDim.x*gridDim.y + blockIdx.x*gridDim.y + blockIdx.y)*ncols;
                 dstk_fixup_meta[(threadIdx.y/np)*cols_per_warp + threadIdx.x] = make_float2(KQ_cmn, KQ_crs);
             }
         }
@@ -2023,9 +2024,9 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         __syncthreads();
 
         if (np == 1 || threadIdx.y % np == 0) {
-            // The first 2*2*gridDim.x*ncols floats in dstk_fixup are for storing max. values and row sums.
+            // The first 2*2*gridDim.x*gridDim.y*ncols floats in dstk_fixup are for storing max. values and row sums.
             // The values after that are for the partial results of the individual blocks.
-            float2 * dstk_fixup_data = dstk_fixup + gridDim.x*(2*ncols) + blockIdx.x*(ncols*(DV/2));
+            float2 * dstk_fixup_data = dstk_fixup + gridDim.x*gridDim.y*(2*ncols) + (blockIdx.x*gridDim.y + blockIdx.y)*(ncols*(DV/2));
 
 #pragma unroll
             for (int i_stride = 0; i_stride < 4; ++i_stride) {
@@ -2212,6 +2213,58 @@ static __global__ void flash_attn_ext_f16(
     const int iter_k     = (ne11      + (nbatch_fa - 1)) / nbatch_fa;
     const int iter_j     = (ne01.z    + (ncols1    - 1)) / ncols1;
     const int iter_z_gqa = (gqa_ratio + (ncols2    - 1)) / ncols2;
+
+#if defined(AMD_WMMA_AVAILABLE)
+    // Decode/verify band, launched as gridDim = (output tiles, P) with P > 1. Block (tile, i) takes
+    // the KV iterations i, i+P, i+2P, ... of its tile; block P-1 writes the tile-finishing partial
+    // (needs_fixup) and the others the fixup-buffer partials (is_fixup), which is exactly the layout
+    // flash_attn_stream_k_fixup_uniform combines (b = tile*P + i). Compiled only for the instances
+    // the band dispatches to (head 256, GQA folded into ncols2 = 8).
+    if constexpr (!use_sparse && DKQ == 256 && DV == 256 && ncols2 == 8) {
+        if (gridDim.y > 1) {
+            const int tile     = blockIdx.x;
+            const int sequence =  tile /(iter_j*iter_z_gqa*ne12);
+            const int z_KV     = (tile - iter_j*iter_z_gqa*ne12 * sequence)/(iter_j*iter_z_gqa);
+            const int zt_gqa   = (tile - iter_j*iter_z_gqa*ne12 * sequence - iter_j*iter_z_gqa * z_KV)/iter_j;
+            const int jt       =  tile - iter_j*iter_z_gqa*ne12 * sequence - iter_j*iter_z_gqa * z_KV - iter_j * zt_gqa;
+
+            const int zt_Q = z_KV*gqa_ratio + zt_gqa*ncols2; // Global Q head start index.
+
+            const float2 * Q_f2   = (const float2 *) (Q + nb03*sequence + nb02*zt_Q);
+            const half2  * K_h2   = (const half2  *) (K + nb13*sequence + nb12*z_KV);
+            const half   * mask_h = ncols2 == 1 && !mask ? nullptr :
+                (const half *) (mask + nb33*(sequence % ne33));
+            float2       * dstk   = ((float2 *) dst) + (sequence*ne01.z*ne02 + zt_Q) * (DV/2);
+            float2 * dst_meta_tile = output_partial ?
+                dst_meta + sequence*ne01.z*ne02 + zt_Q : dst_meta;
+
+            const half2 * V_h2 = V_is_K_view ? K_h2 : (const half2 *) (V + nb23*sequence + nb22*z_KV);
+            const float * sinks_f = sinks ? (const float *) sinks + zt_Q : nullptr;
+            const float slope = ncols2 == 1 ? get_alibi_slope(max_bias, zt_Q, n_head_log2, m0, m1) : 1.0f;
+
+            const int kb0_start = blockIdx.y;
+            const int kb0_stop  = iter_k;
+            const int kb0_step  = gridDim.y;
+
+            if (blockIdx.y == gridDim.y - 1) {
+                constexpr bool needs_fixup = true;
+                constexpr bool is_fixup    = false;
+                flash_attn_ext_f16_process_tile<DKQ, DV, ncols1, ncols2, nwarps, use_logit_softcap, V_is_K_view, use_sparse, needs_fixup, is_fixup, type_K, type_V, output_partial>
+                    (Q_f2, K_h2, V_h2, mask_h, nullptr, sinks_f, dstk, dst_meta_tile, scale, slope, logit_softcap,
+                     ne01, ne02, gqa_ratio, ne11, stride_Q1, stride_Q2, stride_K, stride_V, stride_mask, jt, zt_gqa,
+                     kb0_start, kb0_stop, kb0_step);
+            } else {
+                constexpr bool needs_fixup = false;
+                constexpr bool is_fixup    = true;
+                flash_attn_ext_f16_process_tile<DKQ, DV, ncols1, ncols2, nwarps, use_logit_softcap, V_is_K_view, use_sparse, needs_fixup, is_fixup, type_K, type_V, output_partial>
+                    (Q_f2, K_h2, V_h2, mask_h, nullptr, sinks_f, dstk, dst_meta_tile, scale, slope, logit_softcap,
+                     ne01, ne02, gqa_ratio, ne11, stride_Q1, stride_Q2, stride_K, stride_V, stride_mask, jt, zt_gqa,
+                     kb0_start, kb0_stop, kb0_step);
+            }
+            return;
+        }
+    }
+#endif // defined(AMD_WMMA_AVAILABLE)
 
     // kbc == k block continuous, current index in continuous ijk space.
     int       kbc      = int64_t(blockIdx.x + 0)*(iter_k*iter_j*iter_z_gqa*ne12*ne03) / gridDim.x;

@@ -1798,6 +1798,107 @@ static __global__ void flash_attn_combine_results(
     dst[tid] = VKQ_numerator / VKQ_denominator;
 }
 
+// Decode/verify band (n_q <= 8) on RDNA4: the whole GQA group is folded into one block
+// (ncols2 = 8) via the WMMA kernel instead of the tile kernel's ncols2 = 2, which fetches and
+// dequantizes every K/V element once per head pair (3x for GQA 6). This is the default; the env var
+// is the opt-out (maintainer policy: a beneficial feature is on by default). One ncols1 for the whole
+// band keeps a single kernel config, and launch_fattn fixes the round-robin KV split per output tile
+// (see there), so n_q = 1 and every verify width reduce identically (GREEDY-PURITY band invariant).
+// GGML_HIP_FA_BAND_WMMA=0 disables the band, 2/4 force ncols1 (any other non-zero value means 4).
+static inline int ggml_cuda_fattn_band_wmma_ncols1_env() {
+    static const int v = []() {
+        const char * env = getenv("GGML_HIP_FA_BAND_WMMA");
+        return env != nullptr ? atoi(env) : -1;
+    }();
+    return v; // -1 = unset, 0 = disabled, otherwise the forced value
+}
+
+static inline bool ggml_cuda_fattn_band_wmma_enabled() {
+    return ggml_cuda_fattn_band_wmma_ncols1_env() != 0;
+}
+
+// The 2-byte K/V types share the band's light per-iteration variant (see the ncols1 and split
+// helpers). bf16 only reaches the band through its opt-in native arm, where K->type is BF16.
+static inline bool ggml_cuda_fattn_band_wmma_two_byte(const ggml_tensor * dst) {
+    const ggml_tensor * K = dst != nullptr ? dst->src[1] : nullptr;
+    return K != nullptr && (K->type == GGML_TYPE_F16 || K->type == GGML_TYPE_BF16);
+}
+
+static inline int ggml_cuda_fattn_band_wmma_ncols1(const ggml_tensor * dst) {
+    const int v = ggml_cuda_fattn_band_wmma_ncols1_env();
+    if (v > 0) {
+        return v == 2 ? 2 : 4;
+    }
+    return ggml_cuda_fattn_band_wmma_two_byte(dst) ? 2 : 4;
+}
+
+// Blocks per output tile in the band (the interleave period P, see launch_fattn). 0 = one block per
+// CU (nsm); GGML_HIP_FA_BAND_WMMA_SPLIT overrides it for tuning. Whatever the source, it must not
+// depend on n_q or on the KV length, or decode and verify would split differently. The 2-byte types
+// do less work per KV iteration, so the P partials' fixup is a larger fraction of their cost; a
+// smaller P measured best for them on gfx1201 (nsm 32) across 16k..200k, while the quantized types
+// keep nsm. Expressed as a fraction of nsm so a smaller RDNA4 part scales down with it.
+static inline int ggml_cuda_fattn_band_wmma_split(const ggml_tensor * dst) {
+    static const int env_split = []() {
+        const char * env = getenv("GGML_HIP_FA_BAND_WMMA_SPLIT");
+        const int v = env ? atoi(env) : 0;
+        return v > 0 ? v : 0;
+    }();
+    if (env_split > 0) {
+        return env_split;
+    }
+    if (!ggml_cuda_fattn_band_wmma_two_byte(dst)) {
+        return 0;
+    }
+    const int nsm = ggml_cuda_info().devices[ggml_cuda_get_device()].nsm;
+    return std::max(2, (3*nsm)/4);
+}
+
+// Self-contained band predicate shared by the kernel chooser, the ncols dispatcher and launch_fattn,
+// so the three can never disagree (a disagreement would launch the WMMA kernel with ncols2 != 8,
+// whose band fast path is compiled out and whose stream-k split is query-width dependent).
+static inline bool ggml_cuda_fattn_band_wmma_applies(const int cc, const ggml_tensor * dst) {
+    if (!ggml_cuda_fattn_band_wmma_enabled()) {
+        return false;
+    }
+    if (!GGML_CUDA_CC_IS_RDNA4(cc) || !amd_wmma_available(cc)) {
+        return false;
+    }
+
+    const ggml_tensor * Q    = dst->src[0];
+    const ggml_tensor * K    = dst->src[1];
+    const ggml_tensor * V    = dst->src[2];
+    const ggml_tensor * mask = dst->src[3];
+
+    float max_bias = 0.0f;
+    memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
+    float logit_softcap = 0.0f;
+    memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
+
+    bool gqa_opt = (mask != nullptr) && max_bias == 0.0f && K->ne[1] % FATTN_KQ_STRIDE == 0;
+    for (const ggml_tensor * t : {Q, K, V, mask}) {
+        if (t == nullptr || ggml_is_quantized(t->type)) {
+            continue;
+        }
+        for (size_t i = 1; i < GGML_MAX_DIMS; ++i) {
+            if (t->nb[i] % 16 != 0) {
+                gqa_opt = false;
+                break;
+            }
+        }
+    }
+
+    const int gqa_ratio = Q->ne[2] / K->ne[2];
+    const bool kv_quant = (K->type == GGML_TYPE_Q8_0 || K->type == GGML_TYPE_Q4_0 || K->type == GGML_TYPE_Q4_1 ||
+                           K->type == GGML_TYPE_Q5_0 || K->type == GGML_TYPE_Q5_1 || K->type == GGML_TYPE_IQ4_NL);
+    const bool kv_f16   = (K->type == GGML_TYPE_F16 && V->type == GGML_TYPE_F16) ||
+                          (K->type == GGML_TYPE_BF16 && V->type == GGML_TYPE_BF16);
+    const bool kv_ok    = kv_quant || kv_f16;
+
+    return gqa_opt && Q->ne[1] <= 8 && Q->ne[3] == 1 && Q->ne[0] == 256 && V->ne[0] == 256 &&
+           gqa_ratio > 4 && gqa_ratio <= 8 && logit_softcap == 0.0f && kv_ok;
+}
+
 template <int DV, int ncols1, int ncols2>
 void launch_fattn(
     ggml_backend_cuda_context & ctx, ggml_tensor * dst, fattn_kernel_t fattn_kernel, const int nwarps, const size_t nbytes_shared,
@@ -1976,28 +2077,54 @@ void launch_fattn(
 
         const bool use_stream_k = cc >= GGML_CUDA_CC_ADA_LOVELACE || amd_wmma_available(cc) || tiles_efficiency_percent < 75;
 
-        blocks_num.x = ntiles_dst;
-        blocks_num.y = 1;
-        blocks_num.z = 1;
+        // In the decode/verify band the KV of every output tile is split over a fixed number P of
+        // blocks that take the nbatch_fa-row KV iterations round-robin (block i processes iterations
+        // i, i+P, i+2P, ...; launched as gridDim = (ntiles_dst, P)), like the tile kernel's
+        // parallel_blocks. P depends only on the device (nsm) or an explicit override, never on n_q
+        // or on the KV length, so a given KV iteration always lands in the same block at the same
+        // position of its accumulation order: a longer KV (a verify batch that crossed a 256-row
+        // padding boundary) only appends iterations that are fully masked for the earlier query rows,
+        // which are exact no-ops, and the uniform fixup combines the P partials in a fixed order.
+        // The band is a 2-D launch whose fast path only exists for ncols2 == 8, so the template
+        // parameter must be part of the gate: if the dispatcher ever picked a different ncols2 this
+        // would fall back to the ordinary stream-k path instead of launching a mismatched grid.
+        const bool band_wmma = ncols2 == 8 && ggml_cuda_fattn_band_wmma_applies(cc, dst);
 
-        if(use_stream_k) {
-            const int nblocks_stream_k_raw = std::min(max_blocks, ntiles_KV*ntiles_dst);
-            // Round down to a multiple of ntiles_dst so that each output tile gets the same number of blocks (avoids fixup).
-            // Only do this if the occupancy loss from rounding is acceptable.
-            const int nblocks_stream_k_rounded = (nblocks_stream_k_raw / ntiles_dst) * ntiles_dst;
-            const int max_efficiency_loss_percent = 5;
-            const int efficiency_loss_percent = nblocks_stream_k_rounded > 0
-                ? 100 * (nblocks_stream_k_raw - nblocks_stream_k_rounded) / nblocks_stream_k_raw
-                : 100;
-            const int nblocks_stream_k = efficiency_loss_percent <= max_efficiency_loss_percent
-                ? nblocks_stream_k_rounded
-                : nblocks_stream_k_raw;
+        if (band_wmma) {
+            // P = nsm for the native-quantized types: measured on gfx1201 (head 256, GQA 6, 4 KV heads)
+            // the verify cost is flat for P = 48..96 at kv 20K..200K and degrades below 32 or above 128.
+            // The 2-byte types do less work per KV iteration, so the P partials' fixup is a larger
+            // fraction of their cost; the split helper returns a smaller fixed P for them.
+            const int split_env = ggml_cuda_fattn_band_wmma_split(dst);
+            const int P         = split_env > 0 ? split_env : std::max(2, nsm);
+            blocks_num.x = ntiles_dst;
+            blocks_num.y = P;
+            blocks_num.z = 1;
+        } else {
+            blocks_num.x = ntiles_dst;
+            blocks_num.y = 1;
+            blocks_num.z = 1;
 
-            blocks_num.x = nblocks_stream_k;
+            if(use_stream_k) {
+                const int nblocks_stream_k_raw = std::min(max_blocks, ntiles_KV*ntiles_dst);
+                // Round down to a multiple of ntiles_dst so that each output tile gets the same number of blocks (avoids fixup).
+                // Only do this if the occupancy loss from rounding is acceptable.
+                const int nblocks_stream_k_rounded = (nblocks_stream_k_raw / ntiles_dst) * ntiles_dst;
+                const int max_efficiency_loss_percent = 5;
+                const int efficiency_loss_percent = nblocks_stream_k_rounded > 0
+                    ? 100 * (nblocks_stream_k_raw - nblocks_stream_k_rounded) / nblocks_stream_k_raw
+                    : 100;
+                const int nblocks_stream_k = efficiency_loss_percent <= max_efficiency_loss_percent
+                    ? nblocks_stream_k_rounded
+                    : nblocks_stream_k_raw;
+
+                blocks_num.x = nblocks_stream_k;
+            }
         }
 
-        if (ntiles_dst % blocks_num.x != 0) { // Fixup is only needed if the SMs work on fractional tiles.
-            dst_tmp_meta.alloc((size_t(blocks_num.x) * ncols * (2 + DV/2)));
+        const int nblocks_total = blocks_num.x * blocks_num.y; // blocks_num.y > 1 only in the band
+        if (ntiles_dst % nblocks_total != 0) { // Fixup is only needed if the SMs work on fractional tiles.
+            dst_tmp_meta.alloc((size_t(nblocks_total) * ncols * (2 + DV/2)));
         }
     } else {
         // parallel_blocks must not be larger than what the tensor size allows:
@@ -2095,9 +2222,9 @@ void launch_fattn(
     CUDA_CHECK(cudaGetLastError());
 
     if (stream_k) {
-        if ((int)blocks_num.x % ntiles_dst == 0 && (int)blocks_num.x > ntiles_dst) {
+        const int nblocks_sk = (int) (blocks_num.x * blocks_num.y);
+        if (nblocks_sk % ntiles_dst == 0 && nblocks_sk > ntiles_dst) {
             // Optimized fixup: nblocks_stream_k is a multiple of ntiles_dst, launch one block per tile.
-            const int nblocks_sk  = (int)blocks_num.x;
             const int bpt         = nblocks_sk / ntiles_dst;
 
             const uint3 fd0 = init_fastdiv_values(ntiles_x * ntiles_z_gqa * K->ne[2]);

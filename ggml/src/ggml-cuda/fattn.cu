@@ -2505,6 +2505,17 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols2(ggml_backend_cuda_con
     GGML_ASSERT(Q->ne[2] % K->ne[2] == 0);
     const int gqa_ratio = Q->ne[2] / K->ne[2];
 
+    if constexpr (DKQ == 256 && DV == 256) {
+        if (ggml_cuda_fattn_band_wmma_applies(cc, dst)) {
+            if (ggml_cuda_fattn_band_wmma_ncols1(dst) == 4) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, 8>(ctx, dst);
+            } else {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 2, 8>(ctx, dst);
+            }
+            return;
+        }
+    }
+
     // On Volta the GQA optimizations aren't as impactful vs. minimizing wasted compute:
     if (cc == GGML_CUDA_CC_VOLTA) {
         if (use_gqa_opt && gqa_ratio % 8 == 0) {
@@ -3132,6 +3143,9 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
     // Prefer inline-dequant VEC for small quantized-KV batches. D=512 is limited
     // to the decode-only q8_0 K instances above; larger batches use TILE/MMA.
     if ((ggml_is_quantized(K->type) || ggml_is_quantized(V->type)) && can_use_vector_kernel && Q->ne[1] <= 8) {
+        if (ggml_cuda_fattn_band_wmma_applies(cc, dst)) {
+            return BEST_FATTN_KERNEL_MMA_F16;
+        }
         return BEST_FATTN_KERNEL_VEC;
     }
 #endif // GGML_USE_HIP
@@ -3233,6 +3247,13 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
     // GGML_CUDA_FA_WMMA_MAX_HEAD overrides the per-arch cap (experiment/escape hatch).
     const char * wmma_max_env = getenv("GGML_CUDA_FA_WMMA_MAX_HEAD");
     const int wmma_max_head = wmma_max_env ? std::atoi(wmma_max_env) : (wmma_256 && GGML_CUDA_CC_IS_RDNA4(cc) ? 576 : wmma_256 && GGML_CUDA_CC_IS_RDNA3_0(cc) ? 576 : wmma_256 && GGML_CUDA_CC_IS_RDNA3_5(cc) ? 320 : 128);
+    // Whole decode/verify band (n_q = 1 included) on WMMA with the folded GQA group, default on.
+    // GGML_CUDA_FA_WMMA_256=0 / GGML_CUDA_FA_WMMA_MAX_HEAD stay the escape hatches, so they must
+    // disable this exactly like the generic head>128 WMMA band below.
+    if (wmma_256 && Q->ne[0] <= wmma_max_head && ggml_cuda_fattn_band_wmma_applies(cc, dst)) {
+        return BEST_FATTN_KERNEL_MMA_F16;
+    }
+
     // Speculative verify batches (n_q = n_draft+1 <= 8) must stay on the tile
     // kernel: decode (n_q = 1) never uses WMMA (n_q*gqa_ratio_eff <= 8), so a
     // WMMA verify batch would produce different logits than decode.
