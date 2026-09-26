@@ -116,9 +116,10 @@ static __global__ void flash_attn_ext_vec(
     // Turbo V dequant is scalar (byte extract + LUT), not vectorized loads.
     // Halve nthreads_V to double V_cols_per_iter (process 2 V rows per loop iteration),
     // reducing loop overhead and improving ILP in the V aggregation phase.
-    // Eighth nthreads_V for turbo: V_cols_per_iter goes from 4→8, processing 8 V positions
+    // Eighth nthreads_V for turbo: V_cols_per_iter goes from 4->8, processing 8 V positions
     // per outer loop iteration. Halves outer loop count again, more ILP from concurrent V rows.
-    constexpr int nthreads_V  = V_is_unquantized ? (V_is_turbo ? (nthreads_V_q / 8 < 1 ? 1 : nthreads_V_q / 8) : 128 / cpy_nb) : nthreads_V_q;
+    // At D >= 512 cap to nthreads_V_q / 4 so ne_combine fits in 64 KB shared memory on gfx900.
+    constexpr int nthreads_V  = V_is_unquantized ? (V_is_turbo ? ((D >= 512 || nthreads_V_q / 8 < 1) ? (nthreads_V_q / 4 < 1 ? 1 : nthreads_V_q / 4) : nthreads_V_q / 8) : 128 / cpy_nb) : nthreads_V_q;
 
     static_assert(WARP_SIZE % nthreads_KQ == 0, "bad nthreads_K");
     static_assert(WARP_SIZE % nthreads_V  == 0, "bad nthreads_V");
