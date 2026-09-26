@@ -7,7 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="chart.min.js"></script>
+  <script>
+    if (typeof Chart === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+    }
+  </script>
   <style>
     :root {
       --bg-primary: #080b11;
@@ -566,13 +571,13 @@
 
     <!-- NAVIGATION TABS -->
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('tab-prefill')" id="tabBtnPrefill">Prompt Prefill (MMQ Scaling)</button>
-      <button class="tab-btn" onclick="switchTab('tab-decode')" id="tabBtnDecode">Autoregressive Decode</button>
-      <button class="tab-btn" onclick="switchTab('tab-mtp')" id="tabBtnMtp">MTP Speculative Generation</button>
-      <button class="tab-btn" onclick="switchTab('tab-vram')" id="tabBtnVram">VRAM & Context Capacity</button>
-      <button class="tab-btn" onclick="switchTab('tab-efficiency')" id="tabBtnEfficiency">Latency & Compute Density</button>
-      <button class="tab-btn" onclick="switchTab('tab-data')" id="tabBtnData">Comprehensive Data Table</button>
-      <button class="tab-btn" onclick="switchTab('tab-analysis')" id="tabBtnAnalysis">Architectural Insights</button>
+      <button class="tab-btn active" onclick="switchTab('tab-prefill', this)" id="tabBtnPrefill">Prompt Prefill (MMQ Scaling)</button>
+      <button class="tab-btn" onclick="switchTab('tab-decode', this)" id="tabBtnDecode">Autoregressive Decode</button>
+      <button class="tab-btn" onclick="switchTab('tab-mtp', this)" id="tabBtnMtp">MTP Speculative Generation</button>
+      <button class="tab-btn" onclick="switchTab('tab-vram', this)" id="tabBtnVram">VRAM & Context Capacity</button>
+      <button class="tab-btn" onclick="switchTab('tab-efficiency', this)" id="tabBtnEfficiency">Latency & Compute Density</button>
+      <button class="tab-btn" onclick="switchTab('tab-data', this)" id="tabBtnData">Comprehensive Data Table</button>
+      <button class="tab-btn" onclick="switchTab('tab-analysis', this)" id="tabBtnAnalysis">Architectural Insights</button>
     </div>
 
     <!-- TAB 1: PREFILL -->
@@ -971,21 +976,66 @@
   </div>
 
   <script>
-    // Tab switching logic
-    function switchTab(tabId) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-      
-      document.getElementById(tabId).classList.add('active');
-      event.target.classList.add('active');
-      
-      window.dispatchEvent(new Event('resize'));
+    // Global chart registry for reliable resizing on tab switch
+    window.appCharts = {};
+
+    function resizeTabCharts(tabEl) {
+      if (!tabEl || !window.appCharts) return;
+      var canvases = tabEl.querySelectorAll('canvas');
+      canvases.forEach(function(c) {
+        var chart = window.appCharts[c.id];
+        if (chart && typeof chart.resize === 'function') {
+          try {
+            chart.resize();
+            if (typeof chart.update === 'function') {
+              chart.update('none');
+            }
+          } catch(e) {}
+        }
+      });
     }
 
-    // Language state: 'en' or 'de'
-    let currentLang = 'en';
+    // Tab switching logic
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-btn').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      
+      var target = document.getElementById(tabId);
+      if (target) {
+        target.classList.add('active');
+        resizeTabCharts(target);
+      }
+      if (btn) {
+        btn.classList.add('active');
+      } else {
+        var matchingBtn = document.querySelector('button[onclick*="' + tabId + '"]');
+        if (matchingBtn) {
+          matchingBtn.classList.add('active');
+        }
+      }
+      
+      // Trigger Chart.js recalculation after DOM update
+      setTimeout(function() {
+        if (target) {
+          resizeTabCharts(target);
+        }
+        window.dispatchEvent(new Event('resize'));
+      }, 50);
+    }
 
-    const translations = {
+    window.addEventListener('resize', function() {
+      var activeTab = document.querySelector('.tab-content.active');
+      if (activeTab) resizeTabCharts(activeTab);
+    });
+
+    // Language state: 'en' or 'de'
+    var currentLang = 'en';
+
+    var translations = {
       en: {
         langBtn: 'Switch to Deutsch',
         headerTitle: 'Empirical 3-Way Benchmark Comparison',
@@ -1053,7 +1103,7 @@
         cardTitle2: '2. MMQ Matrix Batch Optimization',
         cardDesc2: 'Registering ROCmFPX quant types in ggml_cuda_should_use_mmq routes batch execution directly to native compiled MMQ kernels, sustaining 275.11 t/s average prefill throughput (+20.6% over Upstream) across prompt lengths up to 4096 tokens without host dequantization overhead.',
         cardTitle3: '3. Multi-Token Prediction (MTP) Dynamics',
-        cardDesc3: 'Qwen 3.8's integrated MTP heads generate up to 3 speculative candidate tokens per forward pass. With ROCmFP4, end-to-end generation speed reaches 19.24 t/s greedy (1.37x over Upstream) and 19.23 t/s sampling (1.40x over Upstream), peaking at 21.55 t/s on coding benchmarks — over 3x faster than standard autoregressive decode.',
+        cardDesc3: "Qwen 3.8's integrated MTP heads generate up to 3 speculative candidate tokens per forward pass. With ROCmFP4, end-to-end generation speed reaches 19.24 t/s greedy (1.37x over Upstream) and 19.23 t/s sampling (1.40x over Upstream), peaking at 21.55 t/s on coding benchmarks — over 3x faster than standard autoregressive decode.",
         cardTitle4: '4. TurboQuant Orthonormal Walsh-Hadamard KV Cache',
         cardDesc4: 'Standard F16 KV cache consumes ~177 MiB per 1,000 tokens, causing severe PCIe memory spill above 12k tokens on 16GB cards. TurboQuant applies an orthonormal Walsh-Hadamard rotation (GGML_OP_TURBO_WHT) before quantizing to 3.25 bits (turbo3), reducing 64k context KV footprint to just 1,637 MiB and enabling 65,536+ tokens with 1,065 MiB free VRAM remaining.',
         footerText: 'Benchmark conducted on AMD Radeon RX 9060 XT (16,304 MiB VRAM, gfx1200) • AMD ROCm Core SDK 10.0.0 (TheRock) • Clang 23.0.0 vs. Clang 20.1.8 • llama.cpp TurboQuant Fork'
@@ -1125,7 +1175,7 @@
         cardTitle2: '2. MMQ-Matrix-Batch-Optimierung',
         cardDesc2: 'Die Registrierung von ROCmFPX in ggml_cuda_should_use_mmq leitet Batches direkt über native MMQ-Kernel, was einen durchschnittlichen Prefill-Durchsatz von 275,11 t/s (+20,6% über Upstream) über Kontextlängen bis 4096 Token ermöglicht.',
         cardTitle3: '3. Multi-Token Prediction (MTP) Dynamik',
-        cardDesc3: 'Qwen 3.8 verfügt über integrierte MTP-Köpfe, die bis zu 3 Vorschau-Token erzeugen. Mit ROCmFP4 erreicht die Generierung 19,24 t/s bei Greedy (1,37x über Upstream) und 19,23 t/s bei Sampling (1,40x über Upstream), mit Spitzenwerten von 21,55 t/s bei Programmieraufgaben – über 3x schneller als rein autoregressiver Decode.',
+        cardDesc3: "Qwen 3.8 verfügt über integrierte MTP-Köpfe, die bis zu 3 Vorschau-Token erzeugen. Mit ROCmFP4 erreicht die Generierung 19,24 t/s bei Greedy (1,37x über Upstream) und 19,23 t/s bei Sampling (1,40x über Upstream), mit Spitzenwerten von 21,55 t/s bei Programmieraufgaben — über 3x schneller als rein autoregressiver Decode.",
         cardTitle4: '4. TurboQuant Orthonormaler Walsh-Hadamard KV-Cache',
         cardDesc4: 'Standard FP16 KV-Cache verbraucht ~177 MiB pro 1.000 Token und führt auf 16GB GPUs ab 12k Token zu schwerwiegendem PCIe-Speicher-Spill. TurboQuant nutzt eine orthogonale Walsh-Hadamard-Rotation (GGML_OP_TURBO_WHT) vor der 3,25-Bit-Quantisierung (turbo3), wodurch der 64k-Cache auf nur 1.637 MiB schrumpft und 65.536+ Token mit 1.065 MiB freiem VRAM realisierbar sind.',
         footerText: 'Benchmark durchgeführt auf AMD Radeon RX 9060 XT (16.304 MiB VRAM, gfx1200) • AMD ROCm Core SDK 10.0.0 (TheRock) • Clang 23.0.0 vs. Clang 20.1.8 • llama.cpp TurboQuant Fork'
@@ -1134,7 +1184,7 @@
 
     function toggleLanguage() {
       currentLang = currentLang === 'en' ? 'de' : 'en';
-      const t = translations[currentLang];
+      var t = translations[currentLang];
 
       document.getElementById('langLabel').innerText = t.langBtn;
       document.getElementById('headerTitle').innerText = t.headerTitle;
@@ -1218,617 +1268,619 @@
     }
 
     // Chart.js Theme Defaults
-    Chart.defaults.color = '#94a3b8';
-    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
-    Chart.defaults.font.family = "'Inter', sans-serif";
+    if (typeof Chart !== 'undefined') {
+      Chart.defaults.color = '#94a3b8';
+      Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
+      Chart.defaults.font.family = "'Inter', sans-serif";
 
-    // 1. Prefill Chart (Empirical Sweep)
-    const ctxPrefill = document.getElementById('chartPrefill').getContext('2d');
-    new Chart(ctxPrefill, {
-      type: 'bar',
-      data: {
-        labels: ['p=512', 'p=1024', 'p=2048', 'p=4096', 'Average'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [222.12, 233.19, 230.69, 226.74, 228.18],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderColor: '#f43f5e',
-            borderWidth: 1.5,
-            borderRadius: 6
+      // 1. Prefill Chart (Empirical Sweep)
+      var ctxPrefill = document.getElementById('chartPrefill').getContext('2d');
+      window.appCharts.chartPrefill = new Chart(ctxPrefill, {
+        type: 'bar',
+        data: {
+          labels: ['p=512', 'p=1024', 'p=2048', 'p=4096', 'Average'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [222.12, 233.19, 230.69, 226.74, 228.18],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [246.24, 231.20, 224.31, 233.99, 233.94],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [274.83, 283.10, 273.07, 269.43, 275.11],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderColor: '#00f2fe',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' t/s'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [246.24, 231.20, 224.31, 233.99, 233.94],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [274.83, 283.10, 273.07, 269.43, 275.11],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderColor: '#00f2fe',
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s`
+          scales: {
+            y: {
+              title: { display: true, text: 'Throughput (tokens/second)' },
+              beginAtZero: true,
+              max: 340
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Throughput (tokens/second)' },
-            beginAtZero: true,
-            max: 340
-          }
         }
-      }
-    });
+      });
 
-    // 2. Prefill Speedup Ratio Chart
-    const ctxPrefillSpeedup = document.getElementById('chartPrefillSpeedup').getContext('2d');
-    new Chart(ctxPrefillSpeedup, {
-      type: 'bar',
-      data: {
-        labels: ['p=512', 'p=1024', 'p=2048', 'p=4096', 'Average'],
-        datasets: [
-          {
-            label: 'Upstream Baseline',
-            data: [1.00, 1.00, 1.00, 1.00, 1.00],
-            backgroundColor: 'rgba(244, 63, 94, 0.5)',
-            borderColor: '#f43f5e',
-            borderWidth: 1.5,
-            borderRadius: 6
+      // 2. Prefill Speedup Ratio Chart
+      var ctxPrefillSpeedup = document.getElementById('chartPrefillSpeedup').getContext('2d');
+      window.appCharts.chartPrefillSpeedup = new Chart(ctxPrefillSpeedup, {
+        type: 'bar',
+        data: {
+          labels: ['p=512', 'p=1024', 'p=2048', 'p=4096', 'Average'],
+          datasets: [
+            {
+              label: 'Upstream Baseline',
+              data: [1.00, 1.00, 1.00, 1.00, 1.00],
+              backgroundColor: 'rgba(244, 63, 94, 0.5)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [1.109, 0.991, 0.972, 1.032, 1.025],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [1.237, 1.214, 1.184, 1.188, 1.206],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderColor: '#00f2fe',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(3) + 'x vs Upstream'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [1.109, 0.991, 0.972, 1.032, 1.025],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [1.237, 1.214, 1.184, 1.188, 1.206],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderColor: '#00f2fe',
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(3)}x vs Upstream`
+          scales: {
+            y: {
+              title: { display: true, text: 'Relative Speedup Factor (x)' },
+              beginAtZero: true,
+              max: 1.5
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Relative Speedup Factor (x)' },
-            beginAtZero: true,
-            max: 1.5
-          }
         }
-      }
-    });
+      });
 
-    // 3. Decode Throughput Chart
-    const ctxDecode = document.getElementById('chartDecode').getContext('2d');
-    new Chart(ctxDecode, {
-      type: 'bar',
-      data: {
-        labels: ['n=128 tokens', 'n=256 tokens', 'n=512 tokens', 'Average'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [6.99, 7.02, 6.99, 7.00],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderColor: '#f43f5e',
-            borderWidth: 1.5,
-            borderRadius: 6
+      // 3. Decode Throughput Chart
+      var ctxDecode = document.getElementById('chartDecode').getContext('2d');
+      window.appCharts.chartDecode = new Chart(ctxDecode, {
+        type: 'bar',
+        data: {
+          labels: ['n=128 tokens', 'n=256 tokens', 'n=512 tokens', 'Average'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [6.99, 7.02, 6.99, 7.00],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [6.22, 6.23, 6.06, 6.17],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [13.42, 13.48, 13.43, 13.44],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderColor: '#00f2fe',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' t/s'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [6.22, 6.23, 6.06, 6.17],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [13.42, 13.48, 13.43, 13.44],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderColor: '#00f2fe',
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s`
+          scales: {
+            y: {
+              title: { display: true, text: 'Decode Speed (tokens/second)' },
+              beginAtZero: true,
+              max: 18
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Decode Speed (tokens/second)' },
-            beginAtZero: true,
-            max: 18
-          }
         }
-      }
-    });
+      });
 
-    // 4. Decode Latency Chart
-    const ctxDecodeLatency = document.getElementById('chartDecodeLatency').getContext('2d');
-    new Chart(ctxDecodeLatency, {
-      type: 'bar',
-      data: {
-        labels: ['n=128 tokens', 'n=256 tokens', 'n=512 tokens', 'Average'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [143.12, 142.40, 143.16, 142.86],
-            backgroundColor: 'rgba(244, 63, 94, 0.65)',
-            borderColor: '#f43f5e',
-            borderWidth: 1.5,
-            borderRadius: 6
+      // 4. Decode Latency Chart
+      var ctxDecodeLatency = document.getElementById('chartDecodeLatency').getContext('2d');
+      window.appCharts.chartDecodeLatency = new Chart(ctxDecodeLatency, {
+        type: 'bar',
+        data: {
+          labels: ['n=128 tokens', 'n=256 tokens', 'n=512 tokens', 'Average'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [143.12, 142.40, 143.16, 142.86],
+              backgroundColor: 'rgba(244, 63, 94, 0.65)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [160.86, 160.60, 164.91, 162.07],
+              backgroundColor: 'rgba(245, 158, 11, 0.65)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [74.50, 74.18, 74.45, 74.40],
+              backgroundColor: 'rgba(16, 185, 129, 0.75)',
+              borderColor: '#10b981',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' ms/token'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [160.86, 160.60, 164.91, 162.07],
-            backgroundColor: 'rgba(245, 158, 11, 0.65)',
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [74.50, 74.18, 74.45, 74.40],
-            backgroundColor: 'rgba(16, 185, 129, 0.75)',
-            borderColor: '#10b981',
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} ms/token`
+          scales: {
+            y: {
+              title: { display: true, text: 'Per-Token Latency (ms) - Lower is better' },
+              beginAtZero: true,
+              max: 190
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Per-Token Latency (ms) - Lower is better' },
-            beginAtZero: true,
-            max: 190
-          }
         }
-      }
-    });
+      });
 
-    // 5. MTP Generation Speed Chart (Greedy vs. Sampling)
-    const ctxMtpSpeed = document.getElementById('chartMtpSpeed').getContext('2d');
-    new Chart(ctxMtpSpeed, {
-      type: 'bar',
-      data: {
-        labels: ['Greedy Decode (temp=0)', 'Realistic Sampling (temp=0.6)'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [14.03, 13.70],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderColor: '#f43f5e',
-            borderWidth: 1.5,
-            borderRadius: 6
+      // 5. MTP Generation Speed Chart (Greedy vs. Sampling)
+      var ctxMtpSpeed = document.getElementById('chartMtpSpeed').getContext('2d');
+      window.appCharts.chartMtpSpeed = new Chart(ctxMtpSpeed, {
+        type: 'bar',
+        data: {
+          labels: ['Greedy Decode (temp=0)', 'Realistic Sampling (temp=0.6)'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [14.03, 13.70],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [10.81, 10.81],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [19.24, 19.23],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderColor: '#00f2fe',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' t/s Generation'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [10.81, 10.81],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [19.24, 19.23],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderColor: '#00f2fe',
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s Generation`
+          scales: {
+            y: {
+              title: { display: true, text: 'Real-world Generation Speed (t/s)' },
+              beginAtZero: true,
+              max: 25
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Real-world Generation Speed (t/s)' },
-            beginAtZero: true,
-            max: 25
-          }
         }
-      }
-    });
+      });
 
-    // 6. MTP Acceptance Rate Chart
-    const ctxMtpAcceptance = document.getElementById('chartMtpAcceptance').getContext('2d');
-    new Chart(ctxMtpAcceptance, {
-      type: 'bar',
-      data: {
-        labels: ['Greedy Decode (temp=0)', 'Realistic Sampling (temp=0.6)'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [59.20, 58.33],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderColor: '#f43f5e',
-            borderWidth: 1.5,
-            borderRadius: 6
+      // 6. MTP Acceptance Rate Chart
+      var ctxMtpAcceptance = document.getElementById('chartMtpAcceptance').getContext('2d');
+      window.appCharts.chartMtpAcceptance = new Chart(ctxMtpAcceptance, {
+        type: 'bar',
+        data: {
+          labels: ['Greedy Decode (temp=0)', 'Realistic Sampling (temp=0.6)'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [59.20, 58.33],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [59.30, 60.35],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [56.45, 56.28],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderColor: '#00f2fe',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(1) + '% Acceptance'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [59.30, 60.35],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderColor: '#f59e0b',
-            borderWidth: 1.5,
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [56.45, 56.28],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderColor: '#00f2fe',
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(1)}% Acceptance`
+          scales: {
+            y: {
+              title: { display: true, text: 'Draft Acceptance Rate (%)' },
+              beginAtZero: true,
+              max: 100
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Draft Acceptance Rate (%)' },
-            beginAtZero: true,
-            max: 100
-          }
         }
-      }
-    });
+      });
 
-    // 7. Positional Acceptance Decay
-    const ctxMtpPositional = document.getElementById('chartMtpPositional').getContext('2d');
-    new Chart(ctxMtpPositional, {
-      type: 'bar',
-      data: {
-        labels: ['Draft Position 1 (Next Token)', 'Draft Position 2 (Lookahead +1)', 'Draft Position 3 (Lookahead +2)'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [77.6, 55.8, 44.6],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderRadius: 6
+      // 7. Positional Acceptance Decay
+      var ctxMtpPositional = document.getElementById('chartMtpPositional').getContext('2d');
+      window.appCharts.chartMtpPositional = new Chart(ctxMtpPositional, {
+        type: 'bar',
+        data: {
+          labels: ['Draft Position 1 (Next Token)', 'Draft Position 2 (Lookahead +1)', 'Draft Position 3 (Lookahead +2)'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [77.6, 55.8, 44.6],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [76.2, 56.7, 45.8],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [72.4, 52.2, 41.9],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(1) + '% Accepted'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [76.2, 56.7, 45.8],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [72.4, 52.2, 41.9],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(1)}% Accepted`
+          scales: {
+            y: {
+              title: { display: true, text: 'Acceptance Probability (%)' },
+              beginAtZero: true,
+              max: 100
             }
           }
+        }
+      });
+
+      // 8. VRAM Breakdown Chart
+      var ctxVram = document.getElementById('chartVram').getContext('2d');
+      window.appCharts.chartVram = new Chart(ctxVram, {
+        type: 'bar',
+        data: {
+          labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
+          datasets: [
+            {
+              label: 'Model Weights (GPU VRAM)',
+              data: [15088, 15088, 12991],
+              backgroundColor: 'rgba(99, 102, 241, 0.85)',
+              stack: 'vram'
+            },
+            {
+              label: 'KV Cache (4096 Context)',
+              data: [405, 405, 405],
+              backgroundColor: 'rgba(245, 158, 11, 0.85)',
+              stack: 'vram'
+            },
+            {
+              label: 'Compute Buffers',
+              data: [130, 130, 126],
+              backgroundColor: 'rgba(236, 72, 153, 0.85)',
+              stack: 'vram'
+            },
+            {
+              label: 'Free Headroom (16,304 MiB Total)',
+              data: [513, 513, 2559],
+              backgroundColor: 'rgba(16, 185, 129, 0.85)',
+              stack: 'vram'
+            }
+          ]
         },
-        scales: {
-          y: {
-            title: { display: true, text: 'Acceptance Probability (%)' },
-            beginAtZero: true,
-            max: 100
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toLocaleString() + ' MiB'; }
+              }
+            }
+          },
+          scales: {
+            y: {
+              stacked: true,
+              title: { display: true, text: 'Memory Allocation (MiB)' },
+              max: 16500
+            },
+            x: { stacked: true }
           }
         }
-      }
-    });
+      });
 
-    // 8. VRAM Breakdown Chart
-    const ctxVram = document.getElementById('chartVram').getContext('2d');
-    new Chart(ctxVram, {
-      type: 'bar',
-      data: {
-        labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
-        datasets: [
-          {
-            label: 'Model Weights (GPU VRAM)',
-            data: [15088, 15088, 12991],
-            backgroundColor: 'rgba(99, 102, 241, 0.85)',
-            stack: 'vram'
+      // 9. Context Scaling Capacity Chart
+      var ctxContext = document.getElementById('chartContext').getContext('2d');
+      window.appCharts.chartContext = new Chart(ctxContext, {
+        type: 'bar',
+        data: {
+          labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
+          datasets: [
+            {
+              label: 'Standard F16 KV Cache Max Context',
+              data: [12288, 12288, 14000],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'TurboQuant Turbo3 KV Cache Max Context',
+              data: [0, 32768, 65536],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toLocaleString() + ' tokens'; }
+              }
+            }
           },
-          {
-            label: 'KV Cache (4096 Context)',
-            data: [405, 405, 405],
-            backgroundColor: 'rgba(245, 158, 11, 0.85)',
-            stack: 'vram'
-          },
-          {
-            label: 'Compute Buffers',
-            data: [130, 130, 126],
-            backgroundColor: 'rgba(236, 72, 153, 0.85)',
-            stack: 'vram'
-          },
-          {
-            label: 'Free Headroom (16,304 MiB Total)',
-            data: [513, 513, 2559],
-            backgroundColor: 'rgba(16, 185, 129, 0.85)',
-            stack: 'vram'
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toLocaleString()} MiB`
+          scales: {
+            y: {
+              title: { display: true, text: 'Maximum Viable Context Window (Tokens)' },
+              beginAtZero: true
             }
           }
-        },
-        scales: {
-          y: {
-            stacked: true,
-            title: { display: true, text: 'Memory Allocation (MiB)' },
-            max: 16500
-          },
-          x: { stacked: true }
         }
-      }
-    });
+      });
 
-    // 9. Context Scaling Capacity Chart
-    const ctxContext = document.getElementById('chartContext').getContext('2d');
-    new Chart(ctxContext, {
-      type: 'bar',
-      data: {
-        labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
-        datasets: [
-          {
-            label: 'Standard F16 KV Cache Max Context',
-            data: [12288, 12288, 14000],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderRadius: 6
+      // 10. Time to First Token (TTFT)
+      var ctxTtft = document.getElementById('chartTtft').getContext('2d');
+      window.appCharts.chartTtft = new Chart(ctxTtft, {
+        type: 'bar',
+        data: {
+          labels: ['p=512', 'p=1024', 'p=2048', 'p=4096'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [2305, 4391, 8878, 18069],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [2079, 4429, 9130, 17505],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [1863, 3617, 7500, 15202],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toLocaleString() + ' ms'; }
+              }
+            }
           },
-          {
-            label: 'TurboQuant Turbo3 KV Cache Max Context',
-            data: [0, 32768, 65536],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toLocaleString()} tokens`
+          scales: {
+            y: {
+              title: { display: true, text: 'Time to First Token (ms) - Lower is better' },
+              beginAtZero: true
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Maximum Viable Context Window (Tokens)' },
-            beginAtZero: true
-          }
         }
-      }
-    });
+      });
 
-    // 10. Time to First Token (TTFT)
-    const ctxTtft = document.getElementById('chartTtft').getContext('2d');
-    new Chart(ctxTtft, {
-      type: 'bar',
-      data: {
-        labels: ['p=512', 'p=1024', 'p=2048', 'p=4096'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [2305, 4391, 8878, 18069],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderRadius: 6
+      // 11. Compute Density Chart
+      var ctxDensity = document.getElementById('chartDensity').getContext('2d');
+      window.appCharts.chartDensity = new Chart(ctxDensity, {
+        type: 'bar',
+        data: {
+          labels: ['Autoregressive Decode (tokens/s/GB)', 'MTP Speculative Decode (tokens/s/GB)'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [0.45, 0.90],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [0.40, 0.70],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [1.00, 1.43],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' t/s/GB'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [2079, 4429, 9130, 17505],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [1863, 3617, 7500, 15202],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toLocaleString()} ms`
+          scales: {
+            y: {
+              title: { display: true, text: 'Throughput per GB VRAM (Higher is better)' },
+              beginAtZero: true,
+              max: 1.8
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Time to First Token (ms) - Lower is better' },
-            beginAtZero: true
-          }
         }
-      }
-    });
+      });
 
-    // 11. Compute Density Chart
-    const ctxDensity = document.getElementById('chartDensity').getContext('2d');
-    new Chart(ctxDensity, {
-      type: 'bar',
-      data: {
-        labels: ['Autoregressive Decode (tokens/s/GB)', 'MTP Speculative Decode (tokens/s/GB)'],
-        datasets: [
-          {
-            label: 'Upstream (Q4_K_M)',
-            data: [0.45, 0.90],
-            backgroundColor: 'rgba(244, 63, 94, 0.75)',
-            borderRadius: 6
+      // 12. KV Cache Scaling at 64k Chart
+      var ctxKvScaling = document.getElementById('chartKvScaling').getContext('2d');
+      window.appCharts.chartKvScaling = new Chart(ctxKvScaling, {
+        type: 'bar',
+        data: {
+          labels: ['Standard FP16 KV (Upstream)', 'Q8_0 KV Cache', 'TurboQuant Q8_0 K + Turbo3 V (Experimental)'],
+          datasets: [
+            {
+              label: 'KV Cache Footprint at 65,536 Context (MiB)',
+              data: [11600, 5800, 1637],
+              backgroundColor: [
+                'rgba(244, 63, 94, 0.8)',
+                'rgba(245, 158, 11, 0.8)',
+                'rgba(0, 242, 254, 0.85)'
+              ],
+              borderColor: [
+                '#f43f5e',
+                '#f59e0b',
+                '#00f2fe'
+              ],
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.raw.toLocaleString() + ' MiB VRAM'; }
+              }
+            }
           },
-          {
-            label: 'Exp Fork (Q4_K_M)',
-            data: [0.40, 0.70],
-            backgroundColor: 'rgba(245, 158, 11, 0.75)',
-            borderRadius: 6
-          },
-          {
-            label: 'Exp Fork (ROCmFP4_FAST)',
-            data: [1.00, 1.43],
-            backgroundColor: 'rgba(0, 242, 254, 0.75)',
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top' },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.dataset.label}: ${item.raw.toFixed(2)} t/s/GB`
+          scales: {
+            y: {
+              title: { display: true, text: 'VRAM Usage for 64k Context (MiB) - Lower is better' },
+              beginAtZero: true
             }
           }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Throughput per GB VRAM (Higher is better)' },
-            beginAtZero: true,
-            max: 1.8
-          }
         }
-      }
-    });
-
-    // 12. KV Cache Scaling at 64k Chart
-    const ctxKvScaling = document.getElementById('chartKvScaling').getContext('2d');
-    new Chart(ctxKvScaling, {
-      type: 'bar',
-      data: {
-        labels: ['Standard FP16 KV (Upstream)', 'Q8_0 KV Cache', 'TurboQuant Q8_0 K + Turbo3 V (Experimental)'],
-        datasets: [
-          {
-            label: 'KV Cache Footprint at 65,536 Context (MiB)',
-            data: [11600, 5800, 1637],
-            backgroundColor: [
-              'rgba(244, 63, 94, 0.8)',
-              'rgba(245, 158, 11, 0.8)',
-              'rgba(0, 242, 254, 0.85)'
-            ],
-            borderColor: [
-              '#f43f5e',
-              '#f59e0b',
-              '#00f2fe'
-            ],
-            borderWidth: 1.5,
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (item) => `${item.raw.toLocaleString()} MiB VRAM`
-            }
-          }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'VRAM Usage for 64k Context (MiB) - Lower is better' },
-            beginAtZero: true
-          }
-        }
-      }
-    });
+      });
+    }
   </script>
 </body>
 </html>
