@@ -2,6 +2,7 @@
 #include "common.h"
 #include "download.h"
 #include "llama.h"
+#include "speculative.h"
 
 #include <cstdlib>
 #include <string>
@@ -210,6 +211,21 @@ static void test(void) {
     argv = {"binary_name", "-m", "model_file.gguf", "--spec-type", "draft-mtp-adaptive", "--spec-draft-n-max", "2"};
     common_params invalid_adaptive_params;
     assert(false == common_params_parse(argv.size(), list_str_to_char(argv).data(), invalid_adaptive_params, LLAMA_EXAMPLE_SPECULATIVE));
+
+    params = common_params();
+    argv = {"binary_name", "-m", "model_file.gguf", "--spec-draft-ubatch-size", "64"};
+    assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_SPECULATIVE));
+    assert(params.speculative.draft.n_ubatch == 64);
+
+    params = common_params();
+    argv = {"binary_name", "-m", "model_file.gguf", "--ubatch-size-draft", "32"};
+    assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_SPECULATIVE));
+    assert(params.speculative.draft.n_ubatch == 32);
+
+    params = common_params();
+    argv = {"binary_name", "-m", "model_file.gguf", "-ubd", "16"};
+    assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_SPECULATIVE));
+    assert(params.speculative.draft.n_ubatch == 16);
 
     argv = {"binary_name", "-lm", "none"};
     assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_COMMON));
@@ -487,8 +503,26 @@ static void test(void) {
     printf("test-arg-parser: all tests OK\n\n");
 }
 
+static void test_draft_ubatch_override() {
+    common_params params;
+    params.n_ubatch = 512;
+
+    const common_params inherited = common_base_params_to_speculative(params);
+    assert(inherited.n_ubatch == 512);
+
+    params.speculative.draft.n_ubatch = 64;
+    const common_params overridden = common_base_params_to_speculative(params);
+    assert(overridden.n_ubatch == 64);
+
+    const llama_context_params cparams = common_context_params_to_llama(overridden);
+    assert(cparams.n_ubatch == 64);
+
+    assert(params.n_ubatch == 512);
+}
+
 int main(void) {
     try {
+        test_draft_ubatch_override();
         test();
     } catch (std::exception & e) {
         fprintf(stderr, "test-arg-parser: exception: %s\n", e.what());

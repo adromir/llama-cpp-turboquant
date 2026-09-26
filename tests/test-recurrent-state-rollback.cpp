@@ -151,6 +151,7 @@ int main(int argc, char ** argv) {
     if (!replay_and_compare("full")) {
         return 1;
     }
+    const auto logits_src_replay_full = logits_src_replay;
 
     if (!llama_memory_seq_rm(llama_get_memory(ctx_src), 0, rollback_pos, -1) ||
         !llama_memory_seq_rm(llama_get_memory(ctx_dst), 0, rollback_pos, -1)) {
@@ -208,9 +209,9 @@ int main(int argc, char ** argv) {
         }
 
         for (int token = 0; token < n_vocab; ++token) {
-            if (std::fabs(logits_src_replay[i][token] - logits_dirty[token]) > eps) {
+            if (std::fabs(logits_src_replay_full[i][token] - logits_dirty[token]) > eps) {
                 fprintf(stderr, "%s : dirty-ctx logits mismatch at position %d, token %d (%g != %g)\n",
-                        __func__, pos, token, (double) logits_src_replay[i][token], (double) logits_dirty[token]);
+                        __func__, pos, token, (double) logits_src_replay_full[i][token], (double) logits_dirty[token]);
                 return 1;
             }
         }

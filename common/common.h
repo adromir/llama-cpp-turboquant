@@ -355,6 +355,7 @@ struct common_params_speculative_draft {
     bool    dflash                = false; // use DFlash speculative decoding
     bool    dflash_defer_injection = true;  // defer encoder KV injection to draft time (set false for higher acceptance on some models)
     int32_t n_ctx                 = 0;     // draft context size
+    int32_t n_ubatch              = 0;     // physical maximum batch size for the draft context (0 = inherit target ubatch)
 
 };
 
