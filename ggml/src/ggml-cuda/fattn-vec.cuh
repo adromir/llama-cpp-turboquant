@@ -107,9 +107,9 @@ static __global__ void flash_attn_ext_vec(
     // Those same shapes are also the ones that do not spill. So the split is gated on the LUT
     // being inactive rather than on D: keep 1 exactly where the LUT runs, split everywhere else.
     //
-    // Kept in sync with n_centroids_lut below; turbo4 never gets a LUT (shmem budget).
+    // Kept in sync with n_centroids_lut below; turbo2/3/4 get a LUT for D <= 256.
     constexpr bool turbo_lut_active = (ncols == 1) && (D <= 256) &&
-        (type_K == GGML_TYPE_TURBO3_0 || type_K == GGML_TYPE_TURBO2_0);
+        (type_K == GGML_TYPE_TURBO3_0 || type_K == GGML_TYPE_TURBO2_0 || type_K == GGML_TYPE_TURBO4_0);
     constexpr int nthreads_KQ = K_is_turbo ? (turbo_lut_active ? 1 : 128 / cpy_nb)
                                            : (K_is_unquantized ? 128 / cpy_nb : nthreads_KQ_q);
     constexpr bool V_is_turbo = (type_V == GGML_TYPE_TURBO3_0 || type_V == GGML_TYPE_TURBO2_0 || type_V == GGML_TYPE_TURBO4_0);
@@ -170,9 +170,9 @@ static __global__ void flash_attn_ext_vec(
 
     // Shared-memory LUT for turbo KQ scoring: precompute Q[d] * centroid[c] once,
     // then the hot loop does turbo_lut[d][idx] (shmem read, no multiply).
-    // turbo4 excluded: 16 centroids × D exceeds shmem budget.
     // Stride = n_centroids+1 to avoid bank conflicts.
     constexpr int n_centroids_lut = !turbo_lut_active ? 0 :
+                                    (type_K == GGML_TYPE_TURBO4_0) ? 16 :
                                     (type_K == GGML_TYPE_TURBO3_0) ? 8 : 4;
     constexpr int lut_stride = n_centroids_lut > 0 ? n_centroids_lut + 1 : 1;
     __shared__ half turbo_lut[n_centroids_lut > 0 ? D : 1][lut_stride];
@@ -305,7 +305,8 @@ static __global__ void flash_attn_ext_vec(
 
     // Build shared-memory LUT: turbo_lut[d][c] = half(Q[d] * scale * centroid[c])
     if constexpr (n_centroids_lut > 0 && ncols == 1) {
-        const float * centroids_ptr = (type_K == GGML_TYPE_TURBO3_0) ? TURBO_CENTROIDS_3BIT :
+        const float * centroids_ptr = (type_K == GGML_TYPE_TURBO4_0) ? TURBO_CENTROIDS_4BIT :
+                                      (type_K == GGML_TYPE_TURBO3_0) ? TURBO_CENTROIDS_3BIT :
                                       TURBO_CENTROIDS_2BIT;
         const float * Q_f = (const float *)(Q + 0*nb01);
         for (int d = tid; d < D; d += nthreads) {
@@ -379,6 +380,27 @@ static __global__ void flash_attn_ext_vec(
                                 __half2float(turbo_lut[d0+5][(qs1>>2)&3]) +
                                 __half2float(turbo_lut[d0+6][(qs1>>4)&3]) +
                                 __half2float(turbo_lut[d0+7][(qs1>>6)&3])) * norm;
+                    }
+                } else if constexpr (n_centroids_lut > 0 && ncols == 1 && type_K == GGML_TYPE_TURBO4_0) {
+                    // LUT scoring for turbo4: 8 elements per iteration (4 qs bytes, 4-bit nibbles)
+                    const block_turbo4_0 * K_turbo = (const block_turbo4_0 *)(K + i_KQ*nb11);
+                    sum = 0.0f;
+                    for (int d0 = 0; d0 < D; d0 += 8) {
+                        const int ib = d0 / QK_TURBO4;
+                        const int jj = d0 % QK_TURBO4;
+                        const float norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
+                        const uint8_t qs0 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 0]);
+                        const uint8_t qs1 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 1]);
+                        const uint8_t qs2 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 2]);
+                        const uint8_t qs3 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 3]);
+                        sum += (__half2float(turbo_lut[d0  ][(qs0 >> 0) & 0xF]) +
+                                __half2float(turbo_lut[d0+1][(qs0 >> 4) & 0xF]) +
+                                __half2float(turbo_lut[d0+2][(qs1 >> 0) & 0xF]) +
+                                __half2float(turbo_lut[d0+3][(qs1 >> 4) & 0xF]) +
+                                __half2float(turbo_lut[d0+4][(qs2 >> 0) & 0xF]) +
+                                __half2float(turbo_lut[d0+5][(qs2 >> 4) & 0xF]) +
+                                __half2float(turbo_lut[d0+6][(qs3 >> 0) & 0xF]) +
+                                __half2float(turbo_lut[d0+7][(qs3 >> 4) & 0xF])) * norm;
                     }
                 } else {
                     sum = vec_dot_KQ(K + i_KQ*nb11, Q_reg[j], Q_i32[j], Q_ds[j]);
