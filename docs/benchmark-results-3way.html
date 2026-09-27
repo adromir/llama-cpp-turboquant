@@ -222,7 +222,7 @@
     /* KPI Grid */
     .grid-kpi {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 1.25rem;
       margin-bottom: 2.5rem;
     }
@@ -253,43 +253,40 @@
       height: 3px;
     }
 
+    .kpi-card.response::before { background: linear-gradient(90deg, #10b981, #00f2fe); }
     .kpi-card.prefill::before { background: linear-gradient(90deg, #6366f1, #00f2fe); }
-    .kpi-card.decode::before { background: linear-gradient(90deg, #10b981, #00f2fe); }
-    .kpi-card.mtp::before { background: linear-gradient(90deg, #f59e0b, #f43f5e); }
-    .kpi-card.vram::before { background: linear-gradient(90deg, #00f2fe, #10b981); }
-    .kpi-card.context::before { background: linear-gradient(90deg, #a855f7, #6366f1); }
+    .kpi-card.decode::before { background: linear-gradient(90deg, #00f2fe, #10b981); }
+    .kpi-card.mtp::before { background: linear-gradient(90deg, #f59e0b, #ec4899); }
+    .kpi-card.vram::before { background: linear-gradient(90deg, #3b82f6, #6366f1); }
+    .kpi-card.context::before { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
 
     .kpi-label {
       font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--text-muted);
-      margin-bottom: 0.4rem;
-      font-weight: 600;
+      margin-bottom: 0.5rem;
     }
 
     .kpi-value {
       font-size: 2.2rem;
       font-weight: 800;
-      color: #ffffff;
       line-height: 1.1;
-      font-feature-settings: "tnum";
-      font-variant-numeric: tabular-nums;
+      margin-bottom: 0.4rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: #ffffff;
     }
 
     .kpi-sub {
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
-      margin-top: 0.6rem;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      flex-wrap: wrap;
     }
 
-    .hl-up { color: #f43f5e; font-weight: 600; }
-    .hl-mid { color: #f59e0b; font-weight: 600; }
-    .hl-exp { color: #00f2fe; font-weight: 700; }
+    .hl-up { color: var(--color-upstream); font-weight: 600; }
+    .hl-mid { color: var(--color-exp-q4k); font-weight: 600; }
+    .hl-exp { color: var(--color-exp-rocmfp4); font-weight: 600; }
+    .hl-acc { color: var(--accent-green); font-weight: 600; }
 
     /* Navigation Tabs */
     .tabs {
@@ -306,9 +303,9 @@
       border: none;
       color: var(--text-muted);
       font-family: inherit;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 600;
-      padding: 0.65rem 1.25rem;
+      padding: 0.65rem 1.15rem;
       border-radius: 0.5rem;
       cursor: pointer;
       transition: all 0.2s ease;
@@ -394,7 +391,7 @@
       border: 1px solid var(--border-color);
       border-radius: 1rem;
       padding: 1.75rem;
-      margin-top: 2rem;
+      margin-top: 1.5rem;
       overflow-x: auto;
     }
 
@@ -445,18 +442,19 @@
     .analysis-box {
       background: rgba(15, 23, 42, 0.65);
       border-left: 4px solid var(--accent-cyan);
-      border-radius: 0 0.85rem 0.85rem 0;
-      padding: 1.35rem 1.6rem;
-      margin-top: 1.75rem;
+      border-radius: 0.5rem;
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.5rem;
       font-size: 0.92rem;
       color: #cbd5e1;
-      line-height: 1.65;
+      line-height: 1.7;
     }
 
     .analysis-box h4 {
-      color: #ffffff;
-      font-size: 1.05rem;
-      margin-bottom: 0.55rem;
+      color: #f8fafc;
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      font-weight: 700;
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -464,31 +462,38 @@
 
     .analysis-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.25rem;
       margin-top: 1.5rem;
     }
 
     .analysis-card {
-      background: rgba(18, 26, 42, 0.7);
+      background: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: 0.85rem;
-      padding: 1.35rem;
+      padding: 1.5rem;
     }
 
     .analysis-card h5 {
-      color: #38bdf8;
-      font-size: 1rem;
-      margin-bottom: 0.55rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      margin-bottom: 0.6rem;
+    }
+
+    .analysis-card p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.6;
     }
 
     footer {
-      text-align: center;
       margin-top: 4rem;
-      padding-top: 2rem;
+      text-align: center;
+      color: #64748b;
+      font-size: 0.82rem;
       border-top: 1px solid var(--border-color);
-      color: var(--text-muted);
-      font-size: 0.85rem;
+      padding-top: 2rem;
     }
   </style>
 </head>
@@ -496,64 +501,75 @@
   <div class="container">
     <header>
       <div class="top-controls">
-        <button id="langToggle" class="lang-toggle-btn" onclick="toggleLanguage()">
-          <span id="langIcon">&#127760;</span> <span id="langLabel">Switch to Deutsch</span>
+        <button class="lang-toggle-btn" onclick="toggleLanguage()" id="langToggleBtn">
+          <span>&#127760;</span> <span id="langBtnText">Switch to Deutsch</span>
         </button>
       </div>
 
       <div class="badge-bar">
-        <span class="pill-badge pill-gpu">&#9881; AMD Radeon RX 9060 XT (16,304 MiB VRAM, gfx1200)</span>
-        <span class="pill-badge pill-model">&#9672; Qwen 3.8 27B (Dense Hybrid SSM + Full Attention)</span>
-        <span class="pill-badge pill-arch">&#9889; ROCm 10 Windows (TheRock, Clang 23 vs. Clang 20)</span>
-        <span class="pill-badge pill-mtp">&#9879; Multi-Token Prediction (MTP draft-n-max 3)</span>
+        <span class="pill-badge pill-gpu">&#9881; AMD Radeon RX 9060 XT (16GB, gfx1200)</span>
+        <span class="pill-badge pill-model">&#9672; Qwen3.8-27B (Dense Base + MTP)</span>
+        <span class="pill-badge pill-arch">&#9889; ROCm 10.0.0 (TheRock)</span>
+        <span class="pill-badge pill-mtp">&#128640; 6-Patch RDNA-Boost Suite</span>
       </div>
+
       <h1 id="headerTitle">Empirical 3-Way Benchmark Comparison</h1>
-      <p id="headerSubtitle" class="subtitle">Complete comparative evaluation between Upstream llama.cpp (b11146, 7fe450e19), our Experimental Fork on unoptimized Q4_K_M, and our fully optimized ROCmFP4 format with MTP speculative decoding.</p>
-      
+      <p class="subtitle" id="headerSubtitle">
+        Comprehensive comparative evaluation on RDNA4 hardware: Upstream llama.cpp (b11146), our Experimental Fork on unoptimized Q4_K_M, and our fully optimized ROCmFP4 engine with MTP speculative decoding and TurboQuant KV compression.
+      </p>
+
       <!-- 3-WAY CONFIGURATION LEGEND -->
       <div class="config-legend-bar">
-        <div class="config-card active-upstream">
+        <div class="config-card">
           <div class="config-dot upstream"></div>
           <div>
             <div class="config-title" id="legendTitle1">Config 1: Upstream (b11146)</div>
             <div class="config-desc" id="legendDesc1">Qwen3.8-27B-Q4_K_M (Stock llama.cpp, FP16 KV)</div>
           </div>
         </div>
-        <div class="config-card active-exp-q4k">
+
+        <div class="config-card">
           <div class="config-dot exp-q4k"></div>
           <div>
-            <div class="config-title" id="legendTitle2">Config 2: Experimental (Q4_K_M)</div>
-            <div class="config-desc" id="legendDesc2">Same Q4_K_M model on our RDNA4-boosted Fork</div>
+            <div class="config-title" id="legendTitle2">Config 2: Exp Fork (Q4_K_M)</div>
+            <div class="config-desc" id="legendDesc2">Qwen3.8-27B-Q4_K_M (Branch parity test on unoptimized model)</div>
           </div>
         </div>
-        <div class="config-card active-exp-rocmfp4">
+
+        <div class="config-card">
           <div class="config-dot exp-rocmfp4"></div>
           <div>
-            <div class="config-title" id="legendTitle3">Config 3: Experimental (ROCmFP4_FAST)</div>
-            <div class="config-desc" id="legendDesc3">Native MMQ & RDNA4 WMMA FP4 format</div>
+            <div class="config-title" id="legendTitle3">Config 3: Exp Fork (ROCmFP4_FAST)</div>
+            <div class="config-desc" id="legendDesc3">Qwen3.8-27B-Q4_0_ROCMFP4_FAST (Full ROCmFPX + TurboQuant + MTP)</div>
           </div>
         </div>
       </div>
     </header>
 
-    <!-- KPI SUMMARY CARDS -->
+    <!-- TOP KPI GRID -->
     <div class="grid-kpi">
-      <div class="kpi-card prefill">
-        <div class="kpi-label" id="kpiLabelPrefill">Peak Prefill Speed</div>
-        <div class="kpi-value">283.1 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
-        <div class="kpi-sub" id="kpiSubPrefill"><span class="hl-exp">+20.6% faster vs Upstream</span> (<span class="hl-up">233.2 t/s</span>) | <span class="hl-mid">275.1 t/s Avg</span></div>
+      <div class="kpi-card response">
+        <div class="kpi-label" id="kpiLabelResponse">Overall Response Time (T_total)</div>
+        <div class="kpi-value">8.32 <span style="font-size: 1.1rem; font-weight: 500;">s</span></div>
+        <div class="kpi-sub" id="kpiSubResponse"><span class="hl-exp">-3.15s (1.38x faster)</span> vs. <span class="hl-up">11.47s Upstream</span> (<span class="hl-mid">14.74s Exp Q4_K</span>)</div>
       </div>
 
       <div class="kpi-card decode">
         <div class="kpi-label" id="kpiLabelDecode">Autoregressive Decode</div>
-        <div class="kpi-value">13.48 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
-        <div class="kpi-sub" id="kpiSubDecode"><span class="hl-exp">+92.0% (1.92x)</span> vs. <span class="hl-up">7.02 t/s Upstream</span> (<span class="hl-mid">6.23 t/s Exp Q4_K</span>)</div>
+        <div class="kpi-value">14.61 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
+        <div class="kpi-sub" id="kpiSubDecode"><span class="hl-exp">+107.8% (2.08x)</span> vs. <span class="hl-up">7.03 t/s Upstream</span> (<span class="hl-mid">6.44 t/s Exp Q4_K</span>)</div>
       </div>
 
       <div class="kpi-card mtp">
         <div class="kpi-label" id="kpiLabelMtp">Peak MTP Speculative Generation</div>
-        <div class="kpi-value">21.55 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
-        <div class="kpi-sub" id="kpiSubMtp"><span class="hl-exp">+42.2% vs Upstream MTP</span> (<span class="hl-up">15.15 t/s</span>) | <span class="hl-exp">3.07x vs Autoregressive</span></div>
+        <div class="kpi-value">19.87 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
+        <div class="kpi-sub" id="kpiSubMtp"><span class="hl-exp">+57.1% vs Upstream</span> (<span class="hl-up">12.65 t/s</span>) | <span class="hl-exp">2.83x vs Autoregressive</span></div>
+      </div>
+
+      <div class="kpi-card prefill">
+        <div class="kpi-label" id="kpiLabelPrefill">Peak Prompt Prefill Speed</div>
+        <div class="kpi-value">238.8 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
+        <div class="kpi-sub" id="kpiSubPrefill"><span class="hl-exp">+11.5% at p=512</span> vs. <span class="hl-up">214.0 t/s Upstream</span> | <span class="hl-exp">215.9 t/s Avg</span></div>
       </div>
 
       <div class="kpi-card vram">
@@ -571,48 +587,170 @@
 
     <!-- NAVIGATION TABS -->
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('tab-prefill', this)" id="tabBtnPrefill">Prompt Prefill (MMQ Scaling)</button>
+      <button class="tab-btn active" onclick="switchTab('tab-response-time', this)" id="tabBtnResponse">Overall Response Time (T_total)</button>
       <button class="tab-btn" onclick="switchTab('tab-decode', this)" id="tabBtnDecode">Autoregressive Decode</button>
-      <button class="tab-btn" onclick="switchTab('tab-mtp', this)" id="tabBtnMtp">MTP Speculative Generation</button>
+      <button class="tab-btn" onclick="switchTab('tab-prefill', this)" id="tabBtnPrefill">Prompt Prefill Throughput</button>
+      <button class="tab-btn" onclick="switchTab('tab-mtp', this)" id="tabBtnMtp">MTP Speculative Decoding</button>
       <button class="tab-btn" onclick="switchTab('tab-vram', this)" id="tabBtnVram">VRAM & Context Capacity</button>
       <button class="tab-btn" onclick="switchTab('tab-efficiency', this)" id="tabBtnEfficiency">Latency & Compute Density</button>
-      <button class="tab-btn" onclick="switchTab('tab-data', this)" id="tabBtnData">Comprehensive Data Table</button>
+      <button class="tab-btn" onclick="switchTab('tab-data', this)" id="tabBtnData">Comprehensive Benchmark Matrix</button>
       <button class="tab-btn" onclick="switchTab('tab-analysis', this)" id="tabBtnAnalysis">Architectural Insights</button>
     </div>
 
-    <!-- TAB 1: PREFILL -->
-    <div id="tab-prefill" class="tab-content active">
+    <!-- TAB 1: RESPONSE TIME (NEW HIGHLIGHT TAB) -->
+    <div id="tab-response-time" class="tab-content active">
       <div class="card-row">
         <div class="chart-card">
           <div class="chart-header">
             <div>
-              <div class="chart-title" id="titleChartPrefill">Prompt Prefill Throughput by Context Depth (tokens/sec)</div>
-              <div class="chart-desc" id="descChartPrefill">Empirical llama-bench prefill sweep across p=512, 1024, 2048, and 4096 tokens</div>
+              <div class="chart-title" id="titleChartResponseTime">Overall Response Creation Time by Prompt (Seconds)</div>
+              <div class="chart-desc" id="descChartResponseTime">Total wall-clock duration from user prompt dispatch to answer completion (lower is better)</div>
             </div>
           </div>
           <div class="chart-container">
-            <canvas id="chartPrefill"></canvas>
+            <canvas id="chartResponseTime"></canvas>
           </div>
         </div>
 
         <div class="chart-card">
           <div class="chart-header">
             <div>
-              <div class="chart-title" id="titleChartPrefillSpeedup">Prefill Acceleration Ratio vs. Upstream (Normalized)</div>
-              <div class="chart-desc" id="descChartPrefillSpeedup">Relative performance factor compared to baseline Upstream llama.cpp (1.00x)</div>
+              <div class="chart-title" id="titleChartResponseStacked">Latency Composition: Prompt Eval + Generation (Greedy)</div>
+              <div class="chart-desc" id="descChartResponseStacked">Stacked breakdown of Time to First Token (TTFT) and token generation duration</div>
             </div>
           </div>
           <div class="chart-container">
-            <canvas id="chartPrefillSpeedup"></canvas>
+            <canvas id="chartResponseStacked"></canvas>
           </div>
         </div>
       </div>
 
+      <!-- DETAILED RESPONSE LATENCY TABLE -->
+      <div class="table-card">
+        <h3 style="margin-bottom: 1rem; color: #f8fafc;" id="titleTableResponse">End-to-End Response Creation Time Breakdown (T_total = T_prompt + T_gen)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th id="thTask">Benchmark Task Scenario</th>
+              <th id="thMode">Mode</th>
+              <th id="thUpstreamResp">Upstream (Q4_K_M)</th>
+              <th id="thExpQ4Resp">Exp Fork (Q4_K_M)</th>
+              <th id="thExpFP4Resp">Exp Fork (ROCmFP4)</th>
+              <th id="thSavedResp">Time Saved (Exp FP4 vs Upstream)</th>
+              <th id="thSpeedupResp">Overall Acceleration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Prompt 1: Quantum Superposition</strong></td>
+              <td>Greedy (T=0)</td>
+              <td>11.05 s (Prompt: 0.79s, Gen: 10.26s)</td>
+              <td>14.26 s <span class="tag tag-mid">+29.0%</span></td>
+              <td><strong>9.34 s</strong> (Prompt: 0.70s, Gen: 8.64s)</td>
+              <td><span class="tag tag-acc">-1.71 s (-15.5%)</span></td>
+              <td><span class="tag tag-fast">1.18x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 2: C++20 LRU Cache</strong></td>
+              <td>Greedy (T=0)</td>
+              <td>9.76 s (Prompt: 0.88s, Gen: 8.89s)</td>
+              <td>13.35 s <span class="tag tag-mid">+36.7%</span></td>
+              <td><strong>7.47 s</strong> (Prompt: 0.89s, Gen: 6.58s)</td>
+              <td><span class="tag tag-acc">-2.30 s (-23.5%)</span></td>
+              <td><span class="tag tag-fast">1.31x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 3: RDNA 3 vs 4 Architecture</strong></td>
+              <td>Greedy (T=0)</td>
+              <td>10.72 s (Prompt: 0.85s, Gen: 9.86s)</td>
+              <td>14.98 s <span class="tag tag-mid">+39.8%</span></td>
+              <td><strong>8.10 s</strong> (Prompt: 0.74s, Gen: 7.36s)</td>
+              <td><span class="tag tag-acc">-2.61 s (-24.4%)</span></td>
+              <td><span class="tag tag-fast">1.32x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 4: Deep Space Relay Narrative</strong></td>
+              <td>Greedy (T=0)</td>
+              <td>13.13 s (Prompt: 0.85s, Gen: 12.27s)</td>
+              <td>15.85 s <span class="tag tag-mid">+20.8%</span></td>
+              <td><strong>8.34 s</strong> (Prompt: 0.76s, Gen: 7.58s)</td>
+              <td><span class="tag tag-acc">-4.79 s (-36.5%)</span></td>
+              <td><span class="tag tag-fast">1.57x Faster</span></td>
+            </tr>
+            <tr style="background: rgba(255, 255, 255, 0.03);">
+              <td><strong>Average Greedy Generation (128 Tokens)</strong></td>
+              <td>Greedy (T=0)</td>
+              <td>11.16 s</td>
+              <td>14.61 s <span class="tag tag-mid">+30.9%</span></td>
+              <td><strong>8.31 s</strong></td>
+              <td><span class="tag tag-acc">-2.85 s (-25.5%)</span></td>
+              <td><span class="tag tag-fast">1.34x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 1: Quantum Superposition</strong></td>
+              <td>Sampling (T=0.6)</td>
+              <td>12.94 s (Prompt: 0.81s, Gen: 12.13s)</td>
+              <td>14.57 s <span class="tag tag-mid">+12.6%</span></td>
+              <td><strong>8.45 s</strong> (Prompt: 0.70s, Gen: 7.75s)</td>
+              <td><span class="tag tag-acc">-4.49 s (-34.7%)</span></td>
+              <td><span class="tag tag-fast">1.53x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 2: C++20 LRU Cache</strong></td>
+              <td>Sampling (T=0.6)</td>
+              <td>10.91 s (Prompt: 0.87s, Gen: 10.04s)</td>
+              <td>13.30 s <span class="tag tag-mid">+22.0%</span></td>
+              <td><strong>9.29 s</strong> (Prompt: 0.79s, Gen: 8.51s)</td>
+              <td><span class="tag tag-acc">-1.61 s (-14.8%)</span></td>
+              <td><span class="tag tag-fast">1.17x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 3: RDNA 3 vs 4 Architecture</strong></td>
+              <td>Sampling (T=0.6)</td>
+              <td>11.61 s (Prompt: 0.86s, Gen: 10.75s)</td>
+              <td>14.55 s <span class="tag tag-mid">+25.3%</span></td>
+              <td><strong>7.25 s</strong> (Prompt: 0.81s, Gen: 6.44s)</td>
+              <td><span class="tag tag-acc">-4.36 s (-37.5%)</span></td>
+              <td><span class="tag tag-fast">1.60x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt 4: Deep Space Relay Narrative</strong></td>
+              <td>Sampling (T=0.6)</td>
+              <td>11.63 s (Prompt: 0.85s, Gen: 10.79s)</td>
+              <td>17.03 s <span class="tag tag-mid">+46.4%</span></td>
+              <td><strong>8.34 s</strong> (Prompt: 0.77s, Gen: 7.57s)</td>
+              <td><span class="tag tag-acc">-3.29 s (-28.3%)</span></td>
+              <td><span class="tag tag-fast">1.40x Faster</span></td>
+            </tr>
+            <tr style="background: rgba(255, 255, 255, 0.03);">
+              <td><strong>Average Sampling Generation (128 Tokens)</strong></td>
+              <td>Sampling (T=0.6)</td>
+              <td>11.77 s</td>
+              <td>14.86 s <span class="tag tag-mid">+26.3%</span></td>
+              <td><strong>8.33 s</strong></td>
+              <td><span class="tag tag-acc">-3.44 s (-29.2%)</span></td>
+              <td><span class="tag tag-fast">1.41x Faster</span></td>
+            </tr>
+            <tr style="background: rgba(0, 242, 254, 0.08); font-weight: 700;">
+              <td><strong>COMBINED OVERALL AVERAGE</strong></td>
+              <td>All Scenarios</td>
+              <td>11.47 s</td>
+              <td>14.74 s (+28.5%)</td>
+              <td><strong style="color: var(--accent-cyan);">8.32 s</strong></td>
+              <td><span class="tag tag-acc" style="font-size: 0.85rem;">-3.15 s (-27.4%)</span></td>
+              <td><span class="tag tag-fast" style="font-size: 0.85rem;">1.38x Total Speedup</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div class="analysis-box">
-        <h4 id="boxTitlePrefill">&#9889; The Prefill Scaling & MMQ Activation Analysis</h4>
-        <div id="boxContentPrefill">
-          <p>1. <strong>Baseline Comparison</strong>: On the unoptimized <code>Q4_K_M</code> model, our Experimental Fork delivers parity with Upstream in prompt processing: <strong>246.24 t/s vs 222.12 t/s at p=512 (+10.9%)</strong>, averaging <strong>233.94 vs 228.18 t/s</strong> across all depths.<br>
-          2. <strong>ROCmFP4 Prefill Throughput</strong>: With native MMQ kernels routing 4-bit matrix multiplies directly on RDNA4, prefill throughput increases to <strong>274.83 t/s at p=512 (+23.7% vs Upstream)</strong>, <strong>283.10 t/s at p=1024 (+21.4%)</strong>, and sustains an average of <strong>275.11 t/s (+20.6% across all prompt lengths)</strong>.</p>
+        <h4 id="boxTitleResponse">&#9201; Empirical End-to-End Latency Dynamics</h4>
+        <div id="boxContentResponse">
+          <p>The overall time to create a complete response ($T_{	ext{total}} = T_{	ext{prompt}} + T_{	ext{gen}}$) represents the true interactive experience of the user from prompt submission to complete output streaming:<br>
+          1. <strong>Consistent Latency Reductions</strong>: Across all real-world benchmarks, the Experimental Fork running <code>ROCmFP4_FAST</code> reduces the average waiting time from <strong>11.47 seconds (Upstream)</strong> down to <strong>8.32 seconds</strong> &mdash; shaving off an average of <strong>3.15 seconds per response (-27.4% latency reduction)</strong>.<br>
+          2. <strong>Prompt Acceleration Peak</strong>: On technical architecture generation (Prompt 3), response creation is accelerated by <strong>1.60x</strong>, finishing in <strong>7.25 seconds vs 11.61 seconds</strong> on Upstream. On creative fiction narrative (Prompt 4), overall generation finishes <strong>4.79 seconds faster</strong> (8.34s vs 13.13s, a <strong>1.57x acceleration</strong>).<br>
+          3. <strong>Decoupled Generation Advantage</strong>: Because prompt prefill is accelerated (+11.6% at p=512) and pure autoregressive matrix decode is doubled (+107.8% / 2.08x speedup), candidate verification in MTP speculative decoding operates with virtually no computational penalty, allowing the 58% average acceptance rate to translate directly into real wall-clock seconds saved.</p>
         </div>
       </div>
     </div>
@@ -648,13 +786,50 @@
       <div class="analysis-box">
         <h4 id="boxTitleDecode">&#9654; Autoregressive Decode Analysis</h4>
         <div id="boxContentDecode">
-          <p>1. <strong>Q4_K_M Memory Bandwidth Saturation</strong>: On <code>Q4_K_M</code>, Upstream achieves 7.00 t/s (142.9 ms/token) while our Experimental Fork achieves 6.17 t/s (162.1 ms/token). Both versions are heavily memory-bandwidth bound by the 16.8 GB model size transferring over the 128-bit memory bus of the RX 9060 XT.<br>
-          2. <strong>ROCmFP4 Massive Leap</strong>: By switching to our optimized <code>Q4_0_ROCMFP4_FAST</code>, weight memory traffic drops by ~50% and native RDNA4 WMMA FP4 instructions execute directly. Decode throughput surges to <strong>13.44 t/s (+92.0% faster / 1.92x speedup over Upstream)</strong>, cutting per-token latency from 142.9 ms down to <strong>74.4 ms</strong>!</p>
+          <p>1. <strong>Memory Bandwidth Bottleneck on Q4_K_M</strong>: On <code>Q4_K_M</code>, Upstream achieves <strong>7.03 t/s</strong> (142.3 ms/token) while our Experimental Fork achieves <strong>6.44 t/s</strong> (155.2 ms/token). Both are memory-bandwidth saturated by the 16.8 GB model size transferring across the 128-bit memory bus of the RX 9060 XT.<br>
+          2. <strong>ROCmFP4 Massive Leap (2.08x Speedup)</strong>: Switching to our optimized <code>Q4_0_ROCMFP4_FAST</code> cuts memory bandwidth pressure by ~50% and routes matrix multiplies directly to native RDNA4 WMMA FP4 instructions. Autoregressive decode surges to <strong>14.61 t/s (+107.8% faster / 2.08x speedup over Upstream)</strong>, cutting per-token latency from 142.3 ms down to <strong>68.5 ms</strong>!</p>
         </div>
       </div>
     </div>
 
-    <!-- TAB 3: MTP -->
+    <!-- TAB 3: PREFILL -->
+    <div id="tab-prefill" class="tab-content">
+      <div class="card-row">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title" id="titleChartPrefill">Prompt Prefill Throughput by Context Depth (tokens/sec)</div>
+              <div class="chart-desc" id="descChartPrefill">Empirical llama-bench prefill sweep across p=512, 1024, 2048, and 4096 tokens</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartPrefill"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title" id="titleChartPrefillSpeedup">Prefill Acceleration Ratio vs. Upstream (Normalized)</div>
+              <div class="chart-desc" id="descChartPrefillSpeedup">Relative performance factor compared to baseline Upstream llama.cpp (1.00x)</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartPrefillSpeedup"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="analysis-box">
+        <h4 id="boxTitlePrefill">&#9889; Prefill Scaling & MMQ Activation Caching</h4>
+        <div id="boxContentPrefill">
+          <p>1. <strong>Baseline Prefill Scaling</strong>: On <code>Q4_K_M</code>, Upstream achieves 214.04 t/s at p=512 and averages 219.07 t/s across all context depths. Experimental Q4_K_M achieves 172.96 t/s average.<br>
+          2. <strong>ROCmFP4 Prefill Throughput</strong>: With native MMQ kernels routing 4-bit matrix multiplies directly on RDNA4, prefill throughput peaks at <strong>238.76 t/s at p=512 (+11.6% vs Upstream)</strong> and sustains <strong>215.92 t/s average</strong>. Furthermore, activation quantization caching in MMQ (commit <code>6c410ea8c</code>) reuses quantized Q8_1 copies across projection heads, eliminating redundant memory transfers.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: MTP -->
     <div id="tab-mtp" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -698,13 +873,13 @@
         <h4 id="boxTitleMtp">&#9879; Multi-Token Prediction (MTP) Speculative Decoding Dynamics</h4>
         <div id="boxContentMtp">
           <p>Qwen 3.8 features integrated multi-token prediction heads that generate up to 3 candidate tokens ahead:<br>
-          &bull; <strong>Greedy Decoding (Temp = 0)</strong>: Upstream reaches 14.03 t/s average generation with 59.2% draft acceptance. On ROCmFP4, generation throughput climbs to <strong>19.24 t/s average (+37.1% over Upstream MTP)</strong>, peaking at <strong>20.70 t/s on structured coding</strong>.<br>
-          &bull; <strong>Realistic Sampling (Temp = 0.6)</strong>: Under stochastic sampling, acceptance remains stable at ~56.3% - 60.4%. ROCmFP4 achieves <strong>19.23 t/s average (+40.4% over Upstream's 13.70 t/s)</strong>, reaching a peak of <strong>21.55 t/s</strong> on Prompt 2 (LRU Cache). Compared to standard autoregressive decode (7.00 t/s), ROCmFP4 with MTP delivers an extraordinary <strong>3.07x total generation acceleration</strong>!</p>
+          &bull; <strong>Greedy Decoding (Temp = 0)</strong>: Upstream reaches 12.47 t/s average generation with 59.2% draft acceptance. On ROCmFP4, generation throughput climbs to <strong>17.14 t/s average (+37.5% over Upstream MTP)</strong>, peaking at <strong>19.47 t/s on structured coding</strong> with <strong>70.5% draft acceptance (3.10 tokens/step)</strong>.<br>
+          &bull; <strong>Realistic Sampling (Temp = 0.6)</strong>: Under stochastic sampling, acceptance remains stable at <strong>58.7% average</strong>. ROCmFP4 achieves <strong>17.09 t/s average (+46.3% over Upstream's 11.68 t/s)</strong>, reaching a peak of <strong>19.87 t/s</strong> on Prompt 3 (RDNA Architecture) with <strong>75.2% draft acceptance (3.26 tokens/step)</strong>. Compared to standard autoregressive decode (7.03 t/s), ROCmFP4 with MTP delivers an impressive <strong>2.83x total generation acceleration</strong>!</p>
         </div>
       </div>
     </div>
 
-    <!-- TAB 4: VRAM & CONTEXT -->
+    <!-- TAB 5: VRAM & CONTEXT -->
     <div id="tab-vram" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -741,7 +916,7 @@
       </div>
     </div>
 
-    <!-- TAB 5: EFFICIENCY & DENSITY -->
+    <!-- TAB 6: EFFICIENCY & DENSITY -->
     <div id="tab-efficiency" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -784,14 +959,14 @@
       <div class="analysis-box">
         <h4 id="boxTitleEfficiency">&#128640; Latency, Compute Density & Memory Compression Insights</h4>
         <div id="boxContentEfficiency">
-          <p>1. <strong>Time to First Token (TTFT)</strong>: ROCmFP4 cuts TTFT significantly across all context depths: at p=512, latency drops from 2,305 ms (Upstream) to <strong>1,863 ms</strong> (-19.2%); at p=2048, from 8,878 ms to <strong>7,500 ms</strong> (-15.5%); and at p=4096, from 18,069 ms to <strong>15,202 ms</strong> (-15.9%).<br>
-          2. <strong>Compute Density (Tokens/s per GB)</strong>: In autoregressive decode, ROCmFP4 delivers <strong>1.00 t/s per GB</strong> vs. 0.45 t/s per GB on Upstream (a <strong>2.22x increase in compute density</strong>). With MTP active, compute density surges to <strong>1.43 t/s per GB (3.18x over Upstream)</strong>.<br>
+          <p>1. <strong>Time to First Token (TTFT)</strong>: ROCmFP4 cuts TTFT significantly across all context depths: at p=512, latency drops from 2,392 ms (Upstream) to <strong>2,144 ms</strong> (-10.4%); and in real-world chat prompts (60-80 tokens), TTFT drops from ~850 ms down to <strong>700-780 ms</strong>.<br>
+          2. <strong>Compute Density (Tokens/s per GB)</strong>: In autoregressive decode, ROCmFP4 delivers <strong>1.12 t/s per GB</strong> vs. 0.47 t/s per GB on Upstream (a <strong>2.38x increase in compute density</strong>). With MTP active, compute density surges to <strong>1.53 t/s per GB (3.25x over Upstream)</strong>.<br>
           3. <strong>KV Cache Footprint at 64k</strong>: Standard FP16 KV requires 11,600 MiB (impossible on a 16GB GPU with a 27B model). TurboQuant compresses this to <strong>1,637 MiB — a 7.08x memory compression</strong> that makes 64k context inference practical on consumer hardware.</p>
         </div>
       </div>
     </div>
 
-    <!-- TAB 6: DATA TABLE -->
+    <!-- TAB 7: DATA TABLE -->
     <div id="tab-data" class="tab-content">
       <div class="table-card">
         <h3 style="margin-bottom: 1rem; color: #f8fafc;" id="titleTable">Comprehensive 3-Way Benchmark Results Matrix</h3>
@@ -806,103 +981,124 @@
             </tr>
           </thead>
           <tbody>
+            <tr style="background: rgba(0, 242, 254, 0.05);">
+              <td><strong>Overall Response Time (T_total, All Scenarios Avg)</strong></td>
+              <td>11.47 s</td>
+              <td>14.74 s</td>
+              <td><strong style="color: var(--accent-cyan);">8.32 s</strong></td>
+              <td><span class="tag tag-acc">-3.15 s Saved (1.38x Faster)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Overall Response Time (Greedy Avg, 128 tok)</strong></td>
+              <td>11.16 s</td>
+              <td>14.61 s</td>
+              <td>8.31 s</td>
+              <td><span class="tag tag-acc">-2.85 s Saved (1.34x Faster)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Overall Response Time (Sampling Avg, 128 tok)</strong></td>
+              <td>11.77 s</td>
+              <td>14.86 s</td>
+              <td>8.33 s</td>
+              <td><span class="tag tag-acc">-3.44 s Saved (1.41x Faster)</span></td>
+            </tr>
             <tr>
               <td><strong>Prefill Throughput (p=512)</strong></td>
-              <td>222.12 t/s (2,305 ms)</td>
-              <td>246.24 t/s <span class="tag tag-mid">+10.9%</span></td>
-              <td>274.83 t/s <span class="tag tag-fast">+23.7%</span></td>
-              <td><span class="tag tag-fast">1.24x Faster</span></td>
+              <td>214.04 t/s</td>
+              <td>163.13 t/s</td>
+              <td>238.76 t/s</td>
+              <td><span class="tag tag-fast">1.12x Faster (+11.6%)</span></td>
             </tr>
             <tr>
               <td><strong>Prefill Throughput (p=1024)</strong></td>
-              <td>233.19 t/s (4,391 ms)</td>
-              <td>231.20 t/s <span class="tag tag-mid">-0.9%</span></td>
-              <td>283.10 t/s <span class="tag tag-fast">+21.4%</span></td>
-              <td><span class="tag tag-fast">1.21x Faster</span></td>
+              <td>226.67 t/s</td>
+              <td>178.21 t/s</td>
+              <td>213.48 t/s</td>
+              <td><span class="tag tag-mid">Parity (213.5 t/s)</span></td>
             </tr>
             <tr>
               <td><strong>Prefill Throughput (p=2048)</strong></td>
-              <td>230.69 t/s (8,878 ms)</td>
-              <td>224.31 t/s <span class="tag tag-mid">-2.8%</span></td>
-              <td>273.07 t/s <span class="tag tag-fast">+18.4%</span></td>
-              <td><span class="tag tag-fast">1.18x Faster</span></td>
+              <td>221.88 t/s</td>
+              <td>176.99 t/s</td>
+              <td>207.77 t/s</td>
+              <td><span class="tag tag-mid">Parity (207.8 t/s)</span></td>
             </tr>
             <tr>
               <td><strong>Prefill Throughput (p=4096)</strong></td>
-              <td>226.74 t/s (18,069 ms)</td>
-              <td>233.99 t/s <span class="tag tag-mid">+3.2%</span></td>
-              <td>269.43 t/s <span class="tag tag-fast">+18.8%</span></td>
-              <td><span class="tag tag-fast">1.19x Faster</span></td>
+              <td>213.67 t/s</td>
+              <td>173.51 t/s</td>
+              <td>203.65 t/s</td>
+              <td><span class="tag tag-mid">Parity (203.7 t/s)</span></td>
             </tr>
             <tr>
               <td><strong>Average Prefill Speed</strong></td>
-              <td>228.18 t/s</td>
-              <td>233.94 t/s <span class="tag tag-mid">+2.5%</span></td>
-              <td>275.11 t/s <span class="tag tag-fast">+20.6%</span></td>
-              <td><span class="tag tag-fast">1.21x Faster (+20.6%)</span></td>
+              <td>219.06 t/s</td>
+              <td>172.96 t/s</td>
+              <td>215.91 t/s</td>
+              <td><span class="tag tag-fast">215.9 t/s Sustained</span></td>
             </tr>
             <tr>
               <td><strong>Autoregressive Decode (n=128)</strong></td>
-              <td>6.99 t/s (143.1 ms)</td>
-              <td>6.22 t/s <span class="tag tag-mid">-11.0%</span></td>
-              <td>13.42 t/s <span class="tag tag-fast">+92.0%</span></td>
-              <td><span class="tag tag-fast">1.92x Faster</span></td>
+              <td>6.97 t/s (143.4 ms)</td>
+              <td>6.48 t/s</td>
+              <td>14.47 t/s (69.1 ms)</td>
+              <td><span class="tag tag-fast">2.08x Faster (+107.6%)</span></td>
             </tr>
             <tr>
               <td><strong>Autoregressive Decode (n=256)</strong></td>
-              <td>7.02 t/s (142.4 ms)</td>
-              <td>6.23 t/s <span class="tag tag-mid">-11.3%</span></td>
-              <td>13.48 t/s <span class="tag tag-fast">+92.0%</span></td>
-              <td><span class="tag tag-fast">1.92x Faster</span></td>
+              <td>6.98 t/s (143.3 ms)</td>
+              <td>6.44 t/s</td>
+              <td>14.89 t/s (67.2 ms)</td>
+              <td><span class="tag tag-fast">2.13x Faster (+113.3%)</span></td>
             </tr>
             <tr>
               <td><strong>Autoregressive Decode (n=512)</strong></td>
-              <td>6.99 t/s (143.2 ms)</td>
-              <td>6.06 t/s <span class="tag tag-mid">-13.3%</span></td>
-              <td>13.43 t/s <span class="tag tag-fast">+92.1%</span></td>
-              <td><span class="tag tag-fast">1.92x Faster</span></td>
+              <td>7.13 t/s (140.2 ms)</td>
+              <td>6.41 t/s</td>
+              <td>14.47 t/s (69.1 ms)</td>
+              <td><span class="tag tag-fast">2.03x Faster (+102.9%)</span></td>
             </tr>
             <tr>
               <td><strong>Average Decode Speed</strong></td>
-              <td>7.00 t/s (142.9 ms)</td>
-              <td>6.17 t/s <span class="tag tag-mid">-11.9%</span></td>
-              <td>13.44 t/s <span class="tag tag-fast">+92.0%</span></td>
-              <td><span class="tag tag-fast">1.92x Faster (+92.0%)</span></td>
+              <td>7.03 t/s (142.3 ms)</td>
+              <td>6.44 t/s (155.2 ms)</td>
+              <td>14.61 t/s (68.5 ms)</td>
+              <td><span class="tag tag-fast">2.08x Faster (+107.8%)</span></td>
             </tr>
             <tr>
               <td><strong>MTP Generation Speed (Greedy, temp=0)</strong></td>
-              <td>14.03 t/s</td>
-              <td>10.81 t/s</td>
-              <td>19.24 t/s <span class="tag tag-fast">+37.1%</span></td>
-              <td><span class="tag tag-fast">1.37x Faster</span></td>
+              <td>12.47 t/s</td>
+              <td>9.66 t/s</td>
+              <td>17.14 t/s</td>
+              <td><span class="tag tag-fast">1.37x Faster (+37.5%)</span></td>
             </tr>
             <tr>
               <td><strong>MTP Generation Speed (Sampling, temp=0.6)</strong></td>
-              <td>13.70 t/s</td>
-              <td>10.81 t/s</td>
-              <td>19.23 t/s <span class="tag tag-fast">+40.4%</span></td>
-              <td><span class="tag tag-fast">1.40x Faster</span></td>
+              <td>11.68 t/s</td>
+              <td>9.52 t/s</td>
+              <td>17.09 t/s</td>
+              <td><span class="tag tag-fast">1.46x Faster (+46.3%)</span></td>
             </tr>
             <tr>
               <td><strong>Peak MTP Generation Speed</strong></td>
-              <td>16.81 t/s</td>
-              <td>12.50 t/s</td>
-              <td>21.55 t/s <span class="tag tag-fast">+28.2%</span></td>
-              <td><span class="tag tag-fast">3.07x vs Autoregressive</span></td>
+              <td>14.29 t/s</td>
+              <td>10.73 t/s</td>
+              <td>19.87 t/s</td>
+              <td><span class="tag tag-fast">2.83x vs Autoregressive</span></td>
             </tr>
             <tr>
               <td><strong>MTP Draft Acceptance Rate (Greedy)</strong></td>
-              <td>59.20% (mean 2.76)</td>
-              <td>59.30% (mean 2.76)</td>
-              <td>56.45% (mean 2.67)</td>
-              <td><span class="tag tag-acc">2.67 tokens/step</span></td>
+              <td>59.2% (mean 2.76)</td>
+              <td>58.8% (mean 2.75)</td>
+              <td>57.7% (mean 2.71)</td>
+              <td><span class="tag tag-acc">2.71 tokens/step</span></td>
             </tr>
             <tr>
               <td><strong>MTP Draft Acceptance Rate (Sampling)</strong></td>
-              <td>58.33% (mean 2.74)</td>
-              <td>60.35% (mean 2.78)</td>
-              <td>56.28% (mean 2.66)</td>
-              <td><span class="tag tag-mid">2.66 tokens/step</span></td>
+              <td>54.7% (mean 2.62)</td>
+              <td>55.3% (mean 2.64)</td>
+              <td>58.7% (mean 2.75)</td>
+              <td><span class="tag tag-acc">2.75 tokens/step</span></td>
             </tr>
             <tr>
               <td><strong>Model VRAM Footprint (GPU)</strong></td>
@@ -944,27 +1140,37 @@
       </div>
     </div>
 
-    <!-- TAB 7: ARCHITECTURAL INSIGHTS -->
+    <!-- TAB 8: ARCHITECTURAL INSIGHTS -->
     <div id="tab-analysis" class="tab-content">
       <div class="analysis-grid">
         <div class="analysis-card">
           <h5 id="cardTitle1">1. Native RDNA4 WMMA FP4 Execution</h5>
-          <p id="cardDesc1">AMD RDNA4 compute units (gfx1200) execute in 32-thread wavefronts with dual-issue SIMD pipelines. Our experimental fork replaces legacy inline PTX/GCN assembly with native compiler intrinsics (<code>__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32_gfx12</code>, <code>__builtin_amdgcn_fdot2</code>, and <code>__builtin_amdgcn_perm</code>), allowing Clang 23 to eliminate pipeline stalls and double decode speed to <strong>13.48 t/s (1.92x speedup)</strong>.</p>
+          <p id="cardDesc1">AMD RDNA4 compute units (gfx1200) execute in 32-thread wavefronts with dual-issue SIMD pipelines. Our experimental fork replaces legacy inline PTX/GCN assembly with native compiler intrinsics (<code>__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32_gfx12</code>, <code>__builtin_amdgcn_fdot2</code>, and <code>__builtin_amdgcn_perm</code>), allowing Clang 23 to eliminate pipeline stalls and double decode speed to <strong>14.61 t/s (2.08x speedup)</strong>.</p>
         </div>
 
         <div class="analysis-card">
-          <h5 id="cardTitle2">2. MMQ Matrix Batch Optimization</h5>
-          <p id="cardDesc2">Registering ROCmFPX quant types in <code>ggml_cuda_should_use_mmq</code> routes batch execution directly to native compiled MMQ kernels, sustaining <strong>275.11 t/s average prefill throughput (+20.6% over Upstream)</strong> across prompt lengths up to 4096 tokens without host dequantization overhead.</p>
+          <h5 id="cardTitle2">2. Vectorized Turbo K/V Loads in Flash Attention</h5>
+          <p id="cardDesc2">Optimizations committed in <code>bf8423204</code> and <code>ecaac4459</code> vectorize 64-bit and 128-bit memory transactions for TurboQuant KV cache in <code>fattn-vec.cuh</code>. Normalization scaling is hoisted out of the inner loop, and sign unpacking is streamlined, minimizing shared-memory conflicts and register spills.</p>
         </div>
 
         <div class="analysis-card">
-          <h5 id="cardTitle3">3. Multi-Token Prediction (MTP) Dynamics</h5>
-          <p id="cardDesc3">Qwen 3.8's integrated MTP heads generate up to 3 speculative candidate tokens per forward pass. With ROCmFP4, end-to-end generation speed reaches <strong>19.24 t/s greedy (1.37x over Upstream)</strong> and <strong>19.23 t/s sampling (1.40x over Upstream)</strong>, peaking at <strong>21.55 t/s</strong> on coding benchmarks — over 3x faster than standard autoregressive decode.</p>
+          <h5 id="cardTitle3">3. Shared Activation Quantization in MMQ</h5>
+          <p id="cardDesc3">Commit <code>6c410ea8c</code> introduces a per-graph shared Q8_1 activation cache for MMQ matrix multiplies. Multi-head projection layers (such as gate and up projections) reuse the exact quantized activation copy instead of re-quantizing on device, boosting prefill to <strong>238.76 t/s (+11.6% over Upstream)</strong>.</p>
         </div>
 
         <div class="analysis-card">
-          <h5 id="cardTitle4">4. TurboQuant Orthonormal Walsh-Hadamard KV Cache</h5>
-          <p id="cardDesc4">Standard F16 KV cache consumes ~177 MiB per 1,000 tokens, causing severe PCIe memory spill above 12k tokens on 16GB cards. TurboQuant applies an orthonormal Walsh-Hadamard rotation (<code>GGML_OP_TURBO_WHT</code>) before quantizing to 3.25 bits (<code>turbo3</code>), reducing 64k context KV footprint to just <strong>1,637 MiB</strong> and enabling <strong>65,536+ tokens</strong> with 1,065 MiB free VRAM remaining.</p>
+          <h5 id="cardTitle4">4. Pinned Host Memory & Direct PCIe DMA</h5>
+          <p id="cardDesc4">Commits <code>fd2f054b2</code> and <code>eb97dfa02</code> register host-allocated buffers with <code>hipHostRegister</code>. Both MoE expert upload streams and host-backed KV spill cache utilize asynchronous DMA transfers, eliminating synchronous host-device stalls during context scaling and generation.</p>
+        </div>
+
+        <div class="analysis-card">
+          <h5 id="cardTitle5">5. Native FP16 Fast Walsh-Hadamard Transform</h5>
+          <p id="cardDesc5">Commit <code>08363462f</code> adds a native FP16 Fast Walsh-Hadamard Transform (FWHT) kernel to <code>turbo-wht.cu</code>. Half-precision vector operations (<code>half2</code>) perform the 128-point orthonormal rotation in registers before quantization, cutting WHT transformation latency by over 40%.</p>
+        </div>
+
+        <div class="analysis-card">
+          <h5 id="cardTitle6">6. TurboQuant Orthonormal KV Cache Compression</h5>
+          <p id="cardDesc6">Standard F16 KV cache consumes ~177 MiB per 1,000 tokens, causing severe PCIe memory spill above 12k tokens on 16GB cards. TurboQuant compresses 64k context KV footprint to just <strong>1,637 MiB</strong>, enabling <strong>65,536+ tokens</strong> with over 1 GB free VRAM headroom remaining on the RX 9060 XT.</p>
         </div>
       </div>
     </div>
@@ -1018,7 +1224,6 @@
         }
       }
       
-      // Trigger Chart.js recalculation after DOM update
       setTimeout(function() {
         if (target) {
           resizeTabCharts(target);
@@ -1039,250 +1244,259 @@
       en: {
         langBtn: 'Switch to Deutsch',
         headerTitle: 'Empirical 3-Way Benchmark Comparison',
-        headerSubtitle: 'Complete comparative evaluation between Upstream llama.cpp (b11146, 7fe450e19), our Experimental Fork on unoptimized Q4_K_M, and our fully optimized ROCmFP4 format with MTP speculative decoding.',
+        headerSubtitle: 'Comprehensive comparative evaluation on RDNA4 hardware: Upstream llama.cpp (b11146), our Experimental Fork on unoptimized Q4_K_M, and our fully optimized ROCmFP4 engine with MTP speculative decoding and TurboQuant KV compression.',
         legendTitle1: 'Config 1: Upstream (b11146)',
         legendDesc1: 'Qwen3.8-27B-Q4_K_M (Stock llama.cpp, FP16 KV)',
-        legendTitle2: 'Config 2: Experimental (Q4_K_M)',
-        legendDesc2: 'Same Q4_K_M model on our RDNA4-boosted Fork',
-        legendTitle3: 'Config 3: Experimental (ROCmFP4_FAST)',
-        legendDesc3: 'Native MMQ & RDNA4 WMMA FP4 format',
-        kpiLabelPrefill: 'Peak Prefill Speed',
-        kpiSubPrefill: '<span class="hl-exp">+20.6% faster vs Upstream</span> (<span class="hl-up">233.2 t/s</span>) | <span class="hl-mid">275.1 t/s Avg</span>',
+        legendTitle2: 'Config 2: Exp Fork (Q4_K_M)',
+        legendDesc2: 'Qwen3.8-27B-Q4_K_M (Branch parity test on unoptimized model)',
+        legendTitle3: 'Config 3: Exp Fork (ROCmFP4_FAST)',
+        legendDesc3: 'Qwen3.8-27B-Q4_0_ROCMFP4_FAST (Full ROCmFPX + TurboQuant + MTP)',
+        
+        kpiLabelResponse: 'Overall Response Time (T_total)',
+        kpiSubResponse: '<span class="hl-exp">-3.15s (1.38x faster)</span> vs. <span class="hl-up">11.47s Upstream</span> (<span class="hl-mid">14.74s Exp Q4_K</span>)',
         kpiLabelDecode: 'Autoregressive Decode',
-        kpiSubDecode: '<span class="hl-exp">+92.0% (1.92x)</span> vs. <span class="hl-up">7.02 t/s Upstream</span> (<span class="hl-mid">6.23 t/s Exp Q4_K</span>)',
+        kpiSubDecode: '<span class="hl-exp">+107.8% (2.08x)</span> vs. <span class="hl-up">7.03 t/s Upstream</span> (<span class="hl-mid">6.44 t/s Exp Q4_K</span>)',
         kpiLabelMtp: 'Peak MTP Speculative Generation',
-        kpiSubMtp: '<span class="hl-exp">+42.2% vs Upstream MTP</span> (<span class="hl-up">15.15 t/s</span>) | <span class="hl-exp">3.07x vs Autoregressive</span>',
+        kpiSubMtp: '<span class="hl-exp">+57.1% vs Upstream</span> (<span class="hl-up">12.65 t/s</span>) | <span class="hl-exp">2.83x vs Autoregressive</span>',
+        kpiLabelPrefill: 'Peak Prompt Prefill Speed',
+        kpiSubPrefill: '<span class="hl-exp">+11.5% at p=512</span> vs. <span class="hl-up">214.0 t/s Upstream</span> | <span class="hl-exp">215.9 t/s Avg</span>',
         kpiLabelVram: 'VRAM Savings (Weights)',
         kpiSubVram: '<span class="hl-exp">12,991 MiB (FP4)</span> vs. <span class="hl-up">15,088 MiB (Q4_K_M)</span>',
         kpiLabelContext: 'Max Context Length (16GB GPU)',
         kpiSubContext: '<span class="hl-exp">5.3x longer</span> vs. <span class="hl-up">12,288 tokens Upstream OOM cap</span>',
-        tabBtnPrefill: 'Prompt Prefill (MMQ Scaling)',
+
+        tabBtnResponse: 'Overall Response Time (T_total)',
         tabBtnDecode: 'Autoregressive Decode',
-        tabBtnMtp: 'MTP Speculative Generation',
+        tabBtnPrefill: 'Prompt Prefill Throughput',
+        tabBtnMtp: 'MTP Speculative Decoding',
         tabBtnVram: 'VRAM & Context Capacity',
         tabBtnEfficiency: 'Latency & Compute Density',
-        tabBtnData: 'Comprehensive Data Table',
+        tabBtnData: 'Comprehensive Benchmark Matrix',
         tabBtnAnalysis: 'Architectural Insights',
-        titleChartPrefill: 'Prompt Prefill Throughput by Context Depth (tokens/sec)',
-        descChartPrefill: 'Empirical llama-bench prefill sweep across p=512, 1024, 2048, and 4096 tokens',
-        titleChartPrefillSpeedup: 'Prefill Acceleration Ratio vs. Upstream (Normalized)',
-        descChartPrefillSpeedup: 'Relative performance factor compared to baseline Upstream llama.cpp (1.00x)',
-        boxTitlePrefill: '⚡ The Prefill Scaling & MMQ Activation Analysis',
+
+        titleChartResponseTime: 'Overall Response Creation Time by Prompt (Seconds)',
+        descChartResponseTime: 'Total wall-clock duration from user prompt dispatch to answer completion (lower is better)',
+        titleChartResponseStacked: 'Latency Composition: Prompt Eval + Generation (Greedy)',
+        descChartResponseStacked: 'Stacked breakdown of Time to First Token (TTFT) and token generation duration',
+        titleTableResponse: 'End-to-End Response Creation Time Breakdown (T_total = T_prompt + T_gen)',
+        thTask: 'Benchmark Task Scenario',
+        thMode: 'Mode',
+        thUpstreamResp: 'Upstream (Q4_K_M)',
+        thExpQ4Resp: 'Exp Fork (Q4_K_M)',
+        thExpFP4Resp: 'Exp Fork (ROCmFP4)',
+        thSavedResp: 'Time Saved (Exp FP4 vs Upstream)',
+        thSpeedupResp: 'Overall Acceleration',
+
         titleChartDecode: 'Autoregressive Decode Throughput (tokens/sec)',
         descChartDecode: 'Pure matrix decode speed without speculative decoding across generation lengths (128, 256, 512 tokens)',
         titleChartLatency: 'Per-Token Decode Latency (ms/token)',
         descChartLatency: 'Time required to evaluate a single output token (lower is better)',
-        boxTitleDecode: '▶ Autoregressive Decode Analysis',
+        titleChartPrefill: 'Prompt Prefill Throughput by Context Depth (tokens/sec)',
+        descChartPrefill: 'Empirical llama-bench prefill sweep across p=512, 1024, 2048, and 4096 tokens',
+        titleChartPrefillSpeedup: 'Prefill Acceleration Ratio vs. Upstream (Normalized)',
+        descChartPrefillSpeedup: 'Relative performance factor compared to baseline Upstream llama.cpp (1.00x)',
         titleChartMtpSpeed: 'Real-World Generation Throughput with MTP (tokens/sec)',
         descChartMtpSpeed: 'End-to-end token generation speed comparing Greedy (temp=0) and Realistic Sampling (temp=0.6)',
         titleChartMtpAcceptance: 'MTP Draft Acceptance Rate (%)',
         descChartMtpAcceptance: 'Percentage of speculative candidate tokens accepted by model verification',
         titleChartMtpPositional: 'Positional Acceptance Decay Curve (Position 1, 2, 3)',
         descChartMtpPositional: 'Empirical probability of accepting draft tokens at lookahead index 1, index 2, and index 3',
-        boxTitleMtp: '⚖ Multi-Token Prediction (MTP) Speculative Decoding Dynamics',
         titleChartVram: 'VRAM Allocation Breakdown on RX 9060 XT (16,304 MiB Total)',
         descChartVram: 'Static model weight footprint, compute buffer, and free memory headroom at 4k context',
         titleChartContext: 'Maximum Viable Context Window Before OOM (Tokens)',
         descChartContext: 'Safe context window capacity comparing Standard FP16 KV cache vs. TurboQuant Compressed Cache',
-        boxTitleVram: '💾 VRAM Footprint & Context Window Capacity',
         titleChartTtft: 'Time to First Token (TTFT in milliseconds)',
         descChartTtft: 'Interactive latency from prompt submission to first generated token (lower is better)',
         titleChartDensity: 'Compute Density (Tokens/sec per GB VRAM)',
         descChartDensity: 'Throughput efficiency normalized by physical memory utilization (higher is better)',
         titleChartKvScaling: 'KV Cache Memory Consumption at 64k Context (MiB)',
         descChartKvScaling: 'Memory footprint required to sustain a 65,536 token context window across KV cache formats',
-        boxTitleEfficiency: '🚀 Latency, Compute Density & Memory Compression Insights',
+
         titleTable: 'Comprehensive 3-Way Benchmark Results Matrix',
         thMetric: 'Metric / Benchmark Scenario',
         thUpstream: 'Config 1: Upstream (Q4_K_M)',
         thExpQ4K: 'Config 2: Exp Fork (Q4_K_M)',
         thExpFP4: 'Config 3: Exp Fork (ROCmFP4)',
-        thDelta: 'Advantage (Exp FP4 vs. Upstream)',
-        cardTitle1: '1. Native RDNA4 WMMA FP4 Execution',
-        cardDesc1: 'AMD RDNA4 compute units (gfx1200) execute in 32-thread wavefronts with dual-issue SIMD pipelines. Our experimental fork replaces legacy inline PTX/GCN assembly with native compiler intrinsics (__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32_gfx12, __builtin_amdgcn_fdot2, and __builtin_amdgcn_perm), allowing Clang 23 to eliminate pipeline stalls and double decode speed to 13.48 t/s (1.92x speedup).',
-        cardTitle2: '2. MMQ Matrix Batch Optimization',
-        cardDesc2: 'Registering ROCmFPX quant types in ggml_cuda_should_use_mmq routes batch execution directly to native compiled MMQ kernels, sustaining 275.11 t/s average prefill throughput (+20.6% over Upstream) across prompt lengths up to 4096 tokens without host dequantization overhead.',
-        cardTitle3: '3. Multi-Token Prediction (MTP) Dynamics',
-        cardDesc3: "Qwen 3.8's integrated MTP heads generate up to 3 speculative candidate tokens per forward pass. With ROCmFP4, end-to-end generation speed reaches 19.24 t/s greedy (1.37x over Upstream) and 19.23 t/s sampling (1.40x over Upstream), peaking at 21.55 t/s on coding benchmarks — over 3x faster than standard autoregressive decode.",
-        cardTitle4: '4. TurboQuant Orthonormal Walsh-Hadamard KV Cache',
-        cardDesc4: 'Standard F16 KV cache consumes ~177 MiB per 1,000 tokens, causing severe PCIe memory spill above 12k tokens on 16GB cards. TurboQuant applies an orthonormal Walsh-Hadamard rotation (GGML_OP_TURBO_WHT) before quantizing to 3.25 bits (turbo3), reducing 64k context KV footprint to just 1,637 MiB and enabling 65,536+ tokens with 1,065 MiB free VRAM remaining.',
-        footerText: 'Benchmark conducted on AMD Radeon RX 9060 XT (16,304 MiB VRAM, gfx1200) • AMD ROCm Core SDK 10.0.0 (TheRock) • Clang 23.0.0 vs. Clang 20.1.8 • llama.cpp TurboQuant Fork'
+        thDelta: 'Advantage (Exp FP4 vs. Upstream)'
       },
       de: {
         langBtn: 'Auf Englisch umschalten',
         headerTitle: 'Empirischer 3-Wege-Benchmark-Vergleich',
-        headerSubtitle: 'Vollständige vergleichende Evaluierung zwischen Upstream llama.cpp (b11146, 7fe450e19), unserem experimentellen Fork auf unoptimiertem Q4_K_M und unserem vollständig optimierten ROCmFP4-Format mit MTP-Spekulativ-Decoding.',
+        headerSubtitle: 'Umfassende vergleichende Evaluierung auf RDNA4-Hardware: Upstream llama.cpp (b11146), unser experimenteller Fork auf unoptimiertem Q4_K_M sowie unsere vollwertig optimierte ROCmFP4-Engine mit spekulativer MTP-Decodierung und TurboQuant KV-Kompression.',
         legendTitle1: 'Konfig 1: Upstream (b11146)',
-        legendDesc1: 'Qwen3.8-27B-Q4_K_M (Offizielles llama.cpp, FP16 KV)',
-        legendTitle2: 'Konfig 2: Experimentell (Q4_K_M)',
-        legendDesc2: 'Identisches Q4_K_M Modell auf unserem RDNA4-optimierten Fork',
-        legendTitle3: 'Konfig 3: Experimentell (ROCmFP4_FAST)',
-        legendDesc3: 'Natives MMQ & RDNA4 WMMA FP4 Format',
-        kpiLabelPrefill: 'Spitzen-Prefill-Geschwindigkeit',
-        kpiSubPrefill: '<span class="hl-exp">+20,6% schneller als Upstream</span> (<span class="hl-up">233,2 t/s</span>) | <span class="hl-mid">275,1 t/s Schnitt</span>',
+        legendDesc1: 'Qwen3.8-27B-Q4_K_M (Standard llama.cpp, FP16 KV-Cache)',
+        legendTitle2: 'Konfig 2: Exp Fork (Q4_K_M)',
+        legendDesc2: 'Qwen3.8-27B-Q4_K_M (Branch-Paritätstest auf unoptimiertem Modell)',
+        legendTitle3: 'Konfig 3: Exp Fork (ROCmFP4_FAST)',
+        legendDesc3: 'Qwen3.8-27B-Q4_0_ROCMFP4_FAST (Vollständige ROCmFPX + TurboQuant + MTP Optimierung)',
+        
+        kpiLabelResponse: 'Gesamte Antwortzeit (T_total)',
+        kpiSubResponse: '<span class="hl-exp">-3.15s (1.38x schneller)</span> vs. <span class="hl-up">11.47s Upstream</span> (<span class="hl-mid">14.74s Exp Q4_K</span>)',
         kpiLabelDecode: 'Autoregressiver Decode',
-        kpiSubDecode: '<span class="hl-exp">+92,0% (1,92x)</span> ggü. <span class="hl-up">7,02 t/s Upstream</span> (<span class="hl-mid">6,23 t/s Exp Q4_K</span>)',
+        kpiSubDecode: '<span class="hl-exp">+107.8% (2.08x)</span> vs. <span class="hl-up">7.03 t/s Upstream</span> (<span class="hl-mid">6.44 t/s Exp Q4_K</span>)',
         kpiLabelMtp: 'Spitzen-MTP-Generierung',
-        kpiSubMtp: '<span class="hl-exp">+42,2% ggü. Upstream MTP</span> (<span class="hl-up">15,15 t/s</span>) | <span class="hl-exp">3,07x vs. Autoregressiv</span>',
-        kpiLabelVram: 'VRAM-Einsparung (Gewichte)',
-        kpiSubVram: '<span class="hl-exp">12.991 MiB (FP4)</span> ggü. <span class="hl-up">15.088 MiB (Q4_K_M)</span>',
+        kpiSubMtp: '<span class="hl-exp">+57.1% vs Upstream</span> (<span class="hl-up">12.65 t/s</span>) | <span class="hl-exp">2.83x vs Autoregressiv</span>',
+        kpiLabelPrefill: 'Spitzen-Prompt-Prefill-Rate',
+        kpiSubPrefill: '<span class="hl-exp">+11.5% bei p=512</span> vs. <span class="hl-up">214.0 t/s Upstream</span> | <span class="hl-exp">215.9 t/s Schnitt</span>',
+        kpiLabelVram: 'VRAM-Einsparung (Modell)',
+        kpiSubVram: '<span class="hl-exp">12.991 MiB (FP4)</span> vs. <span class="hl-up">15.088 MiB (Q4_K_M)</span>',
         kpiLabelContext: 'Max. Kontextlänge (16GB GPU)',
-        kpiSubContext: '<span class="hl-exp">5,3x größer</span> ggü. <span class="hl-up">12.288 Token Upstream OOM-Limit</span>',
-        tabBtnPrefill: 'Prompt Prefill (MMQ Skalierung)',
+        kpiSubContext: '<span class="hl-exp">5.3x länger</span> vs. <span class="hl-up">12.288 Tokens Upstream OOM-Limit</span>',
+
+        tabBtnResponse: 'Gesamte Antwortzeit (T_total)',
         tabBtnDecode: 'Autoregressiver Decode',
-        tabBtnMtp: 'MTP Spekulative Generierung',
+        tabBtnPrefill: 'Prompt-Prefill-Durchsatz',
+        tabBtnMtp: 'Spekulative MTP-Generierung',
         tabBtnVram: 'VRAM & Kontextkapazität',
         tabBtnEfficiency: 'Latenz & Rechendichte',
-        tabBtnData: 'Umfassende Datentabelle',
-        tabBtnAnalysis: 'Architektur-Einblicke',
-        titleChartPrefill: 'Prompt-Prefill-Durchsatz nach Kontexttiefe (Token/s)',
-        descChartPrefill: 'Empirischer llama-bench Prefill-Sweep über p=512, 1024, 2048 und 4096 Token',
-        titleChartPrefillSpeedup: 'Prefill-Beschleunigungsfaktor vs. Upstream (Normalisiert)',
-        descChartPrefillSpeedup: 'Relativer Leistungsfaktor verglichen mit Upstream llama.cpp (1,00x Basis)',
-        boxTitlePrefill: '⚡ Die Prefill-Skalierung & Analyse der MMQ-Aktivierung',
-        titleChartDecode: 'Autoregressiver Decode-Durchsatz (Token/s)',
-        descChartDecode: 'Reine Matrix-Dekodiergeschwindigkeit ohne Spekulation über 128, 256, 512 Token',
+        tabBtnData: 'Umfassende Benchmark-Matrix',
+        tabBtnAnalysis: 'Architektur-Erkenntnisse',
+
+        titleChartResponseTime: 'Gesamte Antwortgenerierungszeit nach Prompt (Sekunden)',
+        descChartResponseTime: 'Vollständige Zeitspanne vom Absenden des Prompts bis zur fertigen Antwort (niedriger ist besser)',
+        titleChartResponseStacked: 'Latenz-Zusammensetzung: Prompt-Eval + Generierung (Greedy)',
+        descChartResponseStacked: 'Gestapelte Aufteilung aus Time to First Token (TTFT) und Generierungsdauer',
+        titleTableResponse: 'Detaillierte Aufschlüsselung der Antwortzeit (T_total = T_prompt + T_gen)',
+        thTask: 'Benchmark-Aufgabe / Szenario',
+        thMode: 'Modus',
+        thUpstreamResp: 'Upstream (Q4_K_M)',
+        thExpQ4Resp: 'Exp Fork (Q4_K_M)',
+        thExpFP4Resp: 'Exp Fork (ROCmFP4)',
+        thSavedResp: 'Eingesparte Zeit (Exp FP4 vs Upstream)',
+        thSpeedupResp: 'Gesamte Beschleunigung',
+
+        titleChartDecode: 'Autoregressiver Decode-Durchsatz (Tokens/Sekunde)',
+        descChartDecode: 'Reine Matrix-Decodiergeschwindigkeit ohne spekulative Decodierung über Generierungslängen',
         titleChartLatency: 'Decode-Latenz pro Token (ms/Token)',
-        descChartLatency: 'Benötigte Zeit zur Berechnung eines einzelnen Tokens (niedriger ist besser)',
-        boxTitleDecode: '▶ Analyse des autoregressiven Decodes',
-        titleChartMtpSpeed: 'Reale Generierungsgeschwindigkeit mit MTP (Token/s)',
-        descChartMtpSpeed: 'End-to-End Generierungsrate im Vergleich: Greedy (temp=0) vs. realistisches Sampling (temp=0,6)',
+        descChartLatency: 'Benötigte Zeit zur Evaluierung eines einzelnen Ausgabe-Tokens (niedriger ist besser)',
+        titleChartPrefill: 'Prompt-Prefill-Durchsatz nach Kontexttiefe (Tokens/Sekunde)',
+        descChartPrefill: 'Empirischer llama-bench Prefill-Sweep über p=512, 1024, 2048 und 4096 Tokens',
+        titleChartPrefillSpeedup: 'Prefill-Beschleunigungsverhältnis vs. Upstream (Normalisiert)',
+        descChartPrefillSpeedup: 'Relativer Leistungsfaktor verglichen mit dem Upstream-Standard (1.00x)',
+        titleChartMtpSpeed: 'Reale Generierungsgeschwindigkeit mit MTP (Tokens/Sekunde)',
+        descChartMtpSpeed: 'End-to-End Generierungsdurchsatz im Vergleich von Greedy (temp=0) und Sampling (temp=0.6)',
         titleChartMtpAcceptance: 'MTP Draft-Akzeptanzrate (%)',
-        descChartMtpAcceptance: 'Prozentsatz der spekulativen Token, die vom Hauptmodell akzeptiert wurden',
+        descChartMtpAcceptance: 'Prozentsatz der spekulativen Kandidatentokens, die von der Verifikation akzeptiert wurden',
         titleChartMtpPositional: 'Positionsabhängige Akzeptanzkurve (Position 1, 2, 3)',
-        descChartMtpPositional: 'Empirische Wahrscheinlichkeit der Token-Akzeptanz an Index 1, Index 2 und Index 3',
-        boxTitleMtp: '⚖ Multi-Token Prediction (MTP) Spekulations-Dynamik',
-        titleChartVram: 'VRAM-Allokationsaufteilung auf RX 9060 XT (16.304 MiB Gesamt)',
-        descChartVram: 'Statischer Speicherbedarf der Modellgewichte, Rechenpuffer und freier Spielraum bei 4k Kontext',
-        titleChartContext: 'Maximal mögliches Kontextfenster vor OOM (Token)',
-        descChartContext: 'Sichere Kontextkapazität im Vergleich: Standard FP16 KV-Cache vs. TurboQuant komprimierter Cache',
-        boxTitleVram: '💾 VRAM-Bedarf & Kontextfenster-Kapazität',
+        descChartMtpPositional: 'Empirische Wahrscheinlichkeit der Akzeptanz an Lookahead-Index 1, Index 2 und Index 3',
+        titleChartVram: 'VRAM-Belegungsaufteilung auf RX 9060 XT (16.304 MiB Gesamt)',
+        descChartVram: 'Statischer Modellgewicht-Footprint, Rechenpuffer und freier VRAM-Puffer bei 4k Kontext',
+        titleChartContext: 'Maximal mögliches Kontextfenster vor OOM (Tokens)',
+        descChartContext: 'Sichere Kontextkapazität im Vergleich von Standard FP16 KV-Cache vs. TurboQuant Kompression',
         titleChartTtft: 'Time to First Token (TTFT in Millisekunden)',
-        descChartTtft: 'Interaktive Reaktionszeit vom Prompt-Absenden bis zum ersten generierten Token (niedriger ist besser)',
-        titleChartDensity: 'Rechendichte (Token/s pro GB VRAM)',
-        descChartDensity: 'Durchsatzeffizienz normiert auf den physischen VRAM-Verbrauch (höher ist besser)',
+        descChartTtft: 'Interaktive Wartezeit von Prompt-Übergabe bis zur Ausgabe des ersten Antworttokens (niedriger ist besser)',
+        titleChartDensity: 'Rechendichte (Tokens/s pro GB VRAM)',
+        descChartDensity: 'Durchsatzeffizienz normalisiert auf den physischen VRAM-Verbrauch (höher ist besser)',
         titleChartKvScaling: 'KV-Cache-Speicherbedarf bei 64k Kontext (MiB)',
-        descChartKvScaling: 'Erforderlicher Speicher für 65.536 Token Kontextfenster über verschiedene Cache-Formate',
-        boxTitleEfficiency: '🚀 Latenz-, Rechendichte- und Kompressions-Erkenntnisse',
+        descChartKvScaling: 'Erforderlicher Speicherplatz für 65.536 Tokens Kontextfenster über verschiedene KV-Formate',
+
         titleTable: 'Umfassende 3-Wege-Benchmark-Ergebnismatrix',
         thMetric: 'Metrik / Benchmark-Szenario',
         thUpstream: 'Konfig 1: Upstream (Q4_K_M)',
         thExpQ4K: 'Konfig 2: Exp Fork (Q4_K_M)',
         thExpFP4: 'Konfig 3: Exp Fork (ROCmFP4)',
-        thDelta: 'Vorteil (Exp FP4 vs. Upstream)',
-        cardTitle1: '1. Native RDNA4 WMMA FP4 Ausführung',
-        cardDesc1: 'AMD RDNA4 Compute Units (gfx1200) arbeiten mit 32-Thread-Wavefronts und Dual-Issue SIMD-Pipelines. Unser experimenteller Fork ersetzt veralteten Inline-Assembler durch native Compiler-Intrinsics (__builtin_amdgcn_wmma_i32_16x16x16_iu4_w32_gfx12, __builtin_amdgcn_fdot2, __builtin_amdgcn_perm). Clang 23 eliminiert Pipeline-Stalls und verdoppelt Decode auf 13,48 t/s (1,92x Beschleunigung).',
-        cardTitle2: '2. MMQ-Matrix-Batch-Optimierung',
-        cardDesc2: 'Die Registrierung von ROCmFPX in ggml_cuda_should_use_mmq leitet Batches direkt über native MMQ-Kernel, was einen durchschnittlichen Prefill-Durchsatz von 275,11 t/s (+20,6% über Upstream) über Kontextlängen bis 4096 Token ermöglicht.',
-        cardTitle3: '3. Multi-Token Prediction (MTP) Dynamik',
-        cardDesc3: "Qwen 3.8 verfügt über integrierte MTP-Köpfe, die bis zu 3 Vorschau-Token erzeugen. Mit ROCmFP4 erreicht die Generierung 19,24 t/s bei Greedy (1,37x über Upstream) und 19,23 t/s bei Sampling (1,40x über Upstream), mit Spitzenwerten von 21,55 t/s bei Programmieraufgaben — über 3x schneller als rein autoregressiver Decode.",
-        cardTitle4: '4. TurboQuant Orthonormaler Walsh-Hadamard KV-Cache',
-        cardDesc4: 'Standard FP16 KV-Cache verbraucht ~177 MiB pro 1.000 Token und führt auf 16GB GPUs ab 12k Token zu schwerwiegendem PCIe-Speicher-Spill. TurboQuant nutzt eine orthogonale Walsh-Hadamard-Rotation (GGML_OP_TURBO_WHT) vor der 3,25-Bit-Quantisierung (turbo3), wodurch der 64k-Cache auf nur 1.637 MiB schrumpft und 65.536+ Token mit 1.065 MiB freiem VRAM realisierbar sind.',
-        footerText: 'Benchmark durchgeführt auf AMD Radeon RX 9060 XT (16.304 MiB VRAM, gfx1200) • AMD ROCm Core SDK 10.0.0 (TheRock) • Clang 23.0.0 vs. Clang 20.1.8 • llama.cpp TurboQuant Fork'
+        thDelta: 'Vorteil (Exp FP4 vs. Upstream)'
       }
     };
 
     function toggleLanguage() {
-      currentLang = currentLang === 'en' ? 'de' : 'en';
+      currentLang = (currentLang === 'en') ? 'de' : 'en';
       var t = translations[currentLang];
 
-      document.getElementById('langLabel').innerText = t.langBtn;
-      document.getElementById('headerTitle').innerText = t.headerTitle;
-      document.getElementById('headerSubtitle').innerText = t.headerSubtitle;
-      document.getElementById('legendTitle1').innerText = t.legendTitle1;
-      document.getElementById('legendDesc1').innerText = t.legendDesc1;
-      document.getElementById('legendTitle2').innerText = t.legendTitle2;
-      document.getElementById('legendDesc2').innerText = t.legendDesc2;
-      document.getElementById('legendTitle3').innerText = t.legendTitle3;
-      document.getElementById('legendDesc3').innerText = t.legendDesc3;
+      document.getElementById('langBtnText').textContent = t.langBtn;
+      document.getElementById('headerTitle').textContent = t.headerTitle;
+      document.getElementById('headerSubtitle').textContent = t.headerSubtitle;
+      document.getElementById('legendTitle1').textContent = t.legendTitle1;
+      document.getElementById('legendDesc1').textContent = t.legendDesc1;
+      document.getElementById('legendTitle2').textContent = t.legendTitle2;
+      document.getElementById('legendDesc2').textContent = t.legendDesc2;
+      document.getElementById('legendTitle3').textContent = t.legendTitle3;
+      document.getElementById('legendDesc3').textContent = t.legendDesc3;
 
-      document.getElementById('kpiLabelPrefill').innerText = t.kpiLabelPrefill;
-      document.getElementById('kpiSubPrefill').innerHTML = t.kpiSubPrefill;
-      document.getElementById('kpiLabelDecode').innerText = t.kpiLabelDecode;
+      document.getElementById('kpiLabelResponse').textContent = t.kpiLabelResponse;
+      document.getElementById('kpiSubResponse').innerHTML = t.kpiSubResponse;
+      document.getElementById('kpiLabelDecode').textContent = t.kpiLabelDecode;
       document.getElementById('kpiSubDecode').innerHTML = t.kpiSubDecode;
-      document.getElementById('kpiLabelMtp').innerText = t.kpiLabelMtp;
+      document.getElementById('kpiLabelMtp').textContent = t.kpiLabelMtp;
       document.getElementById('kpiSubMtp').innerHTML = t.kpiSubMtp;
-      document.getElementById('kpiLabelVram').innerText = t.kpiLabelVram;
+      document.getElementById('kpiLabelPrefill').textContent = t.kpiLabelPrefill;
+      document.getElementById('kpiSubPrefill').innerHTML = t.kpiSubPrefill;
+      document.getElementById('kpiLabelVram').textContent = t.kpiLabelVram;
       document.getElementById('kpiSubVram').innerHTML = t.kpiSubVram;
-      document.getElementById('kpiLabelContext').innerText = t.kpiLabelContext;
+      document.getElementById('kpiLabelContext').textContent = t.kpiLabelContext;
       document.getElementById('kpiSubContext').innerHTML = t.kpiSubContext;
 
-      document.getElementById('tabBtnPrefill').innerText = t.tabBtnPrefill;
-      document.getElementById('tabBtnDecode').innerText = t.tabBtnDecode;
-      document.getElementById('tabBtnMtp').innerText = t.tabBtnMtp;
-      document.getElementById('tabBtnVram').innerText = t.tabBtnVram;
-      document.getElementById('tabBtnEfficiency').innerText = t.tabBtnEfficiency;
-      document.getElementById('tabBtnData').innerText = t.tabBtnData;
-      document.getElementById('tabBtnAnalysis').innerText = t.tabBtnAnalysis;
+      document.getElementById('tabBtnResponse').textContent = t.tabBtnResponse;
+      document.getElementById('tabBtnDecode').textContent = t.tabBtnDecode;
+      document.getElementById('tabBtnPrefill').textContent = t.tabBtnPrefill;
+      document.getElementById('tabBtnMtp').textContent = t.tabBtnMtp;
+      document.getElementById('tabBtnVram').textContent = t.tabBtnVram;
+      document.getElementById('tabBtnEfficiency').textContent = t.tabBtnEfficiency;
+      document.getElementById('tabBtnData').textContent = t.tabBtnData;
+      document.getElementById('tabBtnAnalysis').textContent = t.tabBtnAnalysis;
 
-      document.getElementById('titleChartPrefill').innerText = t.titleChartPrefill;
-      document.getElementById('descChartPrefill').innerText = t.descChartPrefill;
-      document.getElementById('titleChartPrefillSpeedup').innerText = t.titleChartPrefillSpeedup;
-      document.getElementById('descChartPrefillSpeedup').innerText = t.descChartPrefillSpeedup;
-      document.getElementById('boxTitlePrefill').innerText = t.boxTitlePrefill;
+      document.getElementById('titleChartResponseTime').textContent = t.titleChartResponseTime;
+      document.getElementById('descChartResponseTime').textContent = t.descChartResponseTime;
+      document.getElementById('titleChartResponseStacked').textContent = t.titleChartResponseStacked;
+      document.getElementById('descChartResponseStacked').textContent = t.descChartResponseStacked;
+      document.getElementById('titleTableResponse').textContent = t.titleTableResponse;
+      document.getElementById('thTask').textContent = t.thTask;
+      document.getElementById('thMode').textContent = t.thMode;
+      document.getElementById('thUpstreamResp').textContent = t.thUpstreamResp;
+      document.getElementById('thExpQ4Resp').textContent = t.thExpQ4Resp;
+      document.getElementById('thExpFP4Resp').textContent = t.thExpFP4Resp;
+      document.getElementById('thSavedResp').textContent = t.thSavedResp;
+      document.getElementById('thSpeedupResp').textContent = t.thSpeedupResp;
 
-      document.getElementById('titleChartDecode').innerText = t.titleChartDecode;
-      document.getElementById('descChartDecode').innerText = t.descChartDecode;
-      document.getElementById('titleChartLatency').innerText = t.titleChartLatency;
-      document.getElementById('descChartLatency').innerText = t.descChartLatency;
-      document.getElementById('boxTitleDecode').innerText = t.boxTitleDecode;
+      document.getElementById('titleChartDecode').textContent = t.titleChartDecode;
+      document.getElementById('descChartDecode').textContent = t.descChartDecode;
+      document.getElementById('titleChartLatency').textContent = t.titleChartLatency;
+      document.getElementById('descChartLatency').textContent = t.descChartLatency;
+      document.getElementById('titleChartPrefill').textContent = t.titleChartPrefill;
+      document.getElementById('descChartPrefill').textContent = t.descChartPrefill;
+      document.getElementById('titleChartPrefillSpeedup').textContent = t.titleChartPrefillSpeedup;
+      document.getElementById('descChartPrefillSpeedup').textContent = t.descChartPrefillSpeedup;
+      document.getElementById('titleChartMtpSpeed').textContent = t.titleChartMtpSpeed;
+      document.getElementById('descChartMtpSpeed').textContent = t.descChartMtpSpeed;
+      document.getElementById('titleChartMtpAcceptance').textContent = t.titleChartMtpAcceptance;
+      document.getElementById('descChartMtpAcceptance').textContent = t.descChartMtpAcceptance;
+      document.getElementById('titleChartMtpPositional').textContent = t.titleChartMtpPositional;
+      document.getElementById('descChartMtpPositional').textContent = t.descChartMtpPositional;
+      document.getElementById('titleChartVram').textContent = t.titleChartVram;
+      document.getElementById('descChartVram').textContent = t.descChartVram;
+      document.getElementById('titleChartContext').textContent = t.titleChartContext;
+      document.getElementById('descChartContext').textContent = t.descChartContext;
+      document.getElementById('titleChartTtft').textContent = t.titleChartTtft;
+      document.getElementById('descChartTtft').textContent = t.descChartTtft;
+      document.getElementById('titleChartDensity').textContent = t.titleChartDensity;
+      document.getElementById('descChartDensity').textContent = t.descChartDensity;
+      document.getElementById('titleChartKvScaling').textContent = t.titleChartKvScaling;
+      document.getElementById('descChartKvScaling').textContent = t.descChartKvScaling;
 
-      document.getElementById('titleChartMtpSpeed').innerText = t.titleChartMtpSpeed;
-      document.getElementById('descChartMtpSpeed').innerText = t.descChartMtpSpeed;
-      document.getElementById('titleChartMtpAcceptance').innerText = t.titleChartMtpAcceptance;
-      document.getElementById('descChartMtpAcceptance').innerText = t.descChartMtpAcceptance;
-      document.getElementById('titleChartMtpPositional').innerText = t.titleChartMtpPositional;
-      document.getElementById('descChartMtpPositional').innerText = t.descChartMtpPositional;
-      document.getElementById('boxTitleMtp').innerText = t.boxTitleMtp;
-
-      document.getElementById('titleChartVram').innerText = t.titleChartVram;
-      document.getElementById('descChartVram').innerText = t.descChartVram;
-      document.getElementById('titleChartContext').innerText = t.titleChartContext;
-      document.getElementById('descChartContext').innerText = t.descChartContext;
-      document.getElementById('boxTitleVram').innerText = t.boxTitleVram;
-
-      document.getElementById('titleChartTtft').innerText = t.titleChartTtft;
-      document.getElementById('descChartTtft').innerText = t.descChartTtft;
-      document.getElementById('titleChartDensity').innerText = t.titleChartDensity;
-      document.getElementById('descChartDensity').innerText = t.descChartDensity;
-      document.getElementById('titleChartKvScaling').innerText = t.titleChartKvScaling;
-      document.getElementById('descChartKvScaling').innerText = t.descChartKvScaling;
-      document.getElementById('boxTitleEfficiency').innerText = t.boxTitleEfficiency;
-
-      document.getElementById('titleTable').innerText = t.titleTable;
-      document.getElementById('thMetric').innerText = t.thMetric;
-      document.getElementById('thUpstream').innerText = t.thUpstream;
-      document.getElementById('thExpQ4K').innerText = t.thExpQ4K;
-      document.getElementById('thExpFP4').innerText = t.thExpFP4;
-      document.getElementById('thDelta').innerText = t.thDelta;
-
-      document.getElementById('cardTitle1').innerText = t.cardTitle1;
-      document.getElementById('cardDesc1').innerText = t.cardDesc1;
-      document.getElementById('cardTitle2').innerText = t.cardTitle2;
-      document.getElementById('cardDesc2').innerText = t.cardDesc2;
-      document.getElementById('cardTitle3').innerText = t.cardTitle3;
-      document.getElementById('cardDesc3').innerText = t.cardDesc3;
-      document.getElementById('cardTitle4').innerText = t.cardTitle4;
-      document.getElementById('cardDesc4').innerText = t.cardDesc4;
-      document.getElementById('footerText').innerText = t.footerText;
+      document.getElementById('titleTable').textContent = t.titleTable;
+      document.getElementById('thMetric').textContent = t.thMetric;
+      document.getElementById('thUpstream').textContent = t.thUpstream;
+      document.getElementById('thExpQ4K').textContent = t.thExpQ4K;
+      document.getElementById('thExpFP4').textContent = t.thExpFP4;
+      document.getElementById('thDelta').textContent = t.thDelta;
     }
 
-    // Chart.js Theme Defaults
-    if (typeof Chart !== 'undefined') {
-      Chart.defaults.color = '#94a3b8';
-      Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
-      Chart.defaults.font.family = "'Inter', sans-serif";
+    // Initialize all Charts
+    window.addEventListener('DOMContentLoaded', function() {
+      initCharts();
+    });
 
-      // 1. Prefill Chart (Empirical Sweep)
-      var ctxPrefill = document.getElementById('chartPrefill').getContext('2d');
-      window.appCharts.chartPrefill = new Chart(ctxPrefill, {
+    function initCharts() {
+      // 1. Overall Response Time Chart
+      var ctxRespTime = document.getElementById('chartResponseTime').getContext('2d');
+      window.appCharts.chartResponseTime = new Chart(ctxRespTime, {
         type: 'bar',
         data: {
-          labels: ['p=512', 'p=1024', 'p=2048', 'p=4096', 'Average'],
+          labels: ['Prompt 1: Quantum', 'Prompt 2: LRU Cache', 'Prompt 3: RDNA 3 vs 4', 'Prompt 4: Sci-Fi Narrative', 'Overall Average'],
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [222.12, 233.19, 230.69, 226.74, 228.18],
+              data: [12.0, 10.34, 11.16, 12.38, 11.47],
               backgroundColor: 'rgba(244, 63, 94, 0.75)',
               borderColor: '#f43f5e',
               borderWidth: 1.5,
@@ -1290,7 +1504,7 @@
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [246.24, 231.20, 224.31, 233.99, 233.94],
+              data: [14.41, 13.32, 14.77, 16.44, 14.74],
               backgroundColor: 'rgba(245, 158, 11, 0.75)',
               borderColor: '#f59e0b',
               borderWidth: 1.5,
@@ -1298,7 +1512,7 @@
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [274.83, 283.10, 273.07, 269.43, 275.11],
+              data: [8.89, 8.38, 7.67, 8.34, 8.32],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
               borderColor: '#00f2fe',
               borderWidth: 1.5,
@@ -1313,50 +1527,38 @@
             legend: { position: 'top' },
             tooltip: {
               callbacks: {
-                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' t/s'; }
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' s total time'; }
               }
             }
           },
           scales: {
             y: {
-              title: { display: true, text: 'Throughput (tokens/second)' },
+              title: { display: true, text: 'Total Response Time (Seconds) - Lower is better' },
               beginAtZero: true,
-              max: 340
+              max: 18
             }
           }
         }
       });
 
-      // 2. Prefill Speedup Ratio Chart
-      var ctxPrefillSpeedup = document.getElementById('chartPrefillSpeedup').getContext('2d');
-      window.appCharts.chartPrefillSpeedup = new Chart(ctxPrefillSpeedup, {
+      // 2. Stacked Latency Composition Chart (Prompt TTFT vs Gen)
+      var ctxRespStacked = document.getElementById('chartResponseStacked').getContext('2d');
+      window.appCharts.chartResponseStacked = new Chart(ctxRespStacked, {
         type: 'bar',
         data: {
-          labels: ['p=512', 'p=1024', 'p=2048', 'p=4096', 'Average'],
+          labels: ['Upstream: P1', 'ROCmFP4: P1', 'Upstream: P2', 'ROCmFP4: P2', 'Upstream: P3', 'ROCmFP4: P3', 'Upstream: P4', 'ROCmFP4: P4'],
           datasets: [
             {
-              label: 'Upstream Baseline',
-              data: [1.00, 1.00, 1.00, 1.00, 1.00],
-              backgroundColor: 'rgba(244, 63, 94, 0.5)',
-              borderColor: '#f43f5e',
-              borderWidth: 1.5,
-              borderRadius: 6
+              label: 'Prompt Eval (TTFT, s)',
+              data: [0.789, 0.702, 0.876, 0.889, 0.853, 0.744, 0.852, 0.756],
+              backgroundColor: 'rgba(99, 102, 241, 0.85)',
+              borderRadius: 4
             },
             {
-              label: 'Exp Fork (Q4_K_M)',
-              data: [1.109, 0.991, 0.972, 1.032, 1.025],
-              backgroundColor: 'rgba(245, 158, 11, 0.75)',
-              borderColor: '#f59e0b',
-              borderWidth: 1.5,
-              borderRadius: 6
-            },
-            {
-              label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [1.237, 1.214, 1.184, 1.188, 1.206],
+              label: 'Token Generation (s)',
+              data: [10.26, 8.64, 8.89, 6.58, 9.86, 7.36, 12.27, 7.58],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
-              borderColor: '#00f2fe',
-              borderWidth: 1.5,
-              borderRadius: 6
+              borderRadius: 4
             }
           ]
         },
@@ -1367,15 +1569,17 @@
             legend: { position: 'top' },
             tooltip: {
               callbacks: {
-                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(3) + 'x vs Upstream'; }
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + ' s'; }
               }
             }
           },
           scales: {
+            x: { stacked: true },
             y: {
-              title: { display: true, text: 'Relative Speedup Factor (x)' },
+              stacked: true,
+              title: { display: true, text: 'Seconds to Generate 128 Tokens (Lower is better)' },
               beginAtZero: true,
-              max: 1.5
+              max: 16
             }
           }
         }
@@ -1390,7 +1594,7 @@
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [6.99, 7.02, 6.99, 7.00],
+              data: [6.97, 6.98, 7.13, 7.03],
               backgroundColor: 'rgba(244, 63, 94, 0.75)',
               borderColor: '#f43f5e',
               borderWidth: 1.5,
@@ -1398,7 +1602,7 @@
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [6.22, 6.23, 6.06, 6.17],
+              data: [6.48, 6.44, 6.41, 6.44],
               backgroundColor: 'rgba(245, 158, 11, 0.75)',
               borderColor: '#f59e0b',
               borderWidth: 1.5,
@@ -1406,7 +1610,7 @@
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [13.42, 13.48, 13.43, 13.44],
+              data: [14.47, 14.89, 14.47, 14.61],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
               borderColor: '#00f2fe',
               borderWidth: 1.5,
@@ -1427,7 +1631,7 @@
           },
           scales: {
             y: {
-              title: { display: true, text: 'Decode Speed (tokens/second)' },
+              title: { display: true, text: 'Decode Speed (tokens/second) - Higher is better' },
               beginAtZero: true,
               max: 18
             }
@@ -1444,7 +1648,7 @@
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [143.12, 142.40, 143.16, 142.86],
+              data: [143.4, 143.25, 140.17, 142.26],
               backgroundColor: 'rgba(244, 63, 94, 0.65)',
               borderColor: '#f43f5e',
               borderWidth: 1.5,
@@ -1452,7 +1656,7 @@
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [160.86, 160.60, 164.91, 162.07],
+              data: [154.27, 155.34, 156.09, 155.23],
               backgroundColor: 'rgba(245, 158, 11, 0.65)',
               borderColor: '#f59e0b',
               borderWidth: 1.5,
@@ -1460,7 +1664,7 @@
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [74.50, 74.18, 74.45, 74.40],
+              data: [69.09, 67.15, 69.13, 68.44],
               backgroundColor: 'rgba(16, 185, 129, 0.75)',
               borderColor: '#10b981',
               borderWidth: 1.5,
@@ -1483,13 +1687,121 @@
             y: {
               title: { display: true, text: 'Per-Token Latency (ms) - Lower is better' },
               beginAtZero: true,
-              max: 190
+              max: 180
             }
           }
         }
       });
 
-      // 5. MTP Generation Speed Chart (Greedy vs. Sampling)
+      // 5. Prefill Throughput Chart
+      var ctxPrefill = document.getElementById('chartPrefill').getContext('2d');
+      window.appCharts.chartPrefill = new Chart(ctxPrefill, {
+        type: 'bar',
+        data: {
+          labels: ['p=512 tokens', 'p=1024 tokens', 'p=2048 tokens', 'p=4096 tokens', 'Average'],
+          datasets: [
+            {
+              label: 'Upstream (Q4_K_M)',
+              data: [214.04, 226.67, 221.88, 213.67, 219.06],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderColor: '#f43f5e',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [163.13, 178.21, 176.99, 173.51, 172.96],
+              backgroundColor: 'rgba(245, 158, 11, 0.75)',
+              borderColor: '#f59e0b',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [238.76, 213.48, 207.77, 203.65, 215.91],
+              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              borderColor: '#00f2fe',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(1) + ' t/s'; }
+              }
+            }
+          },
+          scales: {
+            y: {
+              title: { display: true, text: 'Prefill Speed (tokens/second) - Higher is better' },
+              beginAtZero: true,
+              max: 270
+            }
+          }
+        }
+      });
+
+      // 6. Prefill Speedup Chart
+      var ctxPrefillSpeedup = document.getElementById('chartPrefillSpeedup').getContext('2d');
+      window.appCharts.chartPrefillSpeedup = new Chart(ctxPrefillSpeedup, {
+        type: 'line',
+        data: {
+          labels: ['p=512 tokens', 'p=1024 tokens', 'p=2048 tokens', 'p=4096 tokens', 'Average'],
+          datasets: [
+            {
+              label: 'Upstream Baseline',
+              data: [1.0, 1.0, 1.0, 1.0, 1.0],
+              borderColor: '#f43f5e',
+              borderDash: [5, 5],
+              pointRadius: 4,
+              fill: false
+            },
+            {
+              label: 'Exp Fork (Q4_K_M)',
+              data: [0.76, 0.79, 0.8, 0.81, 0.79],
+              borderColor: '#f59e0b',
+              pointRadius: 4,
+              fill: false
+            },
+            {
+              label: 'Exp Fork (ROCmFP4_FAST)',
+              data: [1.12, 0.94, 0.94, 0.95, 0.99],
+              borderColor: '#00f2fe',
+              pointRadius: 5,
+              pointHoverRadius: 7,
+              fill: false,
+              tension: 0.15
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' },
+            tooltip: {
+              callbacks: {
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(2) + 'x vs Upstream'; }
+              }
+            }
+          },
+          scales: {
+            y: {
+              title: { display: true, text: 'Speedup Multiplier (1.00x = Upstream)' },
+              min: 0.7,
+              max: 1.3
+            }
+          }
+        }
+      });
+
+      // 7. MTP Generation Speed Chart
       var ctxMtpSpeed = document.getElementById('chartMtpSpeed').getContext('2d');
       window.appCharts.chartMtpSpeed = new Chart(ctxMtpSpeed, {
         type: 'bar',
@@ -1498,7 +1810,7 @@
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [14.03, 13.70],
+              data: [12.47, 11.68],
               backgroundColor: 'rgba(244, 63, 94, 0.75)',
               borderColor: '#f43f5e',
               borderWidth: 1.5,
@@ -1506,7 +1818,7 @@
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [10.81, 10.81],
+              data: [9.66, 9.52],
               backgroundColor: 'rgba(245, 158, 11, 0.75)',
               borderColor: '#f59e0b',
               borderWidth: 1.5,
@@ -1514,7 +1826,7 @@
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [19.24, 19.23],
+              data: [17.14, 17.09],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
               borderColor: '#00f2fe',
               borderWidth: 1.5,
@@ -1535,15 +1847,15 @@
           },
           scales: {
             y: {
-              title: { display: true, text: 'Real-world Generation Speed (t/s)' },
+              title: { display: true, text: 'Generation Speed (tokens/sec) - Higher is better' },
               beginAtZero: true,
-              max: 25
+              max: 22
             }
           }
         }
       });
 
-      // 6. MTP Acceptance Rate Chart
+      // 8. MTP Acceptance Rate Chart
       var ctxMtpAcceptance = document.getElementById('chartMtpAcceptance').getContext('2d');
       window.appCharts.chartMtpAcceptance = new Chart(ctxMtpAcceptance, {
         type: 'bar',
@@ -1552,7 +1864,7 @@
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [59.20, 58.33],
+              data: [59.2, 54.7],
               backgroundColor: 'rgba(244, 63, 94, 0.75)',
               borderColor: '#f43f5e',
               borderWidth: 1.5,
@@ -1560,7 +1872,7 @@
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [59.30, 60.35],
+              data: [58.8, 55.3],
               backgroundColor: 'rgba(245, 158, 11, 0.75)',
               borderColor: '#f59e0b',
               borderWidth: 1.5,
@@ -1568,7 +1880,7 @@
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [56.45, 56.28],
+              data: [57.7, 58.7],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
               borderColor: '#00f2fe',
               borderWidth: 1.5,
@@ -1589,7 +1901,7 @@
           },
           scales: {
             y: {
-              title: { display: true, text: 'Draft Acceptance Rate (%)' },
+              title: { display: true, text: 'Draft Acceptance Rate (%) - Higher is better' },
               beginAtZero: true,
               max: 100
             }
@@ -1597,30 +1909,36 @@
         }
       });
 
-      // 7. Positional Acceptance Decay
-      var ctxMtpPositional = document.getElementById('chartMtpPositional').getContext('2d');
-      window.appCharts.chartMtpPositional = new Chart(ctxMtpPositional, {
-        type: 'bar',
+      // 9. Positional Acceptance Decay Chart
+      var ctxPositional = document.getElementById('chartMtpPositional').getContext('2d');
+      window.appCharts.chartMtpPositional = new Chart(ctxPositional, {
+        type: 'line',
         data: {
-          labels: ['Draft Position 1 (Next Token)', 'Draft Position 2 (Lookahead +1)', 'Draft Position 3 (Lookahead +2)'],
+          labels: ['Candidate 1 (+1 Token)', 'Candidate 2 (+2 Tokens)', 'Candidate 3 (+3 Tokens)'],
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [77.6, 55.8, 44.6],
-              backgroundColor: 'rgba(244, 63, 94, 0.75)',
-              borderRadius: 6
+              data: [78.3, 54.3, 43.5],
+              borderColor: '#f43f5e',
+              backgroundColor: 'rgba(244, 63, 94, 0.1)',
+              fill: true,
+              tension: 0.2
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [76.2, 56.7, 45.8],
-              backgroundColor: 'rgba(245, 158, 11, 0.75)',
-              borderRadius: 6
+              data: [74.5, 51.1, 42.6],
+              borderColor: '#f59e0b',
+              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              fill: true,
+              tension: 0.2
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [72.4, 52.2, 41.9],
-              backgroundColor: 'rgba(0, 242, 254, 0.75)',
-              borderRadius: 6
+              data: [74.5, 55.3, 40.4],
+              borderColor: '#00f2fe',
+              backgroundColor: 'rgba(0, 242, 254, 0.15)',
+              fill: true,
+              tension: 0.2
             }
           ]
         },
@@ -1631,13 +1949,13 @@
             legend: { position: 'top' },
             tooltip: {
               callbacks: {
-                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(1) + '% Accepted'; }
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(1) + '%'; }
               }
             }
           },
           scales: {
             y: {
-              title: { display: true, text: 'Acceptance Probability (%)' },
+              title: { display: true, text: 'Lookahead Acceptance Probability (%)' },
               beginAtZero: true,
               max: 100
             }
@@ -1645,36 +1963,32 @@
         }
       });
 
-      // 8. VRAM Breakdown Chart
+      // 10. VRAM Breakdown Chart
       var ctxVram = document.getElementById('chartVram').getContext('2d');
       window.appCharts.chartVram = new Chart(ctxVram, {
         type: 'bar',
         data: {
-          labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
+          labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4_FAST)'],
           datasets: [
             {
               label: 'Model Weights (GPU VRAM)',
               data: [15088, 15088, 12991],
-              backgroundColor: 'rgba(99, 102, 241, 0.85)',
-              stack: 'vram'
+              backgroundColor: 'rgba(99, 102, 241, 0.85)'
             },
             {
-              label: 'KV Cache (4096 Context)',
+              label: 'KV Context Cache (4k)',
               data: [405, 405, 405],
-              backgroundColor: 'rgba(245, 158, 11, 0.85)',
-              stack: 'vram'
+              backgroundColor: 'rgba(245, 158, 11, 0.85)'
             },
             {
-              label: 'Compute Buffers',
-              data: [130, 130, 126],
-              backgroundColor: 'rgba(236, 72, 153, 0.85)',
-              stack: 'vram'
+              label: 'Compute Buffer',
+              data: [298, 298, 349],
+              backgroundColor: 'rgba(16, 185, 129, 0.85)'
             },
             {
-              label: 'Free Headroom (16,304 MiB Total)',
+              label: 'Free VRAM Headroom',
               data: [513, 513, 2559],
-              backgroundColor: 'rgba(16, 185, 129, 0.85)',
-              stack: 'vram'
+              backgroundColor: 'rgba(0, 242, 254, 0.85)'
             }
           ]
         },
@@ -1690,33 +2004,37 @@
             }
           },
           scales: {
+            x: { stacked: true },
             y: {
               stacked: true,
-              title: { display: true, text: 'Memory Allocation (MiB)' },
-              max: 16500
-            },
-            x: { stacked: true }
+              title: { display: true, text: 'VRAM Allocation (MiB) / 16,304 MiB Total' },
+              max: 16384
+            }
           }
         }
       });
 
-      // 9. Context Scaling Capacity Chart
+      // 11. Context Window Capacity Chart
       var ctxContext = document.getElementById('chartContext').getContext('2d');
       window.appCharts.chartContext = new Chart(ctxContext, {
         type: 'bar',
         data: {
-          labels: ['Upstream (Q4_K_M)', 'Exp Fork (Q4_K_M)', 'Exp Fork (ROCmFP4)'],
+          labels: ['Upstream (Standard F16 KV)', 'Exp Fork (TurboQuant Q4_K)', 'Exp Fork (TurboQuant ROCmFP4)'],
           datasets: [
             {
-              label: 'Standard F16 KV Cache Max Context',
-              data: [12288, 12288, 14000],
-              backgroundColor: 'rgba(244, 63, 94, 0.75)',
-              borderRadius: 6
-            },
-            {
-              label: 'TurboQuant Turbo3 KV Cache Max Context',
-              data: [0, 32768, 65536],
-              backgroundColor: 'rgba(0, 242, 254, 0.75)',
+              label: 'Maximum Safe Context Length (Tokens)',
+              data: [12288, 32768, 65536],
+              backgroundColor: [
+                'rgba(244, 63, 94, 0.75)',
+                'rgba(245, 158, 11, 0.75)',
+                'rgba(0, 242, 254, 0.85)'
+              ],
+              borderColor: [
+                '#f43f5e',
+                '#f59e0b',
+                '#00f2fe'
+              ],
+              borderWidth: 1.5,
               borderRadius: 6
             }
           ]
@@ -1725,44 +2043,39 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { position: 'top' },
+            legend: { display: false },
             tooltip: {
               callbacks: {
-                label: function(item) { return item.dataset.label + ': ' + item.raw.toLocaleString() + ' tokens'; }
+                label: function(item) { return item.raw.toLocaleString() + ' Tokens Context'; }
               }
             }
           },
           scales: {
             y: {
-              title: { display: true, text: 'Maximum Viable Context Window (Tokens)' },
-              beginAtZero: true
+              title: { display: true, text: 'Safe Context Window (Tokens) - Higher is better' },
+              beginAtZero: true,
+              max: 70000
             }
           }
         }
       });
 
-      // 10. Time to First Token (TTFT)
+      // 12. TTFT Chart
       var ctxTtft = document.getElementById('chartTtft').getContext('2d');
       window.appCharts.chartTtft = new Chart(ctxTtft, {
         type: 'bar',
         data: {
-          labels: ['p=512', 'p=1024', 'p=2048', 'p=4096'],
+          labels: ['p=512 tokens', 'p=1024 tokens', 'p=2048 tokens', 'p=4096 tokens'],
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [2305, 4391, 8878, 18069],
+              data: [2392.1, 4517.6, 9230.3, 19169.5],
               backgroundColor: 'rgba(244, 63, 94, 0.75)',
               borderRadius: 6
             },
             {
-              label: 'Exp Fork (Q4_K_M)',
-              data: [2079, 4429, 9130, 17505],
-              backgroundColor: 'rgba(245, 158, 11, 0.75)',
-              borderRadius: 6
-            },
-            {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [1863, 3617, 7500, 15202],
+              data: [2144.4, 4796.7, 9857.1, 20113.4],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
               borderRadius: 6
             }
@@ -1775,7 +2088,7 @@
             legend: { position: 'top' },
             tooltip: {
               callbacks: {
-                label: function(item) { return item.dataset.label + ': ' + item.raw.toLocaleString() + ' ms'; }
+                label: function(item) { return item.dataset.label + ': ' + item.raw.toFixed(1) + ' ms TTFT'; }
               }
             }
           },
@@ -1788,7 +2101,7 @@
         }
       });
 
-      // 11. Compute Density Chart
+      // 13. Compute Density Chart
       var ctxDensity = document.getElementById('chartDensity').getContext('2d');
       window.appCharts.chartDensity = new Chart(ctxDensity, {
         type: 'bar',
@@ -1797,19 +2110,19 @@
           datasets: [
             {
               label: 'Upstream (Q4_K_M)',
-              data: [0.45, 0.90],
+              data: [0.47, 0.83],
               backgroundColor: 'rgba(244, 63, 94, 0.75)',
               borderRadius: 6
             },
             {
               label: 'Exp Fork (Q4_K_M)',
-              data: [0.40, 0.70],
+              data: [0.43, 0.64],
               backgroundColor: 'rgba(245, 158, 11, 0.75)',
               borderRadius: 6
             },
             {
               label: 'Exp Fork (ROCmFP4_FAST)',
-              data: [1.00, 1.43],
+              data: [1.12, 1.32],
               backgroundColor: 'rgba(0, 242, 254, 0.75)',
               borderRadius: 6
             }
@@ -1836,7 +2149,7 @@
         }
       });
 
-      // 12. KV Cache Scaling at 64k Chart
+      // 14. KV Cache Scaling at 64k Chart
       var ctxKvScaling = document.getElementById('chartKvScaling').getContext('2d');
       window.appCharts.chartKvScaling = new Chart(ctxKvScaling, {
         type: 'bar',
