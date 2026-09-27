@@ -11382,13 +11382,14 @@ void ggml_compute_forward_dsv4_hc_post(
 static const float turbo_wht_s1[128] = {-1,1,1,-1,-1,1,-1,1,-1,-1,1,1,1,1,1,1,1,-1,1,-1,1,-1,-1,1,1,1,-1,1,1,-1,-1,-1,-1,1,1,-1,1,1,-1,1,-1,1,1,-1,-1,1,-1,1,1,1,1,-1,-1,-1,-1,-1,1,-1,1,1,1,1,-1,1,-1,-1,1,-1,-1,-1,1,-1,-1,-1,1,-1,-1,-1,1,1,1,-1,-1,1,1,1,-1,-1,1,1,-1,1,1,-1,1,-1,-1,1,1,-1,1,-1,1,-1,1,1,1,1,-1,1,-1,1,1,-1,1,1,-1,-1,-1,-1,-1,1,1,-1,1,1,-1,1};
 static const float turbo_wht_s2[128] = {1,1,1,1,-1,1,1,-1,1,-1,-1,-1,1,-1,-1,-1,1,1,-1,-1,1,-1,1,-1,1,-1,-1,1,-1,1,1,1,1,1,-1,-1,-1,1,-1,-1,-1,-1,-1,-1,1,1,1,-1,1,-1,1,1,1,-1,-1,1,-1,-1,-1,-1,-1,-1,1,1,1,-1,1,-1,-1,-1,-1,1,-1,1,-1,1,-1,-1,1,1,-1,1,-1,1,1,-1,1,-1,-1,-1,-1,1,-1,-1,1,-1,1,-1,1,1,1,-1,-1,1,-1,1,-1,1,1,-1,-1,1,-1,1,-1,1,1,-1,1,-1,1,-1,-1,-1,-1,-1,1,-1};
 
-static void ggml_compute_forward_turbo_wht_f32(
+template <typename T>
+static void ggml_compute_forward_turbo_wht_impl(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
     const ggml_tensor * src = dst->src[0];
     const ggml_tensor * scale_tensor = dst->src[1];  // InnerQ scale_inv (may be NULL)
-    const float * src_data = (const float *) src->data;
-    float * dst_data = (float *) dst->data;
+    const T * src_data = (const T *) src->data;
+    T * dst_data = (T *) dst->data;
     const float * scale_inv = scale_tensor ? (const float *) scale_tensor->data : NULL;
 
     int direction;
@@ -11420,13 +11421,13 @@ static void ggml_compute_forward_turbo_wht_f32(
         const int64_t base        = head_idx * head_dim + grp_in_head * group_size;
 
         float x[128];  // max group_size
-        const float * in = src_data + base;
+        const T * in = src_data + base;
 
         // InnerQ forward: apply scale_inv BEFORE signs+WHT (for Q pre-rotation)
         if (direction == 0 && scale_inv != NULL) {
-            for (int i = 0; i < group_size; i++) x[i] = in[i] * scale_inv[i % group_size];
+            for (int i = 0; i < group_size; i++) x[i] = type_conversion_table<T>::to_f32(in[i]) * scale_inv[i % group_size];
         } else {
-            for (int i = 0; i < group_size; i++) x[i] = in[i];
+            for (int i = 0; i < group_size; i++) x[i] = type_conversion_table<T>::to_f32(in[i]);
         }
 
         // Apply first signs
@@ -11444,14 +11445,14 @@ static void ggml_compute_forward_turbo_wht_f32(
         }
 
         // Normalize + second signs
-        float * out = dst_data + base;
+        T * out = dst_data + base;
         for (int i = 0; i < group_size; i++) {
             float val = x[i] * inv_sqrt * s_second[i];
             // InnerQ inverse: apply scale_inv AFTER WHT+signs (for V un-rotation)
             if (direction == 1 && scale_inv != NULL) {
                 val *= scale_inv[i % group_size];
             }
-            out[i] = val;
+            out[i] = type_conversion_table<T>::from_f32(val);
         }
     }
 
@@ -11460,7 +11461,7 @@ static void ggml_compute_forward_turbo_wht_f32(
         const int64_t tail_offset = groups_per_head * group_size;
         for (int64_t h = 0; h < n_heads; h++) {
             const int64_t base = h * head_dim + tail_offset;
-            memcpy(dst_data + base, src_data + base, tail_size * sizeof(float));
+            memcpy(dst_data + base, src_data + base, tail_size * sizeof(T));
         }
     }
 }
@@ -11469,8 +11470,9 @@ void ggml_compute_forward_turbo_wht(
         const ggml_compute_params * params,
         ggml_tensor * dst) {
     switch (dst->src[0]->type) {
-        case GGML_TYPE_F32: ggml_compute_forward_turbo_wht_f32(params, dst); break;
-        default: GGML_ABORT("fatal error");
+        case GGML_TYPE_F32: ggml_compute_forward_turbo_wht_impl<float>(params, dst); break;
+        case GGML_TYPE_F16: ggml_compute_forward_turbo_wht_impl<ggml_fp16_t>(params, dst); break;
+        default: GGML_ABORT("turbo_wht: unsupported type %d", dst->src[0]->type);
     }
 }
 

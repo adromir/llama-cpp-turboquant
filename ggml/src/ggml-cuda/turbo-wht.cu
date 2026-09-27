@@ -1,5 +1,24 @@
 #include "turbo-quant.cuh"
 #include "turbo-wht.cuh"
+#include <type_traits>
+
+template <typename T>
+static __device__ __forceinline__ float to_float(T val) {
+    if constexpr (std::is_same<T, float>::value) {
+        return val;
+    } else {
+        return __half2float(val);
+    }
+}
+
+template <typename T>
+static __device__ __forceinline__ T from_float(float val) {
+    if constexpr (std::is_same<T, float>::value) {
+        return val;
+    } else {
+        return __float2half(val);
+    }
+}
 
 // ─── CUDA kernel ──────────────────────────────────────────────────────────────
 //
@@ -19,13 +38,13 @@
 // Q/V equalization. For forward (Q rotation): multiply BEFORE signs+WHT.
 // For inverse (V un-rotation): multiply AFTER WHT+signs.
 
-template <int direction, int group_size>
-static __global__ void k_turbo_wht_f32(const float * __restrict__ src,
-                                        float * __restrict__ dst,
-                                        const float * __restrict__ scale_inv,
-                                        int64_t n_groups,
-                                        int64_t head_dim,
-                                        int64_t groups_per_head) {
+template <int direction, int group_size, typename T>
+static __global__ void k_turbo_wht(const T * __restrict__ src,
+                                   T * __restrict__ dst,
+                                   const float * __restrict__ scale_inv,
+                                   int64_t n_groups,
+                                   int64_t head_dim,
+                                   int64_t groups_per_head) {
     static_assert(group_size == 128 || group_size == 64 || group_size == 32, "group_size must be 128, 64, or 32");
 
     const int64_t g = blockIdx.x;
@@ -42,7 +61,7 @@ static __global__ void k_turbo_wht_f32(const float * __restrict__ src,
     __shared__ float x[group_size];
 
     // Load from global memory
-    x[t] = src[base + t];
+    x[t] = to_float(src[base + t]);
     __syncthreads();
 
     // InnerQ forward: apply scale_inv BEFORE signs+WHT (for Q pre-rotation)
@@ -119,29 +138,29 @@ static __global__ void k_turbo_wht_f32(const float * __restrict__ src,
         result *= scale_inv[t % group_size];
     }
 
-    dst[base + t] = result;
+    dst[base + t] = from_float<T>(result);
 }
 
 // ─── Fast path: group_size == 128 ────────────────────────────────────────────
 //
-// One group per warp; lane t holds elements 4t..4t+3 as a float4. Stages h=1,2
+// One group per warp; lane t holds elements 4t..4t+3 as a float4 (or 4 halves). Stages h=1,2
 // then pair elements within the lane, and h=4..64 pair lane t with t^(h/4), so
 // shared memory and all barriers drop out.
 //
-// Bit-identical to k_turbo_wht_f32<direction, 128>: same stage order, same
+// Bit-identical to k_turbo_wht<direction, 128, T>: same stage order, same
 // pairing, same operand order, and a sign flip equals a multiply by -1.0f.
 
 static __device__ __forceinline__ float turbo_wht_sign_flip(float x, unsigned bit) {
     return __uint_as_float(__float_as_uint(x) ^ (bit << 31));
 }
 
-template <int direction, int warps_per_block>
-static __global__ void k_turbo_wht_f32_fast(const float * __restrict__ src,
-                                            float * __restrict__ dst,
-                                            const float * __restrict__ scale_inv,
-                                            int64_t n_groups,
-                                            int64_t head_dim,
-                                            int64_t groups_per_head) {
+template <int direction, int warps_per_block, typename T>
+static __global__ void k_turbo_wht_fast(const T * __restrict__ src,
+                                        T * __restrict__ dst,
+                                        const float * __restrict__ scale_inv,
+                                        int64_t n_groups,
+                                        int64_t head_dim,
+                                        int64_t groups_per_head) {
     const int warp = threadIdx.x >> 5;
     const int lane = threadIdx.x & 31;
 
@@ -154,7 +173,15 @@ static __global__ void k_turbo_wht_f32_fast(const float * __restrict__ src,
     const int64_t grp_in_head = g % groups_per_head;
     const int64_t base        = head_idx * head_dim + grp_in_head * 128;
 
-    float4 v = *((const float4 *) (src + base) + lane);
+    float4 v;
+    if constexpr (std::is_same<T, float>::value) {
+        v = *((const float4 *) (src + base) + lane);
+    } else {
+        const half2 * h2_src = (const half2 *) (src + base) + 2 * lane;
+        half2 h01 = h2_src[0];
+        half2 h23 = h2_src[1];
+        v = make_float4(__low2float(h01), __high2float(h01), __low2float(h23), __high2float(h23));
+    }
 
     // InnerQ forward: scale before signs+WHT, as in the original kernel.
     if (direction == 0 && scale_inv != nullptr) {
@@ -218,13 +245,20 @@ static __global__ void k_turbo_wht_f32_fast(const float * __restrict__ src,
         v.x *= s.x; v.y *= s.y; v.z *= s.z; v.w *= s.w;
     }
 
-    *((float4 *) (dst + base) + lane) = v;
+    if constexpr (std::is_same<T, float>::value) {
+        *((float4 *) (dst + base) + lane) = v;
+    } else {
+        half2 * h2_dst = (half2 *) (dst + base) + 2 * lane;
+        h2_dst[0] = make_half2(__float2half(v.x), __float2half(v.y));
+        h2_dst[1] = make_half2(__float2half(v.z), __float2half(v.w));
+    }
 }
 
 // ─── Simple copy kernel for tail elements (identity pass-through) ────────────
 
-static __global__ void k_turbo_wht_copy_tail(const float * __restrict__ src,
-                                              float * __restrict__ dst,
+template <typename T>
+static __global__ void k_turbo_wht_copy_tail(const T * __restrict__ src,
+                                              T * __restrict__ dst,
                                               int64_t n_heads,
                                               int64_t head_dim,
                                               int64_t tail_offset,
@@ -240,14 +274,10 @@ static __global__ void k_turbo_wht_copy_tail(const float * __restrict__ src,
 
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
-void ggml_cuda_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+template <typename T>
+static void launch_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src = dst->src[0];
     const ggml_tensor * scale_tensor = dst->src[1];  // InnerQ scale_inv (may be NULL)
-
-    GGML_ASSERT(src->type == GGML_TYPE_F32);
-    GGML_ASSERT(dst->type == GGML_TYPE_F32);
-    GGML_ASSERT(ggml_is_contiguous(src));
-    GGML_ASSERT(ggml_is_contiguous(dst));
 
     int direction;
     int group_size;
@@ -262,8 +292,8 @@ void ggml_cuda_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int     tail_size       = (int)(head_dim % group_size);
     const int64_t n_groups        = groups_per_head * n_heads;
 
-    const float * src_ptr = (const float *) src->data;
-    float       * dst_ptr = (float       *) dst->data;
+    const T * src_ptr = (const T *) src->data;
+    T       * dst_ptr = (T       *) dst->data;
     const float * scale_inv_ptr = scale_tensor ? (const float *) scale_tensor->data : nullptr;
 
     cudaStream_t stream = ctx.stream();
@@ -273,10 +303,11 @@ void ggml_cuda_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         // The fast kernel covers the shape the KV cache uses; other group sizes
         // keep the original. Note scale_inv is non-null on every ordinary run:
         // the KV cache allocates the InnerQ tensor unconditionally.
+        constexpr size_t vec_align = std::is_same<T, float>::value ? 16 : 8;
         const bool fast_ok =
             group_size == 128 &&
-            (head_dim % 4) == 0 &&                                          // float4 indexing
-            (((uintptr_t) src_ptr | (uintptr_t) dst_ptr) % 16) == 0 &&      // float4 alignment
+            (head_dim % 4) == 0 &&
+            (((uintptr_t) src_ptr | (uintptr_t) dst_ptr) % vec_align) == 0 &&
             (scale_inv_ptr == nullptr || ((uintptr_t) scale_inv_ptr % 16) == 0);
 
         dim3 blocks(n_groups);
@@ -286,30 +317,30 @@ void ggml_cuda_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
             constexpr int warps = 4;
             const int64_t n_blocks = (n_groups + warps - 1) / warps;
             if (direction == 0) {
-                k_turbo_wht_f32_fast<0, warps><<<(int) n_blocks, warps*32, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht_fast<0, warps, T><<<(int) n_blocks, warps*32, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             } else {
-                k_turbo_wht_f32_fast<1, warps><<<(int) n_blocks, warps*32, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht_fast<1, warps, T><<<(int) n_blocks, warps*32, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             }
         } else if (group_size == 128) {
             dim3 threads(128);
             if (direction == 0) {
-                k_turbo_wht_f32<0, 128><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht<0, 128, T><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             } else {
-                k_turbo_wht_f32<1, 128><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht<1, 128, T><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             }
         } else if (group_size == 64) {
             dim3 threads(64);
             if (direction == 0) {
-                k_turbo_wht_f32<0, 64><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht<0, 64, T><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             } else {
-                k_turbo_wht_f32<1, 64><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht<1, 64, T><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             }
         } else {
             dim3 threads(32);
             if (direction == 0) {
-                k_turbo_wht_f32<0, 32><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht<0, 32, T><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             } else {
-                k_turbo_wht_f32<1, 32><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
+                k_turbo_wht<1, 32, T><<<blocks, threads, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             }
         }
     }
@@ -320,7 +351,23 @@ void ggml_cuda_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
         const int64_t total_tail = n_heads * tail_size;
         const int block_sz = 256;
         const int n_blocks = (int)((total_tail + block_sz - 1) / block_sz);
-        k_turbo_wht_copy_tail<<<n_blocks, block_sz, 0, stream>>>(
+        k_turbo_wht_copy_tail<T><<<n_blocks, block_sz, 0, stream>>>(
             src_ptr, dst_ptr, n_heads, head_dim, groups_per_head * group_size, tail_size);
+    }
+}
+
+void ggml_cuda_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    const ggml_tensor * src = dst->src[0];
+
+    GGML_ASSERT(src->type == dst->type);
+    GGML_ASSERT(ggml_is_contiguous(src));
+    GGML_ASSERT(ggml_is_contiguous(dst));
+
+    if (src->type == GGML_TYPE_F32) {
+        launch_turbo_wht<float>(ctx, dst);
+    } else if (src->type == GGML_TYPE_F16) {
+        launch_turbo_wht<half>(ctx, dst);
+    } else {
+        GGML_ABORT("turbo_wht: unsupported type %s", ggml_type_name(src->type));
     }
 }

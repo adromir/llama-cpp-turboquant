@@ -2636,23 +2636,24 @@ struct test_set_rows : public test_case {
 
 // GGML_OP_TURBO_WHT
 struct test_turbo_wht : public test_case {
+    const ggml_type type;
     const int64_t head_dim;
     const int64_t n_heads;
     const int direction; // 0=forward, 1=inverse
 
     std::string vars() override {
-        return VARS_TO_STR3(head_dim, n_heads, direction);
+        return VARS_TO_STR4(type, head_dim, n_heads, direction);
     }
 
     double max_nmse_err() override {
-        return 1e-5; // f32 SIMD reduction order varies across GPU backends
+        return type == GGML_TYPE_F16 ? 1e-3 : 1e-5; // f16 has lower precision
     }
 
-    test_turbo_wht(int64_t head_dim = 128, int64_t n_heads = 4, int direction = 0)
-        : head_dim(head_dim), n_heads(n_heads), direction(direction) {}
+    test_turbo_wht(int64_t head_dim = 128, int64_t n_heads = 4, int direction = 0, ggml_type type = GGML_TYPE_F32)
+        : type(type), head_dim(head_dim), n_heads(n_heads), direction(direction) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        ggml_tensor * a = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, head_dim, n_heads);
+        ggml_tensor * a = ggml_new_tensor_2d(ctx, type, head_dim, n_heads);
         ggml_set_param(a);
         ggml_set_name(a, "a");
         ggml_tensor * out = ggml_turbo_wht(ctx, a, direction, 0, nullptr);
@@ -2663,22 +2664,23 @@ struct test_turbo_wht : public test_case {
 
 // GGML_OP_TURBO_WHT round-trip: forward then inverse should recover the original
 struct test_turbo_wht_roundtrip : public test_case {
+    const ggml_type type;
     const int64_t head_dim;
     const int64_t n_heads;
 
     std::string vars() override {
-        return VARS_TO_STR2(head_dim, n_heads);
+        return VARS_TO_STR3(type, head_dim, n_heads);
     }
 
     double max_nmse_err() override {
-        return 1e-5; // two WHT passes compound the f32 reduction error
+        return type == GGML_TYPE_F16 ? 1e-3 : 1e-5;
     }
 
-    test_turbo_wht_roundtrip(int64_t head_dim = 128, int64_t n_heads = 4)
-        : head_dim(head_dim), n_heads(n_heads) {}
+    test_turbo_wht_roundtrip(int64_t head_dim = 128, int64_t n_heads = 4, ggml_type type = GGML_TYPE_F32)
+        : type(type), head_dim(head_dim), n_heads(n_heads) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        ggml_tensor * a = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, head_dim, n_heads);
+        ggml_tensor * a = ggml_new_tensor_2d(ctx, type, head_dim, n_heads);
         ggml_set_param(a);
         ggml_set_name(a, "a");
         // forward WHT (direction=0), then inverse WHT (direction=1)
@@ -9151,18 +9153,22 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_set_rows(GGML_TYPE_F16, GGML_TYPE_F16, GGML_TYPE_I32, { 1, 8, 1, 3 }, { 1, 1 }, 2, true));
 
     // TURBO_WHT tests
-    for (int dir : {0, 1}) {
-        for (int64_t hd : {128, 256, 512}) {
-            for (int64_t nh : {1, 4, 8}) {
-                test_cases.emplace_back(new test_turbo_wht(hd, nh, dir));
+    for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16}) {
+        for (int dir : {0, 1}) {
+            for (int64_t hd : {128, 256, 512}) {
+                for (int64_t nh : {1, 4, 8}) {
+                    test_cases.emplace_back(new test_turbo_wht(hd, nh, dir, type));
+                }
             }
         }
     }
 
     // TURBO_WHT round-trip tests (forward then inverse = identity)
-    for (int64_t hd : {128, 256, 512}) {
-        for (int64_t nh : {1, 4, 8}) {
-            test_cases.emplace_back(new test_turbo_wht_roundtrip(hd, nh));
+    for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16}) {
+        for (int64_t hd : {128, 256, 512}) {
+            for (int64_t nh : {1, 4, 8}) {
+                test_cases.emplace_back(new test_turbo_wht_roundtrip(hd, nh, type));
+            }
         }
     }
 
