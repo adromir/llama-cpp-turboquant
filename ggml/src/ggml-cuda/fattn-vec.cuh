@@ -586,11 +586,12 @@ static __global__ void flash_attn_ext_vec(
                     const uint8_t qs_byte  = ggml_cuda_ldcs(&vb[ib].qs[j0 / 4]);
                     const uint8_t sgn_byte = ggml_cuda_ldcs(&vb[ib].signs[j0 / 8]);
                     const int     shift_s  = j0 % 8;
+                    const uint32_t sgn_bits = (uint32_t)sgn_byte >> shift_s;
 
-                    const uint8_t idx0 = ((qs_byte >> 0) & 0x3) | (((sgn_byte >> (shift_s+0)) & 0x1) << 2);
-                    const uint8_t idx1 = ((qs_byte >> 2) & 0x3) | (((sgn_byte >> (shift_s+1)) & 0x1) << 2);
-                    const uint8_t idx2 = ((qs_byte >> 4) & 0x3) | (((sgn_byte >> (shift_s+2)) & 0x1) << 2);
-                    const uint8_t idx3 = ((qs_byte >> 6) & 0x3) | (((sgn_byte >> (shift_s+3)) & 0x1) << 2);
+                    const uint8_t idx0 = ((qs_byte >> 0) & 0x3) | (((sgn_bits >> 0) & 0x1) << 2);
+                    const uint8_t idx1 = ((qs_byte >> 2) & 0x3) | (((sgn_bits >> 1) & 0x1) << 2);
+                    const uint8_t idx2 = ((qs_byte >> 4) & 0x3) | (((sgn_bits >> 2) & 0x1) << 2);
+                    const uint8_t idx3 = ((qs_byte >> 6) & 0x3) | (((sgn_bits >> 3) & 0x1) << 2);
 
 #pragma unroll
                     for (int j = 0; j < ncols; ++j) {
@@ -652,13 +653,12 @@ static __global__ void flash_attn_ext_vec(
                         for (int c = 0; c < 16; ++c) { sc[c] = TURBO_CENTROIDS_4BIT[c] * norm; }
                     }
 
-                    const uint8_t qs_byte0 = ggml_cuda_ldcs(&vb[ib].qs[j0 / 2]);
-                    const uint8_t qs_byte1 = ggml_cuda_ldcs(&vb[ib].qs[j0 / 2 + 1]);
+                    const uint16_t qs_word = ggml_cuda_ldcs((const uint16_t *)&vb[ib].qs[j0 / 2]);
 
-                    const uint8_t idx0 = (qs_byte0 >> 0) & 0xF;
-                    const uint8_t idx1 = (qs_byte0 >> 4) & 0xF;
-                    const uint8_t idx2 = (qs_byte1 >> 0) & 0xF;
-                    const uint8_t idx3 = (qs_byte1 >> 4) & 0xF;
+                    const uint8_t idx0 = (qs_word >> 0) & 0xF;
+                    const uint8_t idx1 = (qs_word >> 4) & 0xF;
+                    const uint8_t idx2 = (qs_word >> 8) & 0xF;
+                    const uint8_t idx3 = (qs_word >> 12) & 0xF;
 
 #pragma unroll
                     for (int j = 0; j < ncols; ++j) {
