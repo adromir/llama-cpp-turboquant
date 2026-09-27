@@ -702,6 +702,29 @@ llama_kv_cache::llama_kv_cache(
 
             LLAMA_LOG_INFO("%s: TurboQuant rotation matrices initialized (128x128)\n", __func__);
         }
+
+        if (!hparams.no_alloc && ggml_backend_buffer_is_host(buf)) {
+            void * base = ggml_backend_buffer_get_base(buf);
+            size_t size = ggml_backend_buffer_get_size(buf);
+            if (base && size > 0 && std::find(registered_host_buffers.begin(), registered_host_buffers.end(), base) == registered_host_buffers.end()) {
+                for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+                    ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+                    if (ggml_backend_dev_type(dev) != GGML_BACKEND_DEVICE_TYPE_GPU) {
+                        continue;
+                    }
+                    ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+                    if (!reg) {
+                        continue;
+                    }
+                    auto reg_fn = (bool (*)(void *, size_t)) ggml_backend_reg_get_proc_address(reg, "ggml_backend_register_host_buffer");
+                    if (reg_fn && reg_fn(base, size)) {
+                        registered_host_buffers.push_back(base);
+                        break;
+                    }
+                }
+            }
+        }
+
         ctxs_bufs.emplace_back(std::move(ctx), buf);
     }
 
@@ -814,6 +837,29 @@ llama_kv_cache::llama_kv_cache(
 
     const char * LLAMA_KV_CACHE_DEBUG = getenv("LLAMA_KV_CACHE_DEBUG");
     debug = LLAMA_KV_CACHE_DEBUG ? atoi(LLAMA_KV_CACHE_DEBUG) : 0;
+}
+
+llama_kv_cache::~llama_kv_cache() {
+    if (!registered_host_buffers.empty()) {
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            if (ggml_backend_dev_type(dev) != GGML_BACKEND_DEVICE_TYPE_GPU) {
+                continue;
+            }
+            ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+            if (!reg) {
+                continue;
+            }
+            auto unreg_fn = (void (*)(void *)) ggml_backend_reg_get_proc_address(reg, "ggml_backend_unregister_host_buffer");
+            if (unreg_fn) {
+                for (void * ptr : registered_host_buffers) {
+                    unreg_fn(ptr);
+                }
+                break;
+            }
+        }
+        registered_host_buffers.clear();
+    }
 }
 
 void llama_kv_cache::clear(bool data) {

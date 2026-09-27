@@ -145,7 +145,7 @@ public:
                           void * kv_stream_phase_arena = nullptr,
                           size_t kv_stream_maximum_pool_bytes = 0);
 
-    ~llama_kv_cache() = default;
+    ~llama_kv_cache();
 
     //
     // llama_memory_i
@@ -396,6 +396,9 @@ private:
 
     // TurboQuant InnerQ: per-channel scale_inv for Q/V equalization (128 floats)
     ggml_tensor * turbo_innerq_scale_inv = nullptr;
+
+    // host-allocated KV buffers registered with GPU DMA engine
+    std::vector<void *> registered_host_buffers;
 
     // model layer id -> KV cache layer id
     std::unordered_map<int32_t, int32_t> map_layer_ids;
