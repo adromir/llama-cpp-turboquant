@@ -346,62 +346,98 @@ static __global__ void flash_attn_ext_vec(
                     // LUT scoring: 8 elements per iteration (2 qs bytes + 1 signs byte)
                     const block_turbo3_0 * K_turbo = (const block_turbo3_0 *)(K + i_KQ*nb11);
                     sum = 0.0f;
+                    float norm = 0.0f;
+                    int prev_ib = -1;
+                    float block_sum = 0.0f;
                     for (int d0 = 0; d0 < D; d0 += 8) {
                         const int ib = d0 / QK_TURBO3;
                         const int jj = d0 % QK_TURBO3;
-                        const float norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
-                        const uint8_t qs0 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4]);
-                        const uint8_t qs1 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4 + 1]);
+                        if (ib != prev_ib) {
+                            if (prev_ib >= 0) {
+                                sum += block_sum * norm;
+                            }
+                            prev_ib = ib;
+                            norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
+                            block_sum = 0.0f;
+                        }
+                        const uint16_t qs = ggml_cuda_ldcs((const uint16_t *)&K_turbo[ib].qs[jj / 4]);
                         const uint8_t sgn = ggml_cuda_ldcs(&K_turbo[ib].signs[jj / 8]);
-                        sum += (__half2float(turbo_lut[d0  ][((qs0>>0)&3)|((sgn>>0&1)<<2)]) +
-                                __half2float(turbo_lut[d0+1][((qs0>>2)&3)|((sgn>>1&1)<<2)]) +
-                                __half2float(turbo_lut[d0+2][((qs0>>4)&3)|((sgn>>2&1)<<2)]) +
-                                __half2float(turbo_lut[d0+3][((qs0>>6)&3)|((sgn>>3&1)<<2)]) +
-                                __half2float(turbo_lut[d0+4][((qs1>>0)&3)|((sgn>>4&1)<<2)]) +
-                                __half2float(turbo_lut[d0+5][((qs1>>2)&3)|((sgn>>5&1)<<2)]) +
-                                __half2float(turbo_lut[d0+6][((qs1>>4)&3)|((sgn>>6&1)<<2)]) +
-                                __half2float(turbo_lut[d0+7][((qs1>>6)&3)|((sgn>>7&1)<<2)])) * norm;
+                        const uint8_t qs0 = (uint8_t)(qs & 0xFF);
+                        const uint8_t qs1 = (uint8_t)(qs >> 8);
+                        block_sum += (__half2float(turbo_lut[d0  ][((qs0>>0)&3)|((sgn>>0&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+1][((qs0>>2)&3)|((sgn>>1&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+2][((qs0>>4)&3)|((sgn>>2&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+3][((qs0>>6)&3)|((sgn>>3&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+4][((qs1>>0)&3)|((sgn>>4&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+5][((qs1>>2)&3)|((sgn>>5&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+6][((qs1>>4)&3)|((sgn>>6&1)<<2)]) +
+                                      __half2float(turbo_lut[d0+7][((qs1>>6)&3)|((sgn>>7&1)<<2)]));
                     }
+                    sum += block_sum * norm;
                 } else if constexpr (n_centroids_lut > 0 && ncols == 1 && type_K == GGML_TYPE_TURBO2_0) {
                     // LUT scoring for turbo2: 8 elements per iteration (2 qs bytes, no signs)
                     const block_turbo2_0 * K_turbo = (const block_turbo2_0 *)(K + i_KQ*nb11);
                     sum = 0.0f;
+                    float norm = 0.0f;
+                    int prev_ib = -1;
+                    float block_sum = 0.0f;
                     for (int d0 = 0; d0 < D; d0 += 8) {
                         const int ib = d0 / QK_TURBO2;
                         const int jj = d0 % QK_TURBO2;
-                        const float norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
-                        const uint8_t qs0 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4]);
-                        const uint8_t qs1 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 4 + 1]);
-                        sum += (__half2float(turbo_lut[d0  ][(qs0>>0)&3]) +
-                                __half2float(turbo_lut[d0+1][(qs0>>2)&3]) +
-                                __half2float(turbo_lut[d0+2][(qs0>>4)&3]) +
-                                __half2float(turbo_lut[d0+3][(qs0>>6)&3]) +
-                                __half2float(turbo_lut[d0+4][(qs1>>0)&3]) +
-                                __half2float(turbo_lut[d0+5][(qs1>>2)&3]) +
-                                __half2float(turbo_lut[d0+6][(qs1>>4)&3]) +
-                                __half2float(turbo_lut[d0+7][(qs1>>6)&3])) * norm;
+                        if (ib != prev_ib) {
+                            if (prev_ib >= 0) {
+                                sum += block_sum * norm;
+                            }
+                            prev_ib = ib;
+                            norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
+                            block_sum = 0.0f;
+                        }
+                        const uint16_t qs = ggml_cuda_ldcs((const uint16_t *)&K_turbo[ib].qs[jj / 4]);
+                        const uint8_t qs0 = (uint8_t)(qs & 0xFF);
+                        const uint8_t qs1 = (uint8_t)(qs >> 8);
+                        block_sum += (__half2float(turbo_lut[d0  ][(qs0>>0)&3]) +
+                                      __half2float(turbo_lut[d0+1][(qs0>>2)&3]) +
+                                      __half2float(turbo_lut[d0+2][(qs0>>4)&3]) +
+                                      __half2float(turbo_lut[d0+3][(qs0>>6)&3]) +
+                                      __half2float(turbo_lut[d0+4][(qs1>>0)&3]) +
+                                      __half2float(turbo_lut[d0+5][(qs1>>2)&3]) +
+                                      __half2float(turbo_lut[d0+6][(qs1>>4)&3]) +
+                                      __half2float(turbo_lut[d0+7][(qs1>>6)&3]));
                     }
+                    sum += block_sum * norm;
                 } else if constexpr (n_centroids_lut > 0 && ncols == 1 && type_K == GGML_TYPE_TURBO4_0) {
                     // LUT scoring for turbo4: 8 elements per iteration (4 qs bytes, 4-bit nibbles)
                     const block_turbo4_0 * K_turbo = (const block_turbo4_0 *)(K + i_KQ*nb11);
                     sum = 0.0f;
+                    float norm = 0.0f;
+                    int prev_ib = -1;
+                    float block_sum = 0.0f;
                     for (int d0 = 0; d0 < D; d0 += 8) {
                         const int ib = d0 / QK_TURBO4;
                         const int jj = d0 % QK_TURBO4;
-                        const float norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
-                        const uint8_t qs0 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 0]);
-                        const uint8_t qs1 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 1]);
-                        const uint8_t qs2 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 2]);
-                        const uint8_t qs3 = ggml_cuda_ldcs(&K_turbo[ib].qs[jj / 2 + 3]);
-                        sum += (__half2float(turbo_lut[d0  ][(qs0 >> 0) & 0xF]) +
-                                __half2float(turbo_lut[d0+1][(qs0 >> 4) & 0xF]) +
-                                __half2float(turbo_lut[d0+2][(qs1 >> 0) & 0xF]) +
-                                __half2float(turbo_lut[d0+3][(qs1 >> 4) & 0xF]) +
-                                __half2float(turbo_lut[d0+4][(qs2 >> 0) & 0xF]) +
-                                __half2float(turbo_lut[d0+5][(qs2 >> 4) & 0xF]) +
-                                __half2float(turbo_lut[d0+6][(qs3 >> 0) & 0xF]) +
-                                __half2float(turbo_lut[d0+7][(qs3 >> 4) & 0xF])) * norm;
+                        if (ib != prev_ib) {
+                            if (prev_ib >= 0) {
+                                sum += block_sum * norm;
+                            }
+                            prev_ib = ib;
+                            norm = __half2float(ggml_cuda_ldcs(&K_turbo[ib].norm));
+                            block_sum = 0.0f;
+                        }
+                        const uint32_t qs = ggml_cuda_ldcs((const uint32_t *)&K_turbo[ib].qs[jj / 2]);
+                        const uint8_t qs0 = (uint8_t)(qs & 0xFF);
+                        const uint8_t qs1 = (uint8_t)((qs >> 8) & 0xFF);
+                        const uint8_t qs2 = (uint8_t)((qs >> 16) & 0xFF);
+                        const uint8_t qs3 = (uint8_t)(qs >> 24);
+                        block_sum += (__half2float(turbo_lut[d0  ][(qs0 >> 0) & 0xF]) +
+                                      __half2float(turbo_lut[d0+1][(qs0 >> 4) & 0xF]) +
+                                      __half2float(turbo_lut[d0+2][(qs1 >> 0) & 0xF]) +
+                                      __half2float(turbo_lut[d0+3][(qs1 >> 4) & 0xF]) +
+                                      __half2float(turbo_lut[d0+4][(qs2 >> 0) & 0xF]) +
+                                      __half2float(turbo_lut[d0+5][(qs2 >> 4) & 0xF]) +
+                                      __half2float(turbo_lut[d0+6][(qs3 >> 0) & 0xF]) +
+                                      __half2float(turbo_lut[d0+7][(qs3 >> 4) & 0xF]));
                     }
+                    sum += block_sum * norm;
                 } else {
                     sum = vec_dot_KQ(K + i_KQ*nb11, Q_reg[j], Q_i32[j], Q_ds[j]);
                     sum = warp_reduce_sum<nthreads_KQ>(sum);
@@ -542,13 +578,13 @@ static __global__ void flash_attn_ext_vec(
 
                     if (ib != prev_ib) {
                         prev_ib = ib;
-                        const float norm = __half2float(vb[ib].norm);
+                        const float norm = __half2float(ggml_cuda_ldcs(&vb[ib].norm));
 #pragma unroll
                         for (int c = 0; c < 8; ++c) { sc[c] = TURBO_CENTROIDS_3BIT[c] * norm; }
                     }
 
-                    const uint8_t qs_byte  = vb[ib].qs[j0 / 4];
-                    const uint8_t sgn_byte = vb[ib].signs[j0 / 8];
+                    const uint8_t qs_byte  = ggml_cuda_ldcs(&vb[ib].qs[j0 / 4]);
+                    const uint8_t sgn_byte = ggml_cuda_ldcs(&vb[ib].signs[j0 / 8]);
                     const int     shift_s  = j0 % 8;
 
                     const uint8_t idx0 = ((qs_byte >> 0) & 0x3) | (((sgn_byte >> (shift_s+0)) & 0x1) << 2);
@@ -577,12 +613,12 @@ static __global__ void flash_attn_ext_vec(
 
                     if (ib != prev_ib) {
                         prev_ib = ib;
-                        const float norm = __half2float(vb[ib].norm);
+                        const float norm = __half2float(ggml_cuda_ldcs(&vb[ib].norm));
 #pragma unroll
                         for (int c = 0; c < 4; ++c) { sc[c] = TURBO_CENTROIDS_2BIT[c] * norm; }
                     }
 
-                    const uint8_t qs_byte = vb[ib].qs[j0 / 4];
+                    const uint8_t qs_byte = ggml_cuda_ldcs(&vb[ib].qs[j0 / 4]);
 
                     const uint8_t idx0 = (qs_byte >> 0) & 0x3;
                     const uint8_t idx1 = (qs_byte >> 2) & 0x3;
@@ -611,13 +647,13 @@ static __global__ void flash_attn_ext_vec(
 
                     if (ib != prev_ib) {
                         prev_ib = ib;
-                        const float norm = __half2float(vb[ib].norm);
+                        const float norm = __half2float(ggml_cuda_ldcs(&vb[ib].norm));
 #pragma unroll
                         for (int c = 0; c < 16; ++c) { sc[c] = TURBO_CENTROIDS_4BIT[c] * norm; }
                     }
 
-                    const uint8_t qs_byte0 = vb[ib].qs[j0 / 2];
-                    const uint8_t qs_byte1 = vb[ib].qs[j0 / 2 + 1];
+                    const uint8_t qs_byte0 = ggml_cuda_ldcs(&vb[ib].qs[j0 / 2]);
+                    const uint8_t qs_byte1 = ggml_cuda_ldcs(&vb[ib].qs[j0 / 2 + 1]);
 
                     const uint8_t idx0 = (qs_byte0 >> 0) & 0xF;
                     const uint8_t idx1 = (qs_byte0 >> 4) & 0xF;
