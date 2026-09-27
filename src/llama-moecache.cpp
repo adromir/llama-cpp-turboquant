@@ -12,6 +12,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -65,6 +66,12 @@ struct moe_cache {
     std::vector<ggml_context *>         ctxs;
     std::vector<ggml_backend_buffer_t>  bufs;
     std::vector<ggml_backend_t>         backends;
+
+    struct pinned_host_buffer {
+        void * base = nullptr;
+        void (*unreg_fn)(void *) = nullptr;
+    };
+    std::vector<pinned_host_buffer> pinned_buffers;
 
     // async upload worker: slices are copied to the device off the decode
     // thread; the new table mapping is only published at a later step() once
@@ -310,6 +317,42 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx, 
                     ls.pub.il, ls.pub.up_src->name, ls.pub.up_src->nb[2]);
         }
 
+        // register host-resident expert buffers with the device for async DMA
+        std::set<void *> registered_host_bases;
+        for (auto & g : groups) {
+            ggml_backend_dev_t dev = ggml_backend_buft_get_device(g.first);
+            if (!dev) {
+                continue;
+            }
+            ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+            if (!reg) {
+                continue;
+            }
+            auto reg_fn = (bool (*)(void *, size_t)) ggml_backend_reg_get_proc_address(reg, "ggml_backend_register_host_buffer");
+            auto unreg_fn = (void (*)(void *)) ggml_backend_reg_get_proc_address(reg, "ggml_backend_unregister_host_buffer");
+            if (!reg_fn) {
+                continue;
+            }
+
+            for (const auto & c : g.second) {
+                const ggml_tensor * tensors[] = { c.l->ffn_up_exps, c.l->ffn_gate_exps, c.l->ffn_down_exps };
+                for (const auto * t : tensors) {
+                    if (!t || !t->buffer) {
+                        continue;
+                    }
+                    void * base = ggml_backend_buffer_get_base(t->buffer);
+                    size_t size = ggml_backend_buffer_get_size(t->buffer);
+                    if (base && size > 0 && registered_host_bases.insert(base).second) {
+                        if (reg_fn(base, size)) {
+                            mc->pinned_buffers.push_back({base, unreg_fn});
+                            LLAMA_LOG_INFO("%s: pinned %.1f MiB host memory for async DMA expert uploads\n",
+                                    __func__, size/1024.0/1024.0);
+                        }
+                    }
+                }
+            }
+        }
+
         try {
             mc->worker = std::thread([mc]() {
                 for (;;) {
@@ -337,6 +380,11 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx, 
             });
         } catch (const std::system_error & e) {
             LLAMA_LOG_WARN("%s: failed to create MoE cache worker: %s - cache disabled\n", __func__, e.what());
+            for (const auto & pb : mc->pinned_buffers) {
+                if (pb.unreg_fn) {
+                    pb.unreg_fn(pb.base);
+                }
+            }
             for (auto * backend : mc->backends) { ggml_backend_free(backend); }
             for (auto * buffer : mc->bufs) { ggml_backend_buffer_free(buffer); }
             for (auto * ctx : mc->ctxs) { ggml_free(ctx); }
@@ -363,6 +411,12 @@ void free_cache(moe_cache * mc) {
     }
     mc->wcv.notify_one();
     mc->worker.join();
+
+    for (const auto & pb : mc->pinned_buffers) {
+        if (pb.unreg_fn) {
+            pb.unreg_fn(pb.base);
+        }
+    }
 
     for (auto * backend : mc->backends) { ggml_backend_free(backend); }
     for (auto * buffer : mc->bufs) { ggml_backend_buffer_free(buffer); }
