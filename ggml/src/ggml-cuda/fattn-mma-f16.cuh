@@ -560,13 +560,16 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile(
                         if constexpr (swz) {
                             ggml_cuda_memcpy_streaming<16>((char *) tile_KV + ggml_cuda_fattn_smem_swizzle::bytes_rc<stride_tile>(i, k*h2_per_chunk), src);
                         } else {
-                            ggml_cuda_memcpy_streaming<16>(tile_KV + i*stride_tile + k*4, src);
+                            // Keep the typed store when the tile is not swizzled (every AMD target): the
+                            // byte-pointer form drops the half2 alignment and HIP then splits the 16-byte
+                            // shared-memory store (issue #47). The address is identical either way.
+                            ggml_cuda_memcpy_streaming<16>(tile_KV + i*stride_tile + k*h2_per_chunk, src);
                         }
                     } else {
                         if constexpr (swz) {
                             ggml_cuda_memcpy_1<16>((char *) tile_KV + ggml_cuda_fattn_smem_swizzle::bytes_rc<stride_tile>(i, k*h2_per_chunk), zero);
                         } else {
-                            ggml_cuda_memcpy_1<16>(tile_KV + i*stride_tile + k*4, zero);
+                            ggml_cuda_memcpy_1<16>(tile_KV + i*stride_tile + k*h2_per_chunk, zero);
                         }
                     }
                 }
