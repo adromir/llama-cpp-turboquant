@@ -1929,43 +1929,6 @@ static void ggml_compute_forward_mul_mat_id_impl(
     char * tiled_scratch = incr_ptr_aligned(&wdata_cur, ggml_tiled_wdata_size(nth, dst), 64);
     GGML_ASSERT(params->wsize >= (size_t)((char *) wdata_cur - (char *) params->wdata));
 
-    if (src1->type != vec_dot_type) {
-        char * wdata = params->wdata;
-
-        const size_t nbw0 = ggml_type_size(vec_dot_type);
-        const size_t nbw1 = ggml_row_size(vec_dot_type, ne10);
-        const size_t nbw2 = nbw1*ne11;
-        const size_t nbw3 = nbw2*ne12;
-
-        assert(params->wsize >= ne13*nbw3);
-        GGML_ASSERT(src1->type == GGML_TYPE_F32);
-
-#if 0
-        for (int64_t i13 = 0; i13 < ne13; ++i13) {
-            for (int64_t i12 = ith; i12 < ne12; i12 += nth) {
-                for (int64_t i11 = 0; i11 < ne11; ++i11) {
-                    from_float((float *)((char *) src1->data + i13*nb13 + i12*nb12 + i11*nb11),
-                               (void *)               (wdata + i13*nbw3 + i12*nbw2 + i11*nbw1),
-                               ne10);
-                }
-            }
-        }
-#else
-        for (int64_t i13 = 0; i13 < ne13; ++i13) {
-            for (int64_t i12 = 0; i12 < ne12; ++i12) {
-                for (int64_t i11 = 0; i11 < ne11; ++i11) {
-                    size_t bs = ggml_blck_size(vec_dot_type);
-                    int64_t ne10_block_start = (ith * ne10/bs) / nth;
-                    int64_t ne10_block_end   = ((ith + 1) * ne10/bs) / nth;
-                    from_float((float *)((char *) src1->data + i13*nb13 + i12*nb12 + i11*nb11 + ne10_block_start*bs*nb10),
-                               (void *)               (wdata + i13*nbw3 + i12*nbw2 + i11*nbw1 + ne10_block_start*nbw0),
-                               (ne10_block_end - ne10_block_start) * bs);
-                }
-            }
-        }
-#endif
-    }
-
     if (ith == 0) {
         // Provider table selected for this scheduler session (thread-local).
         const struct ggml_moe_cache_api moe_cache = ggml_moe_cache_active();
@@ -1998,6 +1961,25 @@ static void ggml_compute_forward_mul_mat_id_impl(
         // initialize matrix_row_counts
         memset(matrix_row_counts, 0, n_as*sizeof(int64_t));
 
+        // llama MoE expert cache: when src[3] is set it is an I32 table mapping
+        // expert id -> device cache slot, with op_params[0] holding the "not
+        // cached" dummy value. Cached ids are served by the device-side cache
+        // chain, so this op skips them and zeroes their dst rows instead.
+        const int32_t * moe_tbl   = NULL;
+        int32_t         moe_dummy = 0;
+        if (dst->src[3]) {
+            moe_tbl   = (const int32_t *) dst->src[3]->data;
+            moe_dummy = ggml_get_op_params_i32(dst, 0);
+        }
+
+        {
+            void * moe_obs_ud = NULL;
+            ggml_moe_obs_cb_t moe_obs_cb = ggml_get_moe_obs_callback(&moe_obs_ud);
+            if (moe_obs_cb && moe_tbl && strstr(src0->name, "ffn_gate_exps")) {
+                moe_obs_cb(src0, ids, moe_obs_ud);
+            }
+        }
+
         // group rows by src0 matrix
         for (int64_t iid1 = 0; iid1 < ids->ne[1]; ++iid1) {
             for (int id = 0; id < n_ids; ++id) {
@@ -2011,6 +1993,11 @@ static void ggml_compute_forward_mul_mat_id_impl(
                 const int32_t i02 = *(const int32_t *) ((const char *) ids->data + iid1*ids->nb[1] + id*ids->nb[0]);
 
                 assert(i02 >= 0 && i02 < n_as);
+
+                if (moe_tbl && moe_tbl[i02] != moe_dummy) {
+                    memset((char *) dst->data + id*nb1 + iid1*nb2, 0, ne0*sizeof(float));
+                    continue;
+                }
 
                 if (moe_cache_node && moe_cache_slot_idx[iid1*n_ids + id] >= 0) {
                     const int64_t i11 = id % ne11;
@@ -2055,6 +2042,49 @@ static void ggml_compute_forward_mul_mat_id_impl(
     }
 
     ggml_barrier(params->threadpool);
+
+    bool has_uncached = false;
+    for (int cur_a = 0; cur_a < n_as; ++cur_a) {
+        if (matrix_row_counts[cur_a] != 0) {
+            has_uncached = true;
+            break;
+        }
+    }
+    if (!has_uncached) {
+        if (ith == 0 && moe_cache_node) {
+            const struct ggml_moe_cache_api moe_cache = ggml_moe_cache_active();
+            moe_cache.collect(moe_cache_node, moe_cache_n_hits, moe_cache_rows, ne0);
+            moe_cache.end(moe_cache_node);
+        }
+        return;
+    }
+
+    if (src1->type != vec_dot_type) {
+        char * wdata = params->wdata;
+
+        const size_t nbw0 = ggml_type_size(vec_dot_type);
+        const size_t nbw1 = ggml_row_size(vec_dot_type, ne10);
+        const size_t nbw2 = nbw1*ne11;
+        const size_t nbw3 = nbw2*ne12;
+
+        assert(params->wsize >= ne13*nbw3);
+        GGML_ASSERT(src1->type == GGML_TYPE_F32);
+
+        for (int64_t i13 = 0; i13 < ne13; ++i13) {
+            for (int64_t i12 = 0; i12 < ne12; ++i12) {
+                for (int64_t i11 = 0; i11 < ne11; ++i11) {
+                    size_t bs = ggml_blck_size(vec_dot_type);
+                    int64_t ne10_block_start = (ith * ne10/bs) / nth;
+                    int64_t ne10_block_end   = ((ith + 1) * ne10/bs) / nth;
+                    from_float((float *)((char *) src1->data + i13*nb13 + i12*nb12 + i11*nb11 + ne10_block_start*bs*nb10),
+                               (void *)               (wdata + i13*nbw3 + i12*nbw2 + i11*nbw1 + ne10_block_start*nbw0),
+                               (ne10_block_end - ne10_block_start) * bs);
+                }
+            }
+        }
+
+        ggml_barrier(params->threadpool);
+    }
 
     for (int cur_a = 0; cur_a < n_as; ++cur_a) {
         const int64_t cne1 = matrix_row_counts[cur_a];

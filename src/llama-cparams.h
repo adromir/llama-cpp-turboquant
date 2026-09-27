@@ -23,6 +23,8 @@ struct llama_cparams {
 
     enum llama_moe_cache_mode moe_cache_mode;
     size_t moe_cache_budget_mib;
+    int32_t n_moe_cache_slots = 0;
+    int32_t n_moe_cache_inserts = 2;
 
     float rope_freq_base;
     float rope_freq_scale;

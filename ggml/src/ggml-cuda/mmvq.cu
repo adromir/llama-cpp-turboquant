@@ -615,6 +615,16 @@ static __global__ void mul_mat_vec_q(
     channel_y  = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
     sample_dst = blockIdx.z;
 
+    if (fusion.n_slots != 0 && ids && channel_x >= fusion.n_slots) {
+        if (threadIdx.y == 0 && threadIdx.x < rows_per_cuda_block && uint32_t(row0 + threadIdx.x) < stride_col_dst) {
+#pragma unroll
+            for (int j = 0; j < ncols_dst; ++j) {
+                dst[sample_dst*stride_sample_dst + channel_dst*stride_channel_dst + j*stride_col_dst + row0 + threadIdx.x] = 0.0f;
+            }
+        }
+        return;
+    }
+
     const uint32_t sample_x    = fastdiv(sample_dst, sample_ratio);
     const uint32_t sample_y    = sample_dst;
 
@@ -901,6 +911,16 @@ static __global__ void mul_mat_vec_q_ksplit(
     channel_x  = ncols_dst == 1 && ids ? ids[channel_dst]                     : fastdiv(channel_dst, channel_ratio);
     channel_y  = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
     sample_dst = blockIdx.z;
+
+    if (fusion.n_slots != 0 && ids && channel_x >= fusion.n_slots) {
+        if (threadIdx.y == 0 && threadIdx.x < rows_per_cuda_block && uint32_t(row0 + threadIdx.x) < stride_col_dst) {
+#pragma unroll
+            for (int j = 0; j < ncols_dst; ++j) {
+                dst[sample_dst*stride_sample_dst + channel_dst*stride_channel_dst + j*stride_col_dst + row0 + threadIdx.x] = 0.0f;
+            }
+        }
+        return;
+    }
 
     const uint32_t sample_x    = fastdiv(sample_dst, sample_ratio);
     const uint32_t sample_y    = sample_dst;
@@ -1847,6 +1867,7 @@ void ggml_cuda_mul_mat_vec_q(
     ggml_cuda_mm_fusion_args_device fusion_local{};
 
     if (fusion) {
+        fusion_local.n_slots = fusion->n_slots;
         GGML_ASSERT( !ids || dst->ne[2] == 1);
         GGML_ASSERT(  ids || dst->ne[1] == 1);
         // Scale fusion is only allowed for NVFP4 currently as the cost of checking this at run-time in the prologue is
@@ -1897,6 +1918,8 @@ void ggml_cuda_mul_mat_vec_q(
             GGML_ASSERT(fusion->dst_gate->type == GGML_TYPE_F32);
             fusion_local.dst_gate = fusion->dst_gate->data;
         }
+    } else if (dst->op == GGML_OP_MUL_MAT_ID) {
+        fusion_local.n_slots = ggml_get_op_params_i32(dst, 2);
     }
 
     // If src0 is a temporary compute buffer, clear any potential padding.

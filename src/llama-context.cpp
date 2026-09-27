@@ -20,6 +20,7 @@
 #include "llama-memory.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
+#include "llama-moecache.h"
 #include "llama.h"
 
 #include <algorithm>
@@ -125,6 +126,8 @@ llama_context::llama_context(const llama_model & model, llama_context_params par
     cparams.n_threads_batch      = params.n_threads_batch;
     cparams.moe_cache_mode       = params.moe_cache_mode;
     cparams.moe_cache_budget_mib = params.moe_cache_budget_mib;
+    cparams.n_moe_cache_slots    = 0;
+    cparams.n_moe_cache_inserts  = params.n_moe_cache_inserts;
     cparams.yarn_ext_factor      = params.yarn_ext_factor >= 0.0f ? params.yarn_ext_factor : hparams.yarn_ext_factor;
     cparams.yarn_attn_factor     = params.yarn_attn_factor >= 0.0f ? params.yarn_attn_factor : hparams.yarn_attn_factor;
     cparams.yarn_beta_fast       = params.yarn_beta_fast >= 0.0f ? params.yarn_beta_fast : hparams.yarn_beta_fast;
@@ -790,12 +793,16 @@ llama_context::llama_context(const llama_model & model, llama_context_params par
         for (int i = 0; i < n_vocab; ++i) {
             sampling.token_ids_full_vocab[i] = i;
         }
+
+        const bool moe_cache_enabled = llama_moe_cache_init(model, *this, params.n_moe_cache_slots, params.n_moe_cache_inserts);
+        cparams.n_moe_cache_slots = moe_cache_enabled ? params.n_moe_cache_slots : 0;
     }
 }
 
 llama_context::~llama_context() {
     // wait for any pending asynchronous copies into the output buffers before they are freed
     synchronize();
+    llama_moe_cache_free(*this);
 
     if (!model.hparams.no_alloc) {
         for (size_t i = 0; i < backend_ptrs.size(); ++i) {
@@ -1450,6 +1457,9 @@ void llama_context::synchronize() {
     }
 
     ggml_backend_sched_synchronize(sched.get());
+    if (cparams.n_moe_cache_slots > 0) {
+        llama_moe_cache_step();
+    }
 
     // FIXME: if multiple single tokens are evaluated without a synchronization,
     // the stats will be added to the prompt evaluation stats
@@ -4476,6 +4486,8 @@ llama_context_params llama_context_default_params() {
         /*.type_v                      =*/GGML_TYPE_F16,
         /*.moe_cache_mode              =*/LLAMA_MOE_CACHE_MODE_UNSPECIFIED,
         /*.moe_cache_budget_mib        =*/0,
+        /*.n_moe_cache_slots           =*/0,
+        /*.n_moe_cache_inserts         =*/2,
         /*.abort_callback              =*/nullptr,
         /*.abort_callback_data         =*/nullptr,
         /*.embeddings                  =*/false,
