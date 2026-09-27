@@ -810,6 +810,9 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     if (q8_1_arena != nullptr) {
         CUDA_CHECK(cudaFree(q8_1_arena));
     }
+    if (mmq_q8_1_arena != nullptr) {
+        CUDA_CHECK(cudaFree(mmq_q8_1_arena));
+    }
 
     if (copy_event != nullptr) {
         CUDA_CHECK(cudaEventDestroy(copy_event));
@@ -7232,6 +7235,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
 
     // The Q8_1 input cache is only valid within one graph execution.
     cuda_ctx->q8_1_cache_clear();
+    cuda_ctx->mmq_q8_1_cache_clear();
     ggml_cuda_mmb_set_active_ctx(cuda_ctx);
     ggml_cuda_mmb_begin_graph();
 

@@ -2002,12 +2002,18 @@ struct ggml_backend_cuda_context {
     void * q8_1_cache_get(const ggml_tensor * src1, int stream_no, size_t size,
                           int64_t ne10, int64_t ne11, int64_t ne12, int64_t ne13,
                           int64_t s11, int64_t s12, int64_t s13, bool & found) {
-        for (const auto & e : q8_1_cache) {
-            if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
-                e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
-                e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
-                found = true;
-                return q8_1_arena + e.offset;
+        static const bool q8cache_enabled = []() {
+            const char * env = getenv("GGML_CUDA_Q8CACHE");
+            return env == nullptr || strcmp(env, "0") != 0;
+        }();
+        if (q8cache_enabled) {
+            for (const auto & e : q8_1_cache) {
+                if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
+                    e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
+                    e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
+                    found = true;
+                    return q8_1_arena + e.offset;
+                }
             }
         }
         found = false;
@@ -2023,8 +2029,73 @@ struct ggml_backend_cuda_context {
             q8_1_arena_size = new_size;
         }
         void * data = q8_1_arena + q8_1_arena_pos;
-        q8_1_cache.push_back({ src1, src1->data, stream_no, ne10, ne11, ne12, ne13, s11, s12, s13, q8_1_arena_pos, size });
+        if (q8cache_enabled) {
+            q8_1_cache.push_back({ src1, src1->data, stream_no, ne10, ne11, ne12, ne13, s11, s12, s13, q8_1_arena_pos, size });
+        }
         q8_1_arena_pos += size;
+        return data;
+    }
+
+    struct mmq_q8_1_cache_entry {
+        const ggml_tensor * src1 = nullptr;
+        const void * data = nullptr;
+        int stream_no = 0;
+        int ds_layout = 0;
+        int64_t ne10 = 0;
+        int64_t ne11 = 0;
+        int64_t ne12 = 0;
+        int64_t ne13 = 0;
+        int64_t s11 = 0;
+        int64_t s12 = 0;
+        int64_t s13 = 0;
+        size_t offset = 0;
+        size_t size   = 0;
+    };
+    char * mmq_q8_1_arena = nullptr;
+    size_t mmq_q8_1_arena_size = 0;
+    std::vector<mmq_q8_1_cache_entry> mmq_q8_1_cache;
+    size_t mmq_q8_1_arena_pos = 0;
+
+    void mmq_q8_1_cache_clear() {
+        mmq_q8_1_cache.clear();
+        mmq_q8_1_arena_pos = 0;
+    }
+
+    void * mmq_q8_1_cache_get(const ggml_tensor * src1, int stream_no, int ds_layout, size_t size,
+                              int64_t ne10, int64_t ne11, int64_t ne12, int64_t ne13,
+                              int64_t s11, int64_t s12, int64_t s13, bool & found) {
+        static const bool q8cache_enabled = []() {
+            const char * env = getenv("GGML_CUDA_Q8CACHE");
+            return env == nullptr || strcmp(env, "0") != 0;
+        }();
+        if (q8cache_enabled) {
+            for (const auto & e : mmq_q8_1_cache) {
+                if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
+                    e.ds_layout == ds_layout &&
+                    e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
+                    e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
+                    found = true;
+                    return mmq_q8_1_arena + e.offset;
+                }
+            }
+        }
+        found = false;
+        if (mmq_q8_1_arena_pos + size > mmq_q8_1_arena_size) {
+            const size_t new_size = std::max(size_t(1) << 25, 2*(mmq_q8_1_arena_pos + size));
+            char * new_arena = nullptr;
+            CUDA_CHECK(cudaMalloc(&new_arena, new_size));
+            if (mmq_q8_1_arena != nullptr) {
+                CUDA_CHECK(cudaMemcpy(new_arena, mmq_q8_1_arena, mmq_q8_1_arena_pos, cudaMemcpyDeviceToDevice));
+                CUDA_CHECK(cudaFree(mmq_q8_1_arena));
+            }
+            mmq_q8_1_arena = new_arena;
+            mmq_q8_1_arena_size = new_size;
+        }
+        void * data = mmq_q8_1_arena + mmq_q8_1_arena_pos;
+        if (q8cache_enabled) {
+            mmq_q8_1_cache.push_back({ src1, src1->data, stream_no, ds_layout, ne10, ne11, ne12, ne13, s11, s12, s13, mmq_q8_1_arena_pos, size });
+        }
+        mmq_q8_1_arena_pos += size;
         return data;
     }
 
