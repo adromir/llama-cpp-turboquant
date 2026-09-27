@@ -417,10 +417,6 @@ extern "C" {
         uint32_t yarn_orig_ctx;    // YaRN original context size
         float    defrag_thold;     // [DEPRECATED] defragment the KV cache if holes/size > thold, <= 0 disabled (default)
 
-        // GPU-resident LRU cache for host-offloaded MoE expert weights [EXPERIMENTAL]
-        int32_t  n_moe_cache_slots;   // cache slots per host-resident expert layer (0 = disabled)
-        int32_t  n_moe_cache_inserts; // max expert uploads per layer per decode step
-
         ggml_backend_sched_eval_callback cb_eval;
         void * cb_eval_user_data;
 
@@ -429,6 +425,10 @@ extern "C" {
 
         enum llama_moe_cache_mode moe_cache_mode; // runtime MoE expert cache mode
         size_t moe_cache_budget_mib;               // 0 uses the provider's available-memory budget
+
+        // GPU-resident LRU cache for host-offloaded MoE expert weights [EXPERIMENTAL]
+        int32_t  n_moe_cache_slots;   // cache slots per host-resident expert layer (0 = disabled)
+        int32_t  n_moe_cache_inserts; // max expert uploads per layer per decode step
 
         // Abort callback
         // if it returns true, execution of llama_decode() will be aborted
