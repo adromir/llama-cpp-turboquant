@@ -11,8 +11,9 @@
 [![ROCm: 10.0.0](https://img.shields.io/badge/ROCm-10.0.0_(TheRock)-red.svg)](https://github.com/adromir/llama-cpp-turboquant)
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg)](https://github.com/adromir/llama-cpp-turboquant/releases)
 [![Architectures: RDNA2 | RDNA3 | RDNA4 | CDNA](https://img.shields.io/badge/GPU%20Targets-RDNA2%20%7C%20RDNA3%20%7C%20RDNA4%20%7C%20CDNA-orange.svg)](https://github.com/adromir/llama-cpp-turboquant)
+[![Benchmark Dashboard](https://img.shields.io/badge/Benchmarks-GitHub%20Pages-blueviolet.svg)](https://adromir.github.io/llama-cpp-turboquant/)
 
-[Quick Start](#quick-start) | [What is TurboQuant?](#what-is-turboquant) | [What is ROCmFPX?](#what-is-rocmfpx-fpx) | [Benchmark Results](#benchmark-results) | [Create Quants & Imatrix](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license)
+[Quick Start](#quick-start) | [Live Benchmark Dashboard](https://adromir.github.io/llama-cpp-turboquant/) | [TurboQuant KV Cache](#what-is-turboquant) | [ROCmFPX Quantization](#what-is-rocmfpx-fpx) | [Strata MoE Cache & Pre-Seeding](#strata-moe-expert-cache--profile-pre-seeding) | [Benchmark Results](#benchmark-results) | [Quantization Tools](#how-to-create-new-quants) | [Branches & Flavors](#branches-and-flavors) | [Pre-built Releases](#pre-built-releases) | [Build from Source](#build-from-source) | [License](#license--credits)
 
 </div>
 
@@ -34,7 +35,9 @@ This repository is a downstream distribution of [llama.cpp](https://github.com/g
    - **RDNA3 / RDNA3.5**: `gfx1100`, `gfx1101`, `gfx1102` (RX 7900, 7800, 7700, 7600, Strix Point)
    - **RDNA2**: `gfx1030` (RX 6900, 6800, 6700)
    - **CDNA / GCN**: `gfx900`, `gfx906`, `gfx908`, `gfx90a` (MI50, MI100, MI200)
-4. **Active Upstream Sync**:
+4. **Strata MoE Expert Pre-Seeding & Safe Memory Tiering**:
+   Ported from [Niko1221/Strata](https://github.com/Niko1221/Strata), Mixture-of-Experts models (such as Qwen 3.8 Next, Mixtral) benefit from dynamic GPU/CPU expert cache tiering. Synchronous binary profile pre-seeding (`--moe-expert-profile`) eliminates first-token latency penalties, delivering ~70%+ cache hits from token 1. Safe host memory pinning (`--moe-cache-pin`) automatically enforces a 4 GiB unpinned OS memory headroom to prevent system thrashing and OOM freezes.
+5. **Active Upstream Sync**:
    Tracks upstream `ggml-org/llama.cpp` and `TheTom/llama-cpp-turboquant` to provide the latest model architectures, sampling improvements, and performance patches.
 
 ---
@@ -84,6 +87,69 @@ For production agents requiring strict JSON formatting, tool calling, or complex
 - `Q3_0_ROCMFPX_AGENT`: Coherent 3-bit quantization preserving JSON syntax tracking.
 - `Q6_0_ROCMFPX_AGENT`: Near-lossless agent execution with high context stability.
 
+---
+
+## Strata MoE Expert Cache & Profile Pre-Seeding
+
+Mixture-of-Experts (MoE) architectures (such as Qwen 3.8 Next, Mixtral, and DeepSeek) route each token through a small subset of expert layers. Offloading all expert weights onto consumer GPUs often exceeds VRAM capacity.
+
+Ported from **Strata** ([Niko1221/Strata](https://github.com/Niko1221/Strata)), this distribution integrates high-performance dynamic MoE memory tiering with **startup profile pre-seeding** and **safe host memory pinning**:
+
+```
+                       ┌──────────────────────────────────────┐
+                       │  Binary Profile (STRP Format)        │
+                       │  data/expert-profile.bin             │
+                       └──────────────────┬───────────────────┘
+                                          │ Startup Pre-seed
+                                          ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ Host RAM (Pinned DMA Pool)             GPU VRAM (Device Memory)        │
+  │ Cold & Infrequent Experts              Hot & Pre-seeded Experts        │
+  │ ┌──────────────┐                       ┌──────────────┐                │
+  │ │ Expert 47    │ ────── PCIe DMA ────> │ Expert 0     │ (Pre-seeded)   │
+  │ │ Expert 12    │ <── LRU Eviction ──── │ Expert 3     │ (Pre-seeded)   │
+  │ └──────────────┘                       └──────────────┘                │
+  │                                                                        │
+  │ [Safety Guard]: Minimum 4 GiB unpinned RAM reserved for Windows/Linux  │
+  └────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Instant Cache Warmup via Expert Profiles (`--moe-expert-profile`)
+
+Standard LRU MoE caches start completely empty. During the first hundred tokens, cache misses force continuous synchronous PCIe weight transfers, causing sluggish initial generation and erratic latency.
+
+With `--moe-expert-profile`, the engine reads an activation profile in binary `STRP` format at startup and loads the most frequently activated experts directly into GPU VRAM before inference begins:
+- **Instant ~70%+ Cache Hit Rate**: Eliminates cold-start warmup latency from the very first token.
+- **Included Profiles**:
+  - `data/expert-profile.bin`: Calibrated for general multi-turn instruction following, reasoning, and chat.
+  - `data/expert-profile-coder.bin`: Calibrated for programming, syntax comprehension, and technical tasks.
+- **Custom Profile Generation**:
+  Generate your own profiles using `tools/make_profile.py`:
+  ```bash
+  python tools/make_profile.py --input activations.csv --output data/custom-profile.bin
+  ```
+
+### 2. Safe Host Memory Pinning (`--moe-cache-pin`)
+
+Page-locked (pinned) host memory enables direct DMA transfers across PCIe without intermediate CPU copy overhead, maximizing transfer speed when streaming experts into VRAM. However, excessive memory pinning on 32 GB or 48 GB host systems can cause kernel memory exhaustion, severe OS thrashing, or system lockups.
+
+Our implementation includes **automatic OS memory headroom protection** (via `GlobalMemoryStatusEx` on Windows and `sysinfo` on Linux):
+- Dynamically queries total and available physical RAM before pinning.
+- Enforces a strict minimum **4 GiB unpinned headroom** reserved for the operating system and background applications.
+- If allocating pinned memory would leave less than 4 GiB free, memory pinning is automatically skipped with an informational log: `moe_cache: skipping host pinning to preserve 4 GiB system RAM headroom`.
+- Controlled explicitly via `--moe-cache-pin` (default enabled with safety guard) or `--no-moe-cache-pin`.
+
+### 3. MoE Execution Example
+
+```bash
+# Run Qwen 3.8 Next with 24GB GPU expert cache, profile pre-seeding, and safe host pinning:
+llama-cli.exe -m models/Qwen3.8-Next-MoE-Q4_K_M.gguf \
+  -c 32768 -ngl 99 -fa 1 \
+  --cache-type-k turbo3 --cache-type-v turbo3 \
+  --moe-expert-cache 24576M \
+  --moe-expert-profile data/expert-profile.bin \
+  --moe-cache-pin
+```
 
 ---
 
@@ -92,11 +158,10 @@ For production agents requiring strict JSON formatting, tool calling, or complex
 A comprehensive 3-way benchmark evaluation was conducted on AMD RDNA 4 hardware comparing upstream `llama.cpp` against this experimental distribution across **prefill throughput**, **decode speed**, **Multi-Token Prediction (MTP) acceptance rate**, **VRAM utilization**, and **maximum viable context length**.
 
 > [!TIP]
-> **Full Interactive Visual Report**:
-> An interactive dashboard with Chart.js visualization, real-time comparisons, and per-metric breakdowns is available directly in the repository:
-> - **Source in Repo**: [`docs/benchmark-results-3way.html`](docs/benchmark-results-3way.html)
-> - **GitHub File View**: [View on GitHub (experiment/rdna-boosts)](https://github.com/adromir/llama-cpp-turboquant/blob/experiment/rdna-boosts/docs/benchmark-results-3way.html)
-> - **Live Interactive Preview**: [Rendered Dashboard (HTML Preview)](https://htmlpreview.github.io/?https://github.com/adromir/llama-cpp-turboquant/blob/experiment/rdna-boosts/docs/benchmark-results-3way.html)
+> **Live Interactive Benchmark Dashboard (GitHub Pages)**:
+> An interactive dashboard with Chart.js visualization, real-time comparisons, Strata MoE profiling, and per-metric breakdowns is hosted live on GitHub Pages:
+> - **Live Dashboard**: [https://adromir.github.io/llama-cpp-turboquant/](https://adromir.github.io/llama-cpp-turboquant/)
+> - **Source in Repo**: [`docs/index.html`](docs/index.html) or [`docs/benchmark-results-3way.html`](docs/benchmark-results-3way.html)
 
 ### Testbed Environment
 - **GPU**: AMD Radeon RX 9060 XT 16GB (RDNA 4, `gfx1200`, 16,304 MiB VRAM)
@@ -201,62 +266,7 @@ SRC=model-Q4_K_M.gguf OUT=model-Q3_0_ROCMFPX.gguf PRESET=Q3_0_ROCMFPX ./scripts/
 > When original BF16 sources are not available, use the highest quality source possible:
 > `BF16/F16` (Best) > `Q8_0` > `Q6_K` > `Q4_K_M` (Acceptable floor for Q3).
 > Never requantize an existing ROCmFPX file into another ROCmFPX format (double-quantization causes severe degradation).
-
----
-
-### Understanding the Importance Matrix (imatrix)
-
-An **Importance Matrix (`imatrix`)** is a powerful calibration technique in `llama.cpp` that dramatically improves quantization quality, especially for low-bit formats (`Q3_0_ROCMFPX`, `tq3_1s`, `Q4_0_ROCMFP4`, `IQ3_XXS`, `Q4_K_M`).
-
-#### How it Works: Uniform MSE vs. Weighted MSE
-- **Standard Quantization (Uniform MSE)**: Minimizes rounding error equally across all tensor coordinates:
-  $$\min \sum (W_{ij} - \hat{W}_{ij})^2$$
-  This treats inactive weights and critical attention channels with the exact same priority.
-- **imatrix Quantization (Weighted MSE)**: Feeds a calibration text dataset through the unquantized model to compute the actual activation variance ($I_{ij} \approx \sum A_{ik}^2$) flowing through every channel:
-  $$\min \sum I_{ij} \cdot (W_{ij} - \hat{W}_{ij})^2$$
-  Weights that experience massive activation spikes or carry high semantic influence receive maximum quantization fidelity, while less critical weights absorb the quantization noise.
-
-#### Why Use an Imatrix?
-| Quantization Level | Without Imatrix | With Imatrix | Real-world Impact |
-| :--- | :--- | :--- | :--- |
-| **8-Bit (`Q8_0`, `FP8`)** | Excellent | Near-Lossless | Negligible difference (quantization noise is already minimal) |
-| **6-Bit (`Q6_K`, `FP6`)** | Very Good | Near-Lossless | Slight perplexity gain (~0.02 PPL) |
-| **4-Bit (`ROCmFP4`, `Q4_K_M`)** | Good | Excellent | Measurable uplift (~0.1 - 0.2 PPL), reaches near-FP16 quality |
-| **3-Bit (`ROCmFP3`, `tq3_1s`)** | Risk of degradation | Coherent & Usable | **Crucial:** Prevents syntax errors, hallucination loops, and severe logic decay |
-
-#### Step-by-Step: How to Generate and Use an Imatrix
-
-1. **Prepare Calibration Data**:
-   Download or create a clean, diverse text file (`calibration.txt`) containing prose, code, math, and JSON (e.g. `groups_merged.txt` or `wiki.train.raw`). A file size of 500 KB to 2 MB is ideal.
-
-2. **Compute the Importance Matrix with `llama-imatrix`**:
-   Run `llama-imatrix` with GPU offloading enabled (`-ngl 99`). On modern AMD Radeon GPUs, calibration finishes in just 2 to 5 minutes:
-   ```bash
-   # Windows
-   llama-imatrix.exe -m models/model-BF16.gguf -f data/calibration.txt -o models/imatrix.gguf -ngl 99 -c 2048 --chunks 64
-
-   # Linux
-   ./llama-imatrix -m models/model-BF16.gguf -f data/calibration.txt -o models/imatrix.gguf -ngl 99 -c 2048 --chunks 64
-   ```
-   - `-m`: Path to the unquantized (BF16/F16) model.
-   - `-f`: Path to the calibration text dataset.
-   - `-o`: Output importance matrix file (`imatrix.gguf`).
-   - `-ngl 99`: Offloads layers to AMD ROCm GPU for rapid execution.
-   - `-c 2048`: Context window size for computing activation tensors.
-   - `--chunks 64`: Number of text chunks to evaluate (64 to 100 chunks is recommended).
-
-3. **Apply the Imatrix during Quantization**:
-   Pass `--imatrix` directly into `llama-quantize`, `quantize-rocmfpx.ps1`, or the bash scripts:
-   ```bash
-   # CLI
-   llama-quantize --imatrix models/imatrix.gguf models/model-BF16.gguf models/model-Q3_0_ROCMFPX.gguf Q3_0_ROCMFPX
-
-   # PowerShell (Windows)
-   .\scripts\quantize-rocmfpx.ps1 -Source "models\model-BF16.gguf" -Output "models\model-Q3.gguf" -Preset Q3_0_ROCMFPX -Imatrix "models\imatrix.gguf"
-
-   # Bash (Linux)
-   IMATRIX=models/imatrix.gguf SRC=models/model-BF16.gguf OUT=models/model-Q3.gguf FORMAT=rocmfp3 PROFILE=agent ./scripts/quantize-rocmfpx-agent.sh
-   ```
+> For extreme low-bit formats (`Q3_0_ROCMFPX`, `tq3_1s`), passing an existing importance matrix (`--imatrix <path>`) helps preserve syntax tracking and reasoning stability.
 
 ---
 
@@ -343,7 +353,19 @@ For models with high Grouped-Query Attention ratios, using `q8_0` for Keys and `
 llama-cli -m models/model.gguf -c 65536 -ngl 99 -fa 1 --cache-type-k q8_0 --cache-type-v turbo3
 ```
 
-### 3. OpenAI-Compatible API Server (with MTP Speculative Decoding)
+### 3. Mixture-of-Experts (MoE) with Strata Profile Pre-Seeding & Safe Pinning
+
+Accelerate MoE inference (e.g. Qwen 3.8 Next, Mixtral) with GPU expert caching, instant startup pre-seeding, and safe host memory pinning:
+
+```bash
+# Windows
+llama-cli.exe -m models/Qwen3.8-Next-MoE-Q4_K_M.gguf -c 32768 -ngl 99 -fa 1 --cache-type-k turbo3 --cache-type-v turbo3 --moe-expert-cache 24576M --moe-expert-profile data/expert-profile.bin --moe-cache-pin
+
+# Linux
+./llama-cli -m models/Qwen3.8-Next-MoE-Q4_K_M.gguf -c 32768 -ngl 99 -fa 1 --cache-type-k turbo3 --cache-type-v turbo3 --moe-expert-cache 24576M --moe-expert-profile data/expert-profile.bin --moe-cache-pin
+```
+
+### 4. OpenAI-Compatible API Server (with MTP Speculative Decoding)
 
 Launch the web server with MTP speculative decoding, TurboQuant KV cache, and optimized draft parameters on port 8080:
 
@@ -351,7 +373,7 @@ Launch the web server with MTP speculative decoding, TurboQuant KV cache, and op
 llama-server -m models/model.gguf -c 32768 -ngl 99 -fa 1 --cache-type-k q8_0 --cache-type-v turbo3 --spec-type draft-mtp --spec-draft-n-max 6 --spec-draft-p-min 0.00 --host 0.0.0.0 --port 8080
 ```
 
-### 4. Benchmark Performance
+### 5. Benchmark Performance
 
 Benchmark token processing and generation speeds across cache types:
 
@@ -361,7 +383,22 @@ llama-bench -m models/model.gguf -ngl 99 -fa 1 -p 512,2048 -n 128 -ctk turbo3 -c
 
 ---
 
-## Runtime Environment Knobs
+## Key CLI Flags & Runtime Knobs
+
+### Fork CLI Flags
+
+| CLI Flag | Arguments | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `--cache-type-k` / `-ctk` | `turbo2`, `turbo3`, `turbo4` | `f16` | TurboQuant KV cache quantization type for Keys |
+| `--cache-type-v` / `-ctv` | `turbo2`, `turbo3`, `turbo4` | `f16` | TurboQuant KV cache quantization type for Values |
+| `--moe-expert-cache` | Bytes / `24576M` / `8G` | `0` | GPU VRAM budget reserved for dynamic MoE expert caching |
+| `--moe-expert-profile` | File path (`.bin`) | None | Pre-seeds MoE GPU cache with top experts from binary STRP profile |
+| `--moe-cache-pin` | `--moe-cache-pin` / `--no-moe-cache-pin` | Enabled | Enables safe host memory pinning with 4 GiB OS RAM headroom guard |
+| `--spec-type` | `draft-mtp` | None | Multi-Token Prediction (MTP) speculative decoding |
+| `--spec-draft-n-max` | Integer (e.g. `6`) | `4` | Maximum speculative draft tokens per step |
+| `--spec-draft-p-min` | Float (`0.00`) | `0.75` | Probability gating threshold (`0.00` recommended for MTP) |
+
+### TurboQuant Runtime Knobs
 
 TurboQuant exposes fine-tuning knobs via environment variables:
 
@@ -482,6 +519,7 @@ This repository enforces strict numerical correctness and basis tests before rel
 
 - `test-turbo-quant`: Turbo basis MSE = 0.0, Cosine = 1.0, and chunked dequantization invariance.
 - `test-quantize-fns`: Validates Lloyd-Max round-trip error budgets on `TQ3_1S` and `TQ4_1S`.
+- `test-moe-cache`: Validates binary STRP profile parsing, top-K pre-seeding, LRU eviction correctness, and OS memory headroom safety margins.
 - `test-backend-ops`: Numerical verification of per-op GGML graphs between CPU and AMD ROCm GPU backend across all operators (`FLASH_ATTN_EXT`, `MUL_MAT`, `SET_ROWS`, `CPY`).
 
 ---
@@ -505,6 +543,7 @@ This distribution incorporates features, kernel optimizations, and architectural
 
 - **[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)**: The official upstream source of truth for the ggml tensor library, llama architecture, and model inference engine.
 - **[TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)**: Tom Turney's revolutionary TurboQuant KV-cache quantization codec, Walsh-Hadamard Transform (WHT) orthonormal rotation, Lloyd-Max centroid optimization, and elementwise chain fusion.
+- **[Niko1221/Strata](https://github.com/Niko1221/Strata)**: Specialized Mixture-of-Experts architecture for Qwen 3.8 Next, dynamic GPU/CPU expert cache tiering, binary STRP profile pre-seeding, and host memory pinning.
 - **[stew675/llama-cpp-rdna-boosts](https://github.com/stew675/llama-cpp-rdna-boosts)** & **[stew675/llama.cpp](https://github.com/stew675/llama.cpp)**: Stew Forster's comprehensive AMD RDNA optimization suite: native-BF16 Flash Attention tiles, RDNA4 WMMA tensor core acceleration, fused chunked Gated-Delta-Net, fused MoE gate+up GLU kernels, and adaptive MTP speculative decoding.
 - **[charlie12345/ROCmFPX](https://github.com/charlie12345/ROCmFPX)**: Carlo Pasquale's high-performance ROCmFPX sub-8-bit floating-point and integer quantization family (`Q4_0_ROCMFP4`, `Q4_0_ROCMFP4_FAST`, `Q3_0_ROCMFPX`, `Q6_0_ROCMFPX`, `Q8_0_ROCMFPX`, `Q2_0_ROCMFPX`, `Q4_0_ROCMI4`) for AMD RDNA and CDNA architectures.
 - **[daimonionnn/amd-rocmfpx-for-win](https://github.com/daimonionnn/amd-rocmfpx-for-win)**: Empirical profiling, MTP draft tuning benchmarks (`--spec-draft-n-max 6`), and deep-context hardware optimization findings on AMD Strix Halo / ROCm Windows.
