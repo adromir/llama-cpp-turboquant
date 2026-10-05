@@ -283,7 +283,7 @@ static __global__ void unary_gated_op_kernel(const T * x, const T * g, T * dst, 
 template <float (*op)(float), typename T>
 static __global__ void unary_gated_q8_1_op_kernel(const T * x, const T * g, block_q8_1 * y,
         const int64_t k, const int64_t n, const int64_t o0, const int64_t o1,
-        const int64_t row_len) {
+        const int64_t row_len, T * dst_f32 = nullptr) {
     ggml_cuda_pdl_lc();
     const int64_t i = int64_t(blockDim.x)*blockIdx.x + threadIdx.x;
 
@@ -295,6 +295,9 @@ static __global__ void unary_gated_q8_1_op_kernel(const T * x, const T * g, bloc
     const int64_t j1 = o0 == o1 ? j0 : (i / n) * o1 + (i % n);
 
     const float v = op((float)x[j0]) * (float)g[j1];
+    if (dst_f32 != nullptr) {
+        dst_f32[i] = (T)v; // GLU -> Q8_1: the F32 output is written too
+    }
 
     const int warp = threadIdx.x / 32;
     const int lane = threadIdx.x % 32;
@@ -370,7 +373,7 @@ static void ggml_cuda_op_unary_mul_q8_1_impl(ggml_backend_cuda_context & ctx,
     const int64_t row_len = mm->src[1]->ne[0]; // the matmul's quantize row (flat per channel)
     ggml_cuda_kernel_launch(unary_gated_q8_1_op_kernel<op, float>, lp,
             (const float *) unary_src->data, (const float *) other_src->data, (block_q8_1 *) y,
-            k, nc, unary_stride / sizeof(float), other_stride / sizeof(float), row_len);
+            k, nc, unary_stride / sizeof(float), other_stride / sizeof(float), row_len, (float *) nullptr);
 }
 
 void ggml_cuda_op_unary_mul_q8_1(ggml_backend_cuda_context & ctx,
@@ -439,6 +442,33 @@ void ggml_cuda_op_unary_gated(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         if (!src1) {
             src0_p += swapped ? nc : 0;
             src1_p += swapped ? 0 : nc;
+        }
+
+        // GLU -> Q8_1 (GGML_CUDA_FUSE_GLU_Q8_1): ggml_cuda_try_fuse marked this GLU, whose consumer mm is a verify-band
+        // mmvq matmul; also write the Q8_1 blocks mm would quantize, keyed like its own quantize
+        const ggml_tensor * mm = ctx.glu_q8_1_node == dst ? ctx.glu_q8_1_mm : nullptr;
+        ctx.glu_q8_1_node = nullptr;
+        ctx.glu_q8_1_mm   = nullptr;
+        if (mm != nullptr) {
+            const ggml_tensor * a = mm->src[1];
+            const ggml_tensor * a_key = a;
+            while (a_key->view_src != nullptr) {
+                a_key = a_key->view_src;
+            }
+            const int64_t ne10_padded = GGML_PAD(a->ne[0], MATRIX_ROW_PADDING);
+            const size_t q8_1_size = a->ne[3]*a->ne[2] * a->ne[1]*ne10_padded * sizeof(block_q8_1)/QK8_1;
+            bool cached = false;
+            void * y = ctx.q8_1_cache_get(a_key, ctx.curr_stream_no, q8_1_size, a->ne[0], a->ne[1], a->ne[2], a->ne[3],
+                                          a->nb[1]/sizeof(float), a->nb[2]/sizeof(float), a->nb[3]/sizeof(float), cached);
+            if (!cached) {
+                const int64_t k = ggml_nelements(dst);
+                const int64_t num_blocks = (k + CUDA_GLU_BLOCK_SIZE - 1) / CUDA_GLU_BLOCK_SIZE;
+                const ggml_cuda_kernel_launch_params lp = ggml_cuda_kernel_launch_params((dim3)num_blocks, CUDA_GLU_BLOCK_SIZE, 0, stream);
+                ggml_cuda_kernel_launch(unary_gated_q8_1_op_kernel<op, float>, lp,
+                        (const float *) src0_p, (const float *) src1_p, (block_q8_1 *) y,
+                        k, nc, src0_o / sizeof(float), src1_o / sizeof(float), a->ne[0], (float *) dst_d);
+                return;
+            }
         }
 
         unary_gated_cuda<op>(src0_p, src1_p, (float *)dst_d, ggml_nelements(dst), nc, src0_o / sizeof(float), src1_o / sizeof(float), stream);

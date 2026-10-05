@@ -2946,6 +2946,11 @@ common_speculative_init_result::common_speculative_init_result(
 
     if (spec_mtp) {
         cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+
+        const char * env = getenv("LLAMA_MTP_DRAFT_OP_OFFLOAD");
+        if (env != nullptr && atoi(env) == 0) {
+            cparams.op_offload = false;
+        }
     }
 
     // note: for small models maybe we can set this to the maximum possible draft from all speculative types

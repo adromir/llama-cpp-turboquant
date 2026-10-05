@@ -615,8 +615,11 @@ static __global__ void mul_mat_vec_q(
     channel_y  = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
     sample_dst = blockIdx.z;
 
+    // dst rows are contiguous; with ids the per-slot row stride is stride_channel_dst, not stride_col_dst
+    const uint32_t nrows_dst = ids ? stride_channel_dst : stride_col_dst;
+
     if (fusion.n_slots != 0 && ids && channel_x >= fusion.n_slots) {
-        if (threadIdx.y == 0 && threadIdx.x < rows_per_cuda_block && uint32_t(row0 + threadIdx.x) < stride_col_dst) {
+        if (threadIdx.y == 0 && threadIdx.x < rows_per_cuda_block && uint32_t(row0 + threadIdx.x) < nrows_dst) {
 #pragma unroll
             for (int j = 0; j < ncols_dst; ++j) {
                 dst[sample_dst*stride_sample_dst + channel_dst*stride_channel_dst + j*stride_col_dst + row0 + threadIdx.x] = 0.0f;
@@ -689,7 +692,7 @@ static __global__ void mul_mat_vec_q(
         // 2. load only on threads that won't die after partial sum calculation
         const uint32_t channel_bias = ids ? channel_x : channel_dst;
         if (threadIdx.x < rows_per_cuda_block && threadIdx.y == 0 &&
-            (rows_per_cuda_block == 1 || uint32_t(row0 + threadIdx.x) < stride_col_dst)) {
+            (rows_per_cuda_block == 1 || uint32_t(row0 + threadIdx.x) < nrows_dst)) {
             if (use_bias) {
                 x_bias = x_bias + sample_dst * stride_sample_dst + channel_bias * stride_channel_dst + row0;
 #pragma unroll
@@ -796,7 +799,7 @@ static __global__ void mul_mat_vec_q(
             }
 
             float result_val = 0.0f;
-            if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < stride_col_dst)) {
+            if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < nrows_dst)) {
                 result_val = tmp[j][i];
                 if constexpr (has_fusion) {
                     if (use_scale) {
@@ -849,7 +852,7 @@ static __global__ void mul_mat_vec_q(
                     const float v = k < cs - 1 ? conv_states[(cs-1)*c + k] : r_bcast;
                     conv_input[cs*c + k] = v;
                 }
-            } else if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < stride_col_dst)) {
+            } else if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < nrows_dst)) {
                 dst[j*stride_col_dst + i] = result_val;
             }
         }
@@ -912,8 +915,11 @@ static __global__ void mul_mat_vec_q_ksplit(
     channel_y  = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
     sample_dst = blockIdx.z;
 
+    // dst rows are contiguous; with ids the per-slot row stride is stride_channel_dst, not stride_col_dst
+    const uint32_t nrows_dst = ids ? stride_channel_dst : stride_col_dst;
+
     if (fusion.n_slots != 0 && ids && channel_x >= fusion.n_slots) {
-        if (threadIdx.y == 0 && threadIdx.x < rows_per_cuda_block && uint32_t(row0 + threadIdx.x) < stride_col_dst) {
+        if (threadIdx.y == 0 && threadIdx.x < rows_per_cuda_block && uint32_t(row0 + threadIdx.x) < nrows_dst) {
 #pragma unroll
             for (int j = 0; j < ncols_dst; ++j) {
                 dst[sample_dst*stride_sample_dst + channel_dst*stride_channel_dst + j*stride_col_dst + row0 + threadIdx.x] = 0.0f;
@@ -984,7 +990,7 @@ static __global__ void mul_mat_vec_q_ksplit(
         // 2. load only on threads that won't die after partial sum calculation
         const uint32_t channel_bias = ids ? channel_x : channel_dst;
         if (threadIdx.x < rows_per_cuda_block && threadIdx.y == 0 &&
-            (rows_per_cuda_block == 1 || uint32_t(row0 + threadIdx.x) < stride_col_dst)) {
+            (rows_per_cuda_block == 1 || uint32_t(row0 + threadIdx.x) < nrows_dst)) {
             if (use_bias) {
                 x_bias = x_bias + sample_dst * stride_sample_dst + channel_bias * stride_channel_dst + row0;
 #pragma unroll
@@ -1084,7 +1090,7 @@ static __global__ void mul_mat_vec_q_ksplit(
                 }
             }
 
-            if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < stride_col_dst)) {
+            if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < nrows_dst)) {
                 float result = tmp[j][i];
                 if constexpr (has_fusion) {
                     if constexpr (type == GGML_TYPE_NVFP4) {
@@ -1133,7 +1139,7 @@ static __global__ void mul_mat_vec_q_ksplit(
                         const float v = k < cs - 1 ? conv_states[(cs-1)*c + k] : r_bcast;
                         conv_input[cs*c + k] = v;
                     }
-                } else if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < stride_col_dst)) {
+                } else if (threadIdx.x == i && (rows_per_cuda_block == 1 || uint32_t(row0 + i) < nrows_dst)) {
                     dst[j*stride_col_dst + i] = result;
                 }
             }

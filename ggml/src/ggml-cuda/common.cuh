@@ -1784,6 +1784,7 @@ struct ggml_backend_cuda_context {
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
+    cudaStream_t borrowed_stream = nullptr;
 
     cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES] = {nullptr};
@@ -1986,6 +1987,10 @@ struct ggml_backend_cuda_context {
         size_t offset = 0;
         size_t size   = 0;
     };
+
+    const ggml_tensor * glu_q8_1_node = nullptr;
+    const ggml_tensor * glu_q8_1_mm   = nullptr;
+
     char * q8_1_arena = nullptr;
     size_t q8_1_arena_size = 0;
     std::vector<q8_1_cache_entry> q8_1_cache;
