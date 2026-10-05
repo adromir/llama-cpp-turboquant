@@ -794,7 +794,9 @@ llama_context::llama_context(const llama_model & model, llama_context_params par
             sampling.token_ids_full_vocab[i] = i;
         }
 
-        const bool moe_cache_enabled = llama_moe_cache_init(model, *this, params.n_moe_cache_slots, params.n_moe_cache_inserts);
+        const bool moe_cache_enabled = llama_moe_cache_init(
+            model, *this, params.n_moe_cache_slots, params.n_moe_cache_inserts,
+            params.moe_expert_profile, params.moe_cache_pin);
         cparams.n_moe_cache_slots = moe_cache_enabled ? params.n_moe_cache_slots : 0;
     }
 }
@@ -4500,6 +4502,8 @@ llama_context_params llama_context_default_params() {
         /*.n_sampler                   =*/0,
         /*.ctx_other                   =*/nullptr,
         /*.kv_stream_arena_mib         =*/0,
+        /*.moe_expert_profile          =*/nullptr,
+        /*.moe_cache_pin               =*/true,
     };
 
     return result;

@@ -54,7 +54,10 @@ struct llama_moe_cache_layer {
 
 // build the cache for every host-resident expert layer of the model.
 // Returns true when the calling context owns the cache.
-bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx, int32_t n_slots, int32_t max_inserts);
+bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
+                          int32_t n_slots, int32_t max_inserts,
+                          const char * profile_path = nullptr,
+                          bool pin_host = true);
 
 void llama_moe_cache_free(const llama_context & ctx);
 void llama_moe_cache_free(const llama_model & model);

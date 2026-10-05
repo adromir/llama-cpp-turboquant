@@ -2785,6 +2785,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.n_moe_cache_inserts = value;
         }
     ).set_env("LLAMA_ARG_MOE_EXPERT_CACHE_INSERTS"));
+    add_opt(common_arg(
+        {"--moe-expert-profile"}, "FILE",
+        "pre-ranked expert profile path (STRP format) to seed GPU MoE cache slots at init",
+        [](common_params & params, const std::string & value) {
+            params.moe_expert_profile = value;
+        }
+    ).set_env("LLAMA_ARG_MOE_EXPERT_PROFILE"));
+    add_opt(common_arg(
+        {"--moe-cache-pin"}, {"--no-moe-cache-pin"},
+        string_format("pin host expert memory for async DMA uploads (default: %s)", params.moe_cache_pin ? "true" : "false"),
+        [](common_params & params, bool value) {
+            params.moe_cache_pin = value;
+        }
+    ).set_env("LLAMA_ARG_MOE_CACHE_PIN"));
     GGML_ASSERT(params.n_gpu_layers < 0); // string_format would need to be extended for a default >= 0
     add_opt(common_arg(
         {"-ngl", "--gpu-layers", "--n-gpu-layers"}, "N",

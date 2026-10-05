@@ -3,6 +3,7 @@
 *.a
 *.bat
 *.bin
+!data/*.bin
 *.d
 *.dll
 *.dot

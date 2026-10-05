@@ -465,6 +465,10 @@ extern "C" {
         // a caller built against a pre-streaming header keeps the same
         // offsets for every field before it.
         uint32_t kv_stream_arena_mib;
+
+        // [EXPERIMENTAL] pre-ranked expert profile (STRP format) and host pinning control
+        const char * moe_expert_profile;
+        bool         moe_cache_pin;
     };
 
     struct llama_model_tensor_override {

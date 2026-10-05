@@ -18,7 +18,75 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace {
+
+static bool file_exists(const char * path) {
+    if (!path || !path[0]) {
+        return false;
+    }
+    FILE * f = fopen(path, "rb");
+    if (f) {
+        fclose(f);
+        return true;
+    }
+    return false;
+}
+
+static bool read_strp_profile(const char * path,
+                              int64_t n_layers, int64_t n_expert,
+                              std::vector<std::pair<int32_t, int32_t>> & ranked) {
+    if (!path || !path[0]) {
+        return false;
+    }
+    FILE * f = fopen(path, "rb");
+    if (!f) {
+        LLAMA_LOG_WARN("moe-cache: cannot open profile '%s'\n", path);
+        return false;
+    }
+    char magic[4] = {0};
+    uint32_t hdr[5] = {0};
+    if (fread(magic, 1, 4, f) != 4 || fread(hdr, 4, 5, f) != 5) {
+        fclose(f);
+        LLAMA_LOG_WARN("moe-cache: truncated profile header in '%s'\n", path);
+        return false;
+    }
+    if (memcmp(magic, "STRP", 4) != 0) {
+        fclose(f);
+        LLAMA_LOG_WARN("moe-cache: '%s' is not an STRP profile (magic mismatch)\n", path);
+        return false;
+    }
+    const uint32_t nl = hdr[1];
+    const uint32_t ne = hdr[2];
+    const uint32_t n_ranked = hdr[4];
+    if (n_layers > 0 && (int64_t)nl != n_layers) {
+        LLAMA_LOG_WARN("moe-cache: profile layer count %u differs from model %lld (continuing with matching layers)\n",
+                nl, (long long)n_layers);
+    }
+    if (n_expert > 0 && (int64_t)ne != n_expert) {
+        LLAMA_LOG_WARN("moe-cache: profile expert count %u differs from model %lld\n",
+                ne, (long long)n_expert);
+    }
+    std::vector<uint16_t> raw((size_t)n_ranked * 2);
+    if (n_ranked > 0 && fread(raw.data(), 2, (size_t)n_ranked * 2, f) != (size_t)n_ranked * 2) {
+        fclose(f);
+        LLAMA_LOG_WARN("moe-cache: truncated ranked pairs in '%s'\n", path);
+        return false;
+    }
+    fclose(f);
+    ranked.reserve(n_ranked);
+    for (uint32_t i = 0; i < n_ranked; ++i) {
+        ranked.push_back({(int32_t)raw[i * 2], (int32_t)raw[i * 2 + 1]});
+    }
+    return true;
+}
 
 struct layer_state {
     llama_moe_cache_layer pub;
@@ -148,7 +216,10 @@ void set_table_entry(layer_state & ls, int32_t expert, int32_t slot_or_dummy) {
 
 } // namespace
 
-bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx, int32_t n_slots, int32_t max_inserts) {
+bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
+                          int32_t n_slots, int32_t max_inserts,
+                          const char * profile_path,
+                          bool pin_host) {
     std::lock_guard<std::mutex> init_lock(g_init_mtx);
     if (g_cache) {
         return false;
@@ -317,9 +388,90 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx, 
                     ls.pub.il, ls.pub.up_src->name, ls.pub.up_src->nb[2]);
         }
 
+        // pre-seed cache from an expert profile if provided or available
+        std::string resolved_profile;
+        if (profile_path && profile_path[0]) {
+            if (strcmp(profile_path, "none") != 0 && strcmp(profile_path, "0") != 0) {
+                resolved_profile = profile_path;
+            }
+        } else {
+            const char * env_prof = getenv("LLAMA_MOE_EXPERT_PROFILE");
+            if (env_prof && env_prof[0]) {
+                if (strcmp(env_prof, "none") != 0 && strcmp(env_prof, "0") != 0) {
+                    resolved_profile = env_prof;
+                }
+            } else {
+                int64_t n_exp = mc->layers.empty() ? 0 : mc->layers[0].pub.up_src->ne[2];
+                if (n_exp == 256 && file_exists("data/expert-profile-coder.bin")) {
+                    resolved_profile = "data/expert-profile-coder.bin";
+                } else if (file_exists("data/expert-profile.bin")) {
+                    resolved_profile = "data/expert-profile.bin";
+                }
+            }
+        }
+
+        std::vector<std::pair<int32_t, int32_t>> ranked;
+        int64_t model_n_expert = mc->layers.empty() ? 0 : mc->layers[0].pub.up_src->ne[2];
+        if (!resolved_profile.empty() && read_strp_profile(resolved_profile.c_str(), (int64_t)mc->layers.size(), model_n_expert, ranked)) {
+            std::map<int, size_t> layer_map;
+            for (size_t li = 0; li < mc->layers.size(); ++li) {
+                layer_map[mc->layers[li].pub.il] = li;
+            }
+            std::vector<int32_t> slots_filled(mc->layers.size(), 0);
+            size_t total_seeded = 0;
+            for (const auto & rp : ranked) {
+                auto it = layer_map.find(rp.first);
+                if (it == layer_map.end()) {
+                    continue;
+                }
+                size_t li = it->second;
+                auto & ls = mc->layers[li];
+                int32_t exp = rp.second;
+                if (exp < 0 || exp >= (int32_t)ls.expert_slot.size()) {
+                    continue;
+                }
+                if (slots_filled[li] < n_slots && ls.expert_slot[exp] < 0) {
+                    int32_t slot = slots_filled[li]++;
+                    ls.slot_expert[slot] = exp;
+                    ls.expert_slot[exp]  = slot;
+                    ls.slot_last_use[slot] = ++mc->clock;
+                    set_table_entry(ls, exp, slot);
+                    total_seeded++;
+                }
+            }
+            // upload all pre-seeded slices to device synchronously
+            for (auto & ls : mc->layers) {
+                for (int32_t s = 0; s < n_slots; ++s) {
+                    int32_t exp = ls.slot_expert[s];
+                    if (exp >= 0) {
+                        upload_slice(ls.upload_backend, ls.pub.up_c,   ls.pub.up_src,   exp, s);
+                        upload_slice(ls.upload_backend, ls.pub.gate_c, ls.pub.gate_src, exp, s);
+                        upload_slice(ls.upload_backend, ls.pub.down_c, ls.pub.down_src, exp, s);
+                    }
+                }
+                ggml_backend_synchronize(ls.upload_backend);
+                if (ls.table_dirty) {
+                    ggml_backend_tensor_set(ls.pub.dev_table, ls.table.data(), 0, ls.table.size()*sizeof(int32_t));
+                    ls.table_dirty = false;
+                }
+            }
+            LLAMA_LOG_INFO("%s: pre-seeded MoE cache with %zu hot experts from '%s'\n",
+                    __func__, total_seeded, resolved_profile.c_str());
+        }
+
         // register host-resident expert buffers with the device for async DMA
+        bool should_pin = pin_host;
+        const char * env_pin = getenv("LLAMA_MOE_CACHE_PIN");
+        if (env_pin && atoi(env_pin) == 0) {
+            should_pin = false;
+        }
+
         std::set<void *> registered_host_bases;
         for (auto & g : groups) {
+            if (!should_pin) {
+                LLAMA_LOG_INFO("%s: host memory pinning disabled (safe mapped mode)\n", __func__);
+                break;
+            }
             ggml_backend_dev_t dev = ggml_backend_buft_get_device(g.first);
             if (!dev) {
                 continue;
@@ -343,6 +495,18 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx, 
                     void * base = ggml_backend_buffer_get_base(t->buffer);
                     size_t size = ggml_backend_buffer_get_size(t->buffer);
                     if (base && size > 0 && registered_host_bases.insert(base).second) {
+#ifdef _WIN32
+                        MEMORYSTATUSEX ms;
+                        ms.dwLength = sizeof(ms);
+                        if (GlobalMemoryStatusEx(&ms)) {
+                            constexpr uint64_t headroom = 4ULL * 1024 * 1024 * 1024; // 4 GiB headroom
+                            if (size + headroom > ms.ullAvailPhys) {
+                                LLAMA_LOG_WARN("%s: skipping pinning of %.1f MiB host memory to preserve 4 GiB RAM headroom (%.1f MiB available)\n",
+                                        __func__, size/1024.0/1024.0, ms.ullAvailPhys/1024.0/1024.0);
+                                continue;
+                            }
+                        }
+#endif
                         if (reg_fn(base, size)) {
                             mc->pinned_buffers.push_back({base, unreg_fn});
                             LLAMA_LOG_INFO("%s: pinned %.1f MiB host memory for async DMA expert uploads\n",
