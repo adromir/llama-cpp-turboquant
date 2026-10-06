@@ -57,7 +57,7 @@ param(
     [string]$Out = $env:OUT,
 
     [Parameter()]
-    [ValidateSet("rocmfp3", "rocmfp4", "rocmfp6", "rocmfp8", "rocmi4")]
+    [ValidateSet("rocmfp2", "rocmfp3", "rocmfp4", "rocmfp6", "rocmfp8", "rocmi4", "tq3", "tq4")]
     [string]$Format = $(if ($env:FORMAT) { $env:FORMAT } else { "rocmfp4" }),
 
     [Parameter()]
@@ -258,6 +258,8 @@ if ($TensorTypeFile -and -not (Test-Path $TensorTypeFile)) {
 if (-not $Preset) {
     $pair = "$Format`:$Profile"
     switch -Regex ($pair) {
+        "rocmfp2:straight"       { $Preset = "Q2_0_ROCMFPX" }
+        "rocmfp2:agent"          { $Preset = "Q2_0_ROCMFPX_AGENT" }
         "rocmfp3:straight"       { $Preset = "Q3_0_ROCMFPX" }
         "rocmfp3:agent"          { $Preset = "Q3_0_ROCMFPX_AGENT" }
         "rocmfp4:straight"       { $Preset = "Q4_0_ROCMFP4" }
@@ -273,6 +275,8 @@ if (-not $Preset) {
         "rocmfp8:straight"       { $Preset = "Q8_0_ROCMFPX" }
         "rocmfp8:agent"          { $Preset = "Q8_0_ROCMFPX_AGENT" }
         "rocmi4:.*"              { $Preset = "Q4_0_ROCMI4" }
+        "tq3:.*"                 { $Preset = "TQ3_1S" }
+        "tq4:.*"                 { $Preset = "TQ4_1S" }
         default {
             Write-Error "Unsupported Format/Profile combination: Format=$Format, Profile=$Profile"
             exit 2

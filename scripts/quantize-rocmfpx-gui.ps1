@@ -737,6 +737,9 @@ function Build-QuantizeArguments {
                     <ComboBoxItem Content="Q4_0_ROCMFP4_COHERENT - Coherent 4-Bit FP4 (Higher Quality)" Tag="Q4_0_ROCMFP4_COHERENT" ToolTip="4.70 bpw. Coherent 4-bit FP4 with Q6_K token embeddings for improved response coherence."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX - Tuned for Strix Point iGPU" Tag="Q4_0_ROCMFP4_STRIX" ToolTip="~4.49 bpw. Optimized for AMD Strix Point / Strix Halo APUs (Zen 5 + RDNA 3.5 iGPU) with high-quality attention K/V recipe."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX_LEAN - Lean Strix Point Format" Tag="Q4_0_ROCMFP4_STRIX_LEAN" ToolTip="~4.38 bpw. Lean variant for Strix Point iGPUs with Q5_K token embeddings to conserve memory."/>
+                    <!-- ROCmFP2 -->
+                    <ComboBoxItem Content="Q2_0_ROCMFPX - 2-Bit FP2 (Extreme VRAM Savings)" Tag="Q2_0_ROCMFPX" ToolTip="2.50 bpw. ROCmFPx 2-bit S40 codebook with dual UE4M3 micro-scales. Maximum compression for 32B+ and 70B+ models."/>
+                    <ComboBoxItem Content="Q2_0_ROCMFPX_AGENT - 2-Bit FP2 Agent (Balanced Coherence)" Tag="Q2_0_ROCMFPX_AGENT" ToolTip="Agent/tool-call coherent 2-bit ROCmFPx routing. Protects critical attention and embedding layers for stable reasoning at ~2.75 bpw."/>
                     <!-- ROCmFP3 -->
                     <ComboBoxItem Content="Q3_0_ROCMFPX - 3-Bit FP3 (Fastest 3-Bit)" Tag="Q3_0_ROCMFPX" ToolTip="3.50 bpw. 3-bit floating-point quantization for AMD GPUs with fast ROCm/Vulkan staging. Maximum VRAM savings."/>
                     <ComboBoxItem Content="Q3_0_ROCMFPX_AGENT - 3-Bit FP3 Agent (Best with Imatrix)" Tag="Q3_0_ROCMFPX_AGENT" ToolTip="Agent/tool-call coherent 3-bit ROCmFPx routing. Best quality when paired with an importance matrix (imatrix)."/>
@@ -750,8 +753,8 @@ function Build-QuantizeArguments {
                     <!-- ROCm Integer -->
                     <ComboBoxItem Content="Q4_0_ROCMI4 - 4-Bit Integer ROCm" Tag="Q4_0_ROCMI4" ToolTip="4.25 bpw. Native signed-nibble 4-bit integer format without codebook for ROCm matrix cores."/>
                     <!-- TurboQuant Weights -->
-                    <ComboBoxItem Content="tq3_1s - TurboQuant 3-Bit (WHT-rotated Lloyd-Max)" Tag="tq3_1s" ToolTip="4.00 bpw. TurboQuant 3-bit weight format with Walsh-Hadamard rotation (WHT) and Lloyd-Max codebooks."/>
-                    <ComboBoxItem Content="tq4_1s - TurboQuant 4-Bit (WHT-rotated Lloyd-Max)" Tag="tq4_1s" ToolTip="5.00 bpw. TurboQuant 4-bit weight format with Walsh-Hadamard rotation (WHT) and Lloyd-Max codebooks."/>
+                    <ComboBoxItem Content="tq3_1s - TurboQuant 3-Bit (WHT-rotated Lloyd-Max)" Tag="tq3_1s" ToolTip="~3.25 bpw. TurboQuant 3-bit weight format with Walsh-Hadamard rotation (WHT) and Lloyd-Max codebooks."/>
+                    <ComboBoxItem Content="tq4_1s - TurboQuant 4-Bit (WHT-rotated Lloyd-Max)" Tag="tq4_1s" ToolTip="~4.25 bpw. TurboQuant 4-bit weight format with Walsh-Hadamard rotation (WHT) and Lloyd-Max codebooks."/>
                     <!-- Upstream Standard Formats -->
                     <ComboBoxItem Content="Q4_K_M - Upstream 4-Bit K-Quant" Tag="Q4_K_M" ToolTip="4.58 bpw. Upstream medium 4-bit K-quant with mixed tensor precision. Popular general-purpose format."/>
                     <ComboBoxItem Content="Q5_K_M - Upstream 5-Bit K-Quant" Tag="Q5_K_M" ToolTip="5.33 bpw. Upstream medium 5-bit K-quant. High accuracy with moderate VRAM usage."/>

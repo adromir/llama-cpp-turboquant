@@ -23,11 +23,12 @@ param(
     [Parameter(Position=2)]
     [ValidateSet(
         "Q4_0_ROCMFP4", "Q4_0_ROCMFP4_FAST", "Q4_0_ROCMFP4_FAST_COHERENT", "Q4_0_ROCMFP4_COHERENT", "Q4_0_ROCMFP4_STRIX", "Q4_0_ROCMFP4_STRIX_LEAN",
+        "Q2_0_ROCMFPX", "Q2_0_ROCMFPX_AGENT",
         "Q3_0_ROCMFPX", "Q3_0_ROCMFPX_AGENT",
         "Q6_0_ROCMFPX", "Q6_0_ROCMFPX_AGENT", "Q6_0_ROCMFPX_LEAN",
         "Q8_0_ROCMFPX", "Q8_0_ROCMFPX_AGENT",
         "Q4_0_ROCMI4",
-        "tq3_1s", "tq4_1s"
+        "tq3_1s", "tq4_1s", "TQ3_1S", "TQ4_1S"
     )]
     [string]$Preset = "Q4_0_ROCMFP4_FAST",
 

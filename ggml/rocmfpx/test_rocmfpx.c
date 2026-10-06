@@ -52,6 +52,30 @@ static void fill_imatrix_case(float * src, float * imatrix, int n, float base, f
     imatrix[0] = 0.0f;
 }
 
+static void check_weighted_imatrix_fp1(void) {
+    enum { N = QK_ROCMFP1 };
+
+    float src[N];
+    float imatrix[N];
+    float plain[N];
+    float weighted[N];
+    block_rocmfp1 q_plain[N / QK_ROCMFP1];
+    block_rocmfp1 q_weighted[N / QK_ROCMFP1];
+
+    fill_imatrix_case(src, imatrix, N, 0.45f, 9.0f);
+
+    rocmfpx_quantize_fp1(src, q_plain,    1, N, NULL);
+    rocmfpx_quantize_fp1(src, q_weighted, 1, N, imatrix);
+    rocmfpx_dequantize_row_fp1(q_plain,    plain,    N);
+    rocmfpx_dequantize_row_fp1(q_weighted, weighted, N);
+
+    const float plain_err = weighted_mse(src, plain, imatrix, N);
+    const float weighted_err = weighted_mse(src, weighted, imatrix, N);
+
+    printf("ROCmFP1 imatrix weighted_mse: plain=%g weighted=%g\n", plain_err, weighted_err);
+    assert(weighted_err < plain_err);
+}
+
 static void check_weighted_imatrix_fp3(void) {
     enum { N = QK_ROCMFP3 };
 
@@ -186,11 +210,15 @@ int main(void) {
     enum { N = 64 };
 
     float src[N];
+    float fp1[N];
+    float fp2[N];
     float fp3[N];
     float fp6[N];
     float fp8[N];
     float i4[N];
 
+    block_rocmfp1 q1[N / QK_ROCMFP1];
+    block_rocmfp2 q2[N / QK_ROCMFP2];
     block_rocmfp3 q3[N / QK_ROCMFP3];
     block_rocmfp6 q6[N / QK_ROCMFP6];
     block_rocmfp8 q8[N / QK_ROCMFP8];
@@ -198,26 +226,40 @@ int main(void) {
 
     fill_row(src, N);
 
+    rocmfpx_quantize_row_fp1_ref(src, q1, N);
+    rocmfpx_quantize_row_fp2_ref(src, q2, N);
     rocmfpx_quantize_row_fp3_ref(src, q3, N);
     rocmfpx_quantize_row_fp6_ref(src, q6, N);
     rocmfpx_quantize_row_fp8_ref(src, q8, N);
     rocmfpx_quantize_row_i4_ref(src, qi4, N);
 
+    assert(rocmfpx_validate_row_data_fp1(q1, sizeof(q1)));
+    assert(rocmfpx_validate_row_data_fp2(q2, sizeof(q2)));
     assert(rocmfpx_validate_row_data_fp3(q3, sizeof(q3)));
     assert(rocmfpx_validate_row_data_fp6(q6, sizeof(q6)));
     assert(rocmfpx_validate_row_data_fp8(q8, sizeof(q8)));
     assert(rocmfpx_validate_row_data_i4(qi4, sizeof(qi4)));
 
+    rocmfpx_dequantize_row_fp1(q1, fp1, N);
+    rocmfpx_dequantize_row_fp2(q2, fp2, N);
     rocmfpx_dequantize_row_fp3(q3, fp3, N);
     rocmfpx_dequantize_row_fp6(q6, fp6, N);
     rocmfpx_dequantize_row_fp8(q8, fp8, N);
     rocmfpx_dequantize_row_i4(qi4, i4, N);
 
+    const float mse1 = mse(src, fp1, N);
+    const float mse2 = mse(src, fp2, N);
     const float mse3 = mse(src, fp3, N);
     const float mse6 = mse(src, fp6, N);
     const float mse8 = mse(src, fp8, N);
     const float msei4 = mse(src, i4, N);
 
+    printf("ROCmFP1: block=%zu row=%zu bpw=%.2f mse=%g\n",
+            sizeof(block_rocmfp1), rocmfpx_row_size_fp1(N),
+            8.0f*(float) sizeof(block_rocmfp1)/(float) QK_ROCMFP1, mse1);
+    printf("ROCmFP2: block=%zu row=%zu bpw=%.2f mse=%g\n",
+            sizeof(block_rocmfp2), rocmfpx_row_size_fp2(N),
+            8.0f*(float) sizeof(block_rocmfp2)/(float) QK_ROCMFP2, mse2);
     printf("ROCmFP3: block=%zu row=%zu bpw=%.2f mse=%g\n",
             sizeof(block_rocmfp3), rocmfpx_row_size_fp3(N),
             8.0f*(float) sizeof(block_rocmfp3)/(float) QK_ROCMFP3, mse3);
@@ -231,14 +273,19 @@ int main(void) {
             sizeof(block_rocmi4), rocmfpx_row_size_i4(N),
             8.0f*(float) sizeof(block_rocmi4)/(float) QK_ROCMI4, msei4);
 
+    assert(isfinite(mse1));
+    assert(isfinite(mse2));
     assert(isfinite(mse3));
     assert(isfinite(mse6));
     assert(isfinite(mse8));
     assert(isfinite(msei4));
+    assert(mse2 < mse1);
+    assert(mse3 < mse2);
     assert(msei4 < mse3);
     assert(mse8 < mse6);
     assert(mse6 < mse3);
 
+    check_weighted_imatrix_fp1();
     check_weighted_imatrix_fp3();
     check_weighted_imatrix_fp6();
     check_weighted_imatrix_fp8();

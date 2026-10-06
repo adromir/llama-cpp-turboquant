@@ -90,6 +90,7 @@ const char * llama_ftype_name(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX_AGENT_LEAN: name = LLAMA_FTYPE_PREFIX "Q6_0_ROCMFPX_AGENT_LEAN"; break;
         case LLAMA_FTYPE_MOSTLY_Q4_0_ROCMI4:           name = LLAMA_FTYPE_PREFIX "Q4_0_ROCMI4"; break;
         case LLAMA_FTYPE_MOSTLY_Q2_0_ROCMFPX:          name = LLAMA_FTYPE_PREFIX "Q2_0_ROCMFPX"; break;
+        case LLAMA_FTYPE_MOSTLY_Q2_0_ROCMFPX_AGENT:    name = LLAMA_FTYPE_PREFIX "Q2_0_ROCMFPX_AGENT"; break;
         default:                           name = LLAMA_FTYPE_PREFIX "unknown, may not work"; break;
     }
     return (ftype & LLAMA_FTYPE_GUESSED) ? name : name + guessed_prefix_len;

@@ -1612,6 +1612,7 @@ enum ggml_type ggml_ftype_to_ggml_type(enum ggml_ftype ftype) {
         case GGML_FTYPE_MOSTLY_Q3_0_ROCMFPX:
             wtype = GGML_TYPE_Q3_0_ROCMFPX; break;
         case GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX:
+        case GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX_AGENT:
             wtype = GGML_TYPE_Q2_0_ROCMFPX; break;
         case GGML_FTYPE_UNKNOWN:              wtype = GGML_TYPE_COUNT; break;
         case GGML_FTYPE_MOSTLY_Q4_1_SOME_F16: wtype = GGML_TYPE_COUNT; break;

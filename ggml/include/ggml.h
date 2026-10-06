@@ -512,6 +512,7 @@ extern "C" {
         GGML_FTYPE_MOSTLY_Q8_0_ROCMFPX          = 111, // ROCmFPx experimental 8-bit reference layout
         GGML_FTYPE_MOSTLY_Q3_0_ROCMFPX          = 112, // ROCmFPx experimental 3-bit reference layout
         GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX          = 113, // ROCmFPx experimental 2-bit S40 codebook layout
+        GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX_AGENT    = 114, // ROCmFPx experimental 2-bit agent layout
     };
 
     // available tensor operations:

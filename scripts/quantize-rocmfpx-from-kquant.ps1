@@ -14,7 +14,7 @@
     Path for output ROCmFPX GGUF file.
 
 .PARAMETER Preset
-    Target preset: Q3_0_ROCMFPX | Q6_0_ROCMFPX | Q8_0_ROCMFPX | *_AGENT variants (default: Q3_0_ROCMFPX).
+    Target preset: Q2_0_ROCMFPX | Q3_0_ROCMFPX | Q6_0_ROCMFPX | Q8_0_ROCMFPX | *_AGENT variants (default: Q3_0_ROCMFPX).
 
 .PARAMETER PresetForce
     Bypass automated preset recommendations (e.g. forcing Q3 from Q8 sources).

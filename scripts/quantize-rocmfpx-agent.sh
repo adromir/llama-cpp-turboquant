@@ -87,6 +87,8 @@ if [[ -n "$TENSOR_TYPE_FILE" && ! -f "$TENSOR_TYPE_FILE" ]]; then
 fi
 
 case "$FORMAT:$PROFILE" in
+    rocmfp2:straight) PRESET="Q2_0_ROCMFPX" ;;
+    rocmfp2:agent)    PRESET="Q2_0_ROCMFPX_AGENT" ;;
     rocmfp3:straight) PRESET="Q3_0_ROCMFPX" ;;
     rocmfp3:agent)    PRESET="Q3_0_ROCMFPX_AGENT" ;;
     rocmfp4:straight) PRESET="Q4_0_ROCMFP4" ;;
@@ -104,6 +106,9 @@ case "$FORMAT:$PROFILE" in
     rocmfp6:agent_lean) PRESET="Q6_0_ROCMFPX_AGENT_LEAN" ;;
     rocmfp8:straight) PRESET="Q8_0_ROCMFPX" ;;
     rocmfp8:agent)    PRESET="Q8_0_ROCMFPX_AGENT" ;;
+    rocmi4:*)         PRESET="Q4_0_ROCMI4" ;;
+    tq3:*)            PRESET="TQ3_1S" ;;
+    tq4:*)            PRESET="TQ4_1S" ;;
     *)
         echo "unsupported FORMAT/PROFILE: FORMAT=$FORMAT PROFILE=$PROFILE" >&2
         usage >&2
