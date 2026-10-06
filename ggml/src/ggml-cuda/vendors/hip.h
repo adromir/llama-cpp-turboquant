@@ -147,7 +147,22 @@ static __device__ __forceinline__ T __hip_shfl_xor_fast(T var, int laneMask, int
 #define cudaLaunchCooperativeKernel hipLaunchCooperativeKernel
 #define cudaLaunchHostFunc hipLaunchHostFunc
 #define cudaMalloc hipMalloc
+#if defined(hipHostMallocNumaUser)
+static inline hipError_t ggml_hip_host_malloc(void ** ptr, size_t size) {
+    unsigned int flags = hipHostMallocDefault;
+    const char * env = getenv("GGML_HIP_NUMA_USER");
+    if (env != nullptr && atoi(env) != 0) {
+        hipError_t err = hipHostMalloc(ptr, size, flags | hipHostMallocNumaUser);
+        if (err == hipSuccess) {
+            return err;
+        }
+    }
+    return hipHostMalloc(ptr, size, flags);
+}
+#define cudaMallocHost(ptr, size) ggml_hip_host_malloc((void **)(ptr), size)
+#else
 #define cudaMallocHost(ptr, size) hipHostMalloc(ptr, size, hipHostMallocDefault)
+#endif
 #define cudaMallocManaged hipMallocManaged
 #define cudaMemAdvise hipMemAdvise
 #define cudaMemcpy hipMemcpy

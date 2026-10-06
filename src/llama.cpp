@@ -131,6 +131,11 @@ void llama_backend_init(void) {
 
 void llama_numa_init(enum ggml_numa_strategy numa) {
     if (numa != GGML_NUMA_STRATEGY_DISABLED) {
+#if defined(_WIN32)
+        _putenv_s("GGML_HIP_NUMA_USER", "1");
+#else
+        setenv("GGML_HIP_NUMA_USER", "1", 1);
+#endif
         auto * dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
         GGML_ASSERT(dev && "CPU backend is not loaded");
         auto * reg = ggml_backend_dev_backend_reg(dev);
