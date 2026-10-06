@@ -188,6 +188,28 @@ function Set-UniversalGpuEnvironment {
     return "Device $Device"
 }
 
+function Get-AmdGpuTelemetry {
+    $amdSmi = Get-Command amd-smi -ErrorAction SilentlyContinue
+    if ($amdSmi) {
+        try {
+            $info = & amd-smi list 2>&1
+            if ($LASTEXITCODE -eq 0 -and $info) {
+                return ($info | Out-String).Trim()
+            }
+        } catch {}
+    }
+    $rocmSmi = Get-Command rocm-smi -ErrorAction SilentlyContinue
+    if ($rocmSmi) {
+        try {
+            $info = & rocm-smi --showid 2>&1
+            if ($LASTEXITCODE -eq 0 -and $info) {
+                return ($info | Out-String).Trim()
+            }
+        } catch {}
+    }
+    return $null
+}
+
 # Generate Importance Matrix if requested
 if ($NeedImatrixGen) {
     if ([string]::IsNullOrWhiteSpace($Imatrix)) {

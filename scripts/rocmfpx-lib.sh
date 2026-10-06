@@ -95,3 +95,12 @@ PY
         echo "{\"gates\":[$record]}" >"$summary"
     fi
 }
+
+rocmfpx_detect_gpus() {
+    if command -v amd-smi >/dev/null 2>&1; then
+        amd-smi list 2>/dev/null || true
+    elif command -v rocm-smi >/dev/null 2>&1; then
+        rocm-smi --showid 2>/dev/null || true
+    fi
+}
+
