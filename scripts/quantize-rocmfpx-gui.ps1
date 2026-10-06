@@ -737,6 +737,9 @@ function Build-QuantizeArguments {
                     <ComboBoxItem Content="Q4_0_ROCMFP4_COHERENT - Coherent 4-Bit FP4 (Higher Quality)" Tag="Q4_0_ROCMFP4_COHERENT" ToolTip="4.70 bpw. Coherent 4-bit FP4 with Q6_K token embeddings for improved response coherence."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX - Tuned for Strix Point iGPU" Tag="Q4_0_ROCMFP4_STRIX" ToolTip="~4.49 bpw. Optimized for AMD Strix Point / Strix Halo APUs (Zen 5 + RDNA 3.5 iGPU) with high-quality attention K/V recipe."/>
                     <ComboBoxItem Content="Q4_0_ROCMFP4_STRIX_LEAN - Lean Strix Point Format" Tag="Q4_0_ROCMFP4_STRIX_LEAN" ToolTip="~4.38 bpw. Lean variant for Strix Point iGPUs with Q5_K token embeddings to conserve memory."/>
+                    <!-- ROCmFP1 -->
+                    <ComboBoxItem Content="Q1_0_ROCMFPX - 1-Bit FP1 (Experimental 1.5 bpw Prototype)" Tag="Q1_0_ROCMFPX" ToolTip="1.50 bpw. ROCmFPx 1-bit sign + dual UE4M3 micro-scales per block 32. Ultra-compressed experimental prototype."/>
+                    <ComboBoxItem Content="Q1_0_ROCMFPX_AGENT - 1-Bit FP1 Agent (Coherent Hybrid Prototype)" Tag="Q1_0_ROCMFPX_AGENT" ToolTip="Agent-routed 1-bit prototype. Preserves critical layers with higher precision to prevent degradation at extreme low bitrates."/>
                     <!-- ROCmFP2 -->
                     <ComboBoxItem Content="Q2_0_ROCMFPX - 2-Bit FP2 (Extreme VRAM Savings)" Tag="Q2_0_ROCMFPX" ToolTip="2.50 bpw. ROCmFPx 2-bit S40 codebook with dual UE4M3 micro-scales. Maximum compression for 32B+ and 70B+ models."/>
                     <ComboBoxItem Content="Q2_0_ROCMFPX_AGENT - 2-Bit FP2 Agent (Balanced Coherence)" Tag="Q2_0_ROCMFPX_AGENT" ToolTip="Agent/tool-call coherent 2-bit ROCmFPx routing. Protects critical attention and embedding layers for stable reasoning at ~2.75 bpw."/>

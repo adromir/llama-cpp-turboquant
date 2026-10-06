@@ -87,6 +87,8 @@ if [[ -n "$TENSOR_TYPE_FILE" && ! -f "$TENSOR_TYPE_FILE" ]]; then
 fi
 
 case "$FORMAT:$PROFILE" in
+    rocmfp1:straight) PRESET="Q1_0_ROCMFPX" ;;
+    rocmfp1:agent)    PRESET="Q1_0_ROCMFPX_AGENT" ;;
     rocmfp2:straight) PRESET="Q2_0_ROCMFPX" ;;
     rocmfp2:agent)    PRESET="Q2_0_ROCMFPX_AGENT" ;;
     rocmfp3:straight) PRESET="Q3_0_ROCMFPX" ;;

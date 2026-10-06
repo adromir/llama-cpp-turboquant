@@ -57,7 +57,7 @@ param(
     [string]$Out = $env:OUT,
 
     [Parameter()]
-    [ValidateSet("rocmfp2", "rocmfp3", "rocmfp4", "rocmfp6", "rocmfp8", "rocmi4", "tq3", "tq4")]
+    [ValidateSet("rocmfp1", "rocmfp2", "rocmfp3", "rocmfp4", "rocmfp6", "rocmfp8", "rocmi4", "tq3", "tq4")]
     [string]$Format = $(if ($env:FORMAT) { $env:FORMAT } else { "rocmfp4" }),
 
     [Parameter()]
@@ -258,6 +258,8 @@ if ($TensorTypeFile -and -not (Test-Path $TensorTypeFile)) {
 if (-not $Preset) {
     $pair = "$Format`:$Profile"
     switch -Regex ($pair) {
+        "rocmfp1:straight"       { $Preset = "Q1_0_ROCMFPX" }
+        "rocmfp1:agent"          { $Preset = "Q1_0_ROCMFPX_AGENT" }
         "rocmfp2:straight"       { $Preset = "Q2_0_ROCMFPX" }
         "rocmfp2:agent"          { $Preset = "Q2_0_ROCMFPX_AGENT" }
         "rocmfp3:straight"       { $Preset = "Q3_0_ROCMFPX" }
