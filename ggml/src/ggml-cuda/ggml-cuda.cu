@@ -5540,11 +5540,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         }
         return -1;
     }();
-#if defined(GGML_USE_HIP)
-    const bool disable_fusion = fusion_mode == 1 || (fusion_mode < 0 && GGML_CUDA_CC_IS_RDNA4(cc));
-#else
     const bool disable_fusion = fusion_mode == 1;
-#endif
     if (disable_fusion) {
         return 0;
     }

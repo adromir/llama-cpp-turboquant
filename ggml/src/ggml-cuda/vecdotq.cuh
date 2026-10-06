@@ -244,15 +244,16 @@ template <int vdr> static __device__ __forceinline__ float vec_dot_q5_1_q8_1_imp
     return sumi*d5d8 + m5s8 / (QI5_1 / vdr);
 }
 
-#if defined(RDNA4) || defined(RDNA3_0)
-// VDR=4 measured on gfx1200/gfx1201 (RX 9000): decode -10..-33% on the
-// compute-bound shapes, neutral on the DRAM-bound lm_head. RDNA3_0 (gfx1100-
-// gfx1103, RX 7900 XTX) verified 2026-08-28: tg128 123.74 -> 127.7x (+3.x%),
-// PPL 24.4430 vs 24.44xx (near-lossless), greedy byte-identical. RDNA3_5
-// (gfx115x) keeps VDR=2 pending verification on those GPUs.
-#define VDR_Q8_0_Q8_1_MMVQ 4
-#else
 #define VDR_Q8_0_Q8_1_MMVQ 2
+
+// MoE expert kernel (mul_mat_vec_q_moe) VDR: that kernel is one warp per token,
+// so it has none of the multi-column register pressure that made VDR=4 lose the
+// dense mmvq verify widths (the issue #30 regression). Keep the block-10 wide
+// chunk there, per kernel, while the dense selectors stay at the upstream VDR.
+#if defined(RDNA4) || defined(RDNA3_0)
+#define VDR_Q8_0_Q8_1_MMVQ_MOE 4
+#else
+#define VDR_Q8_0_Q8_1_MMVQ_MOE 2
 #endif
 #define VDR_Q8_0_Q8_1_MMQ 8
 
@@ -939,7 +940,8 @@ static __device__ __forceinline__ float vec_dot_q3_K_q8_1_impl_mmq(
     return d3*d8 * sumi;
 }
 
-#define VDR_Q4_K_Q8_1_MMVQ 4
+#define VDR_Q4_K_Q8_1_MMVQ 2
+#define VDR_Q4_K_Q8_1_MMVQ_MOE 4
 #define VDR_Q4_K_Q8_1_MMQ  8
 
 // contiguous v/x values
@@ -1023,7 +1025,8 @@ static __device__ __forceinline__ float vec_dot_q4_K_q8_1_impl_mmq(
     return dm4f.x*sumf_d - dm4f.y*sumf_m;
 }
 
-#define VDR_Q5_K_Q8_1_MMVQ 4
+#define VDR_Q5_K_Q8_1_MMVQ 2
+#define VDR_Q5_K_Q8_1_MMVQ_MOE 4
 #define VDR_Q5_K_Q8_1_MMQ  8
 
 // contiguous v/x values
@@ -1121,7 +1124,8 @@ static __device__ __forceinline__ float vec_dot_q5_K_q8_1_impl_mmq(
     return dm4f.x*sumf_d - dm4f.y*sumf_m;
 }
 
-#define VDR_Q6_K_Q8_1_MMVQ 2
+#define VDR_Q6_K_Q8_1_MMVQ 1
+#define VDR_Q6_K_Q8_1_MMVQ_MOE 2
 #define VDR_Q6_K_Q8_1_MMQ  8
 
 // contiguous v/x values
@@ -1421,6 +1425,32 @@ static __device__ __forceinline__ float vec_dot_q8_0_q8_1(
     }
 
     return vec_dot_q8_0_q8_1_impl<float, VDR_Q8_0_Q8_1_MMVQ>(v, u, bq8_0->d, __low2half(bq8_1->ds));
+}
+
+// MoE expert kernel (mul_mat_vec_q_moe) entry point for q8_0 experts: same body
+// as the generic above, but with the per-kernel MoE VDR (the dense selectors
+// keep the upstream VDR=2 generic vec_dot_q8_0_q8_1).
+template <int vdr>
+static __device__ __forceinline__ float vec_dot_q8_0_q8_1_moe_impl(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+
+    const block_q8_0 * bq8_0 = (const block_q8_0 *) vbq + kbx;
+
+    int v[vdr];
+    int u[vdr];
+
+#pragma unroll
+    for (int i = 0; i < vdr; ++i) {
+        v[i] = get_int_b2(bq8_0->qs, iqs + i);
+        u[i] = get_int_b4(bq8_1->qs, iqs + i);
+    }
+
+    return vec_dot_q8_0_q8_1_impl<float, vdr>(v, u, bq8_0->d, __low2half(bq8_1->ds));
+}
+
+static __device__ __forceinline__ float vec_dot_q8_0_q8_1_moe(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+    return vec_dot_q8_0_q8_1_moe_impl<VDR_Q8_0_Q8_1_MMVQ_MOE>(vbq, bq8_1, kbx, iqs);
 }
 
 static __device__ __forceinline__ float vec_dot_q2_K_q8_1(
