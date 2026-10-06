@@ -83,14 +83,14 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: C:\TheRock\build
-        key: rocm-installed-10.0.0-windows-v1
+        key: rocm-installed-10.1.0-windows-v1
 
     - name: Download and Install ROCm
       if: steps.cache-rocm-restore.outputs.cache-hit != 'true'
       run: |
-        Write-Host "Downloading ROCm 10.0.0 TheRock Windows tarball via curl..."
+        Write-Host "Downloading ROCm 10.1.0 TheRock Windows tarball via curl..."
         New-Item -ItemType Directory -Force -Path C:\TheRock\build | Out-Null
-        curl.exe -L --retry 3 --retry-delay 5 -o therock.tar.gz https://stable.repo.amd.com/rocm/core/tarball/therock-dist-windows-gfx120X-all-10.0.0.tar.gz
+        curl.exe -L --retry 3 --retry-delay 5 -o therock.tar.gz https://stable.repo.amd.com/rocm/core/tarball/therock-dist-windows-gfx120X-all-10.1.0.tar.gz
         
         Write-Host "Extracting tarball to C:\TheRock\build..."
         tar -xzf therock.tar.gz -C C:\TheRock\build --strip-components=1
@@ -107,7 +107,7 @@ jobs:
       uses: actions/cache/save@v4
       with:
         path: C:\TheRock\build
-        key: rocm-installed-10.0.0-windows-v1
+        key: rocm-installed-10.1.0-windows-v1
 
     - name: Verify Tools and Dependencies
       run: |
@@ -120,12 +120,12 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-10.0.0
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-10.1.0
         max-size: 3500M
 
     - name: Build llama.cpp (${{ matrix.flavor }})
       env:
-        CCACHE_COMPILERCHECK: string:rocm-10.0.0
+        CCACHE_COMPILERCHECK: string:rocm-10.1.0
         CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
         CCACHE_NOHASHDIR: "true"
       run: |
@@ -270,15 +270,15 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: /opt/rocm
-        key: rocm-installed-10.0.0-linux-v1
+        key: rocm-installed-10.1.0-linux-v1
 
     - name: Download and Install ROCm
       if: steps.cache-rocm-linux-restore.outputs.cache-hit != 'true'
       run: |
-        echo "Downloading ROCm 10.0.0 TheRock Linux tarball..."
+        echo "Downloading ROCm 10.1.0 TheRock Linux tarball..."
         sudo mkdir -p /opt/rocm
         sudo chown -R $USER:$USER /opt/rocm
-        curl -L -o therock-linux.tar.gz https://stable.repo.amd.com/rocm/core/tarball/therock-dist-linux-gfx120X-all-10.0.0.tar.gz
+        curl -L -o therock-linux.tar.gz https://stable.repo.amd.com/rocm/core/tarball/therock-dist-linux-gfx120X-all-10.1.0.tar.gz
         
         echo "Extracting tarball to /opt/rocm..."
         tar -xzf therock-linux.tar.gz -C /opt/rocm --strip-components=1
@@ -295,7 +295,7 @@ jobs:
       uses: actions/cache/save@v4
       with:
         path: /opt/rocm
-        key: rocm-installed-10.0.0-linux-v1
+        key: rocm-installed-10.1.0-linux-v1
 
     - name: Install Dependencies
       run: |
@@ -305,13 +305,13 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-10.0.0
+        key: ${{ runner.os }}-${{ matrix.flavor }}-rocm-10.1.0
         max-size: 3500M
 
     - name: Build llama.cpp (${{ matrix.flavor }})
       env:
         CCACHE_BASEDIR: ${{ github.workspace }}
-        CCACHE_COMPILERCHECK: string:rocm-10.0.0
+        CCACHE_COMPILERCHECK: string:rocm-10.1.0
         CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
         CCACHE_NOHASHDIR: "true"
       run: |
@@ -456,13 +456,13 @@ jobs:
           - **Flavor:** `${{ steps.prep.outputs.flavor_title }}`
           - **Source Branch:** `${{ matrix.branch }}`
           - **Commit:** `${{ steps.prep.outputs.commit_sha }}`
-          - **ROCm Core SDK:** 10.0.0 (TheRock)
+          - **ROCm Core SDK:** 10.1.0 (TheRock)
           - **Target GPU Architectures:** `gfx900;gfx906;gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx1102;gfx1200;gfx1201`
 
           ### Description
           ${{ steps.prep.outputs.flavor_desc }}
 
-          Unified ROCm 10.0.0 (TheRock) release built for Windows and Linux.
+          Unified ROCm 10.1.0 (TheRock) release built for Windows and Linux.
           Packages include required AMD ROCm runtime libraries (`rocblas`, `hipblaslt`, `hipblas`, `amdhip64`) for portable out-of-the-box execution.
           ${{ matrix.flavor == 'experimental' && '- **Windows Scripts:** `llama-rocm-experimental-scripts-windows.zip` (PowerShell quantization scripts for Windows)' || '' }}
           ${{ matrix.flavor == 'experimental' && '- **Linux Scripts:** `llama-rocm-experimental-scripts-linux.zip` (Bash quantization scripts for Linux)' || '' }}

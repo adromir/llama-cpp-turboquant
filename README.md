@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Maintainer: Adromir](https://img.shields.io/badge/Maintainer-Adromir-blue.svg)](https://github.com/adromir)
-[![ROCm: 10.0.0](https://img.shields.io/badge/ROCm-10.0.0_(TheRock)-red.svg)](https://github.com/adromir/llama-cpp-turboquant)
+[![ROCm: 10.1.0](https://img.shields.io/badge/ROCm-10.1.0_(TheRock)-red.svg)](https://github.com/adromir/llama-cpp-turboquant)
 [![Platform: Windows & Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen.svg)](https://github.com/adromir/llama-cpp-turboquant/releases)
 [![Architectures: RDNA2 | RDNA3 | RDNA4 | CDNA](https://img.shields.io/badge/GPU%20Targets-RDNA2%20%7C%20RDNA3%20%7C%20RDNA4%20%7C%20CDNA-orange.svg)](https://github.com/adromir/llama-cpp-turboquant)
 [![Benchmark Dashboard](https://img.shields.io/badge/Benchmarks-GitHub%20Pages-blueviolet.svg)](https://adromir.github.io/llama-cpp-turboquant/)
@@ -28,7 +28,7 @@ This repository is a downstream distribution of [llama.cpp](https://github.com/g
 1. **Massive KV Cache Memory Savings (TurboQuant)**:
    Compress your KV cache down to **2, 3, or 4 bits per value** (compared to standard FP16 or Q8_0) using orthonormal Walsh-Hadamard Transform (WHT) rotations. Run huge context lengths (32k, 64k, 128k+) on consumer VRAM without severe perplexity degradation.
 2. **True Out-of-the-Box Windows & Linux ROCm Execution**:
-   Pre-built releases come fully bundled with AMD ROCm 10.0.0 (TheRock) runtime libraries (`rocblas.dll`, `libhipblaslt.dll`, `amdhip64.dll`, etc.). No need to install massive multi-gigabyte AMD ROCm SDKs or configure complex compiler paths.
+   Pre-built releases come fully bundled with AMD ROCm 10.1.0 (TheRock) runtime libraries (`rocblas.dll`, `libhipblaslt.dll`, `amdhip64.dll`, etc.). No need to install massive multi-gigabyte AMD ROCm SDKs or configure complex compiler paths.
 3. **Universal AMD GPU Architecture Support**:
    Fatbin binaries are pre-compiled for all modern AMD GPU architectures:
    - **RDNA4**: `gfx1200`, `gfx1201` (Radeon RX 9000 series)
@@ -166,7 +166,7 @@ A comprehensive 3-way benchmark evaluation was conducted on AMD RDNA 4 hardware 
 ### Testbed Environment
 - **GPU**: AMD Radeon RX 9060 XT 16GB (RDNA 4, `gfx1200`, 16,304 MiB VRAM)
 - **CPU**: AMD Ryzen 9 9950X3D 16-Core Processor (32 Threads)
-- **OS / Stack**: Windows 11 Pro / AMD ROCm 10.0.0 (TheRock toolchain)
+- **OS / Stack**: Windows 11 Pro / AMD ROCm 10.1.0 (TheRock toolchain)
 - **Evaluated Model**: `Qwen3.8-27B` (27.32B parameters, 65 layers, 4-head GQA, 1 MTP head)
 
 ### 3-Way Comparative Overview
