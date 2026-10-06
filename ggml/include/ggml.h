@@ -453,7 +453,8 @@ extern "C" {
         GGML_TYPE_Q3_0_ROCMFPX      = 104, // ROCmFPx experimental 3-bit UE4M3-scale reference layout
         GGML_TYPE_Q2_0_ROCMFPX      = 107, // ROCmFPx experimental 2-bit S40 codebook + dual UE4M3 scales
         GGML_TYPE_Q4_0_ROCMI4       = 108, // native signed-nibble 4-bit + UE4M3 scale (no codebook)
-        GGML_TYPE_COUNT             = 109,
+        GGML_TYPE_Q1_0_ROCMFPX      = 109, // ROCmFPx experimental 1-bit sign + dual UE4M3 scales
+        GGML_TYPE_COUNT             = 110,
     };
 
     // precision
@@ -513,6 +514,8 @@ extern "C" {
         GGML_FTYPE_MOSTLY_Q3_0_ROCMFPX          = 112, // ROCmFPx experimental 3-bit reference layout
         GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX          = 113, // ROCmFPx experimental 2-bit S40 codebook layout
         GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX_AGENT    = 114, // ROCmFPx experimental 2-bit agent layout
+        GGML_FTYPE_MOSTLY_Q1_0_ROCMFPX          = 115, // ROCmFPx experimental 1-bit sign layout
+        GGML_FTYPE_MOSTLY_Q1_0_ROCMFPX_AGENT    = 116, // ROCmFPx experimental 1-bit agent layout
     };
 
     // available tensor operations:

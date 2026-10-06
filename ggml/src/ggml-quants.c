@@ -5831,6 +5831,8 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
             return rocmfpx_validate_row_data_fp3(data, nbytes);
         case GGML_TYPE_Q2_0_ROCMFPX:
             return rocmfpx_validate_row_data_fp2(data, nbytes);
+        case GGML_TYPE_Q1_0_ROCMFPX:
+            return rocmfpx_validate_row_data_fp1(data, nbytes);
         case GGML_TYPE_Q4_0_ROCMI4:
             return rocmfpx_validate_row_data_i4(data, nbytes);
         default:

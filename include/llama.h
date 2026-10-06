@@ -179,6 +179,8 @@ extern "C" {
         LLAMA_FTYPE_MOSTLY_Q4_0_ROCMI4           = 118, // native signed-nibble 4-bit + UE4M3 (no codebook)
         LLAMA_FTYPE_MOSTLY_Q2_0_ROCMFPX          = 119, // ROCmFPx 2-bit S40 codebook + dual UE4M3 scales
         LLAMA_FTYPE_MOSTLY_Q2_0_ROCMFPX_AGENT    = 120, // ROCmFPx 2-bit agent/tool-call coherent routing
+        LLAMA_FTYPE_MOSTLY_Q1_0_ROCMFPX          = 121, // ROCmFPx 1-bit sign + dual UE4M3 scales
+        LLAMA_FTYPE_MOSTLY_Q1_0_ROCMFPX_AGENT    = 122, // ROCmFPx 1-bit agent/tool-call coherent routing
 
         LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
     };
