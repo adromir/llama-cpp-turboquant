@@ -2522,6 +2522,7 @@ extern "C" {
     // input (sx) memory layout of an SSM_CONV op (see enum ggml_ssm_conv_layout)
     GGML_API enum ggml_ssm_conv_layout ggml_ssm_conv_get_layout(const struct ggml_tensor * op);
 
+#ifdef __cplusplus
     GGML_API struct ggml_tensor * ggml_ssm_scan(
             struct ggml_context * ctx,
             struct ggml_tensor  * s,
@@ -2530,7 +2531,20 @@ extern "C" {
             struct ggml_tensor  * A,
             struct ggml_tensor  * B,
             struct ggml_tensor  * C,
-            struct ggml_tensor  * ids);
+            struct ggml_tensor  * ids,
+            int64_t               K = 1);
+#else
+    GGML_API struct ggml_tensor * ggml_ssm_scan(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * s,
+            struct ggml_tensor  * x,
+            struct ggml_tensor  * dt,
+            struct ggml_tensor  * A,
+            struct ggml_tensor  * B,
+            struct ggml_tensor  * C,
+            struct ggml_tensor  * ids,
+            int64_t               K);
+#endif
 
     // partition into non-overlapping windows with padding if needed
     // example:

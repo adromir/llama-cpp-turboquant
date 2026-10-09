@@ -3019,6 +3019,12 @@ common_speculative_init_result::common_speculative_init_result(
         if (env != nullptr && atoi(env) == 0) {
             cparams.op_offload = false;
         }
+
+        const char * e = getenv("MTP_DRAFT_N_UBATCH");
+        const int64_t draft_ub = e != nullptr ? atoll(e) : 512;
+        if (draft_ub > 0) {
+            cparams.n_ubatch = (uint32_t) std::max<int64_t>(1, std::min<int64_t>(draft_ub, (int64_t) cparams.n_ubatch));
+        }
     }
 
     // note: for small models maybe we can set this to the maximum possible draft from all speculative types

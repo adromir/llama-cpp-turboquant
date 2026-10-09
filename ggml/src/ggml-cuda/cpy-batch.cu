@@ -63,7 +63,8 @@ void cb_span(const ggml_tensor * t, uintptr_t & lo, uintptr_t & hi) {
 } // namespace
 
 int ggml_cuda_cpy_batch(ggml_backend_cuda_context & ctx, ggml_cgraph * cgraph, const int i) {
-    if (!cb_on() || !GGML_CUDA_CC_IS_RDNA4(ggml_cuda_info().devices[ctx.device].cc)) return 0;
+    const int cc = ggml_cuda_info().devices[ctx.device].cc;
+    if (!cb_on() || !(GGML_CUDA_CC_IS_RDNA4(cc) || GGML_CUDA_CC_IS_RDNA3(cc))) return 0;
     ggml_tensor * first = cgraph->nodes[i];
     if (!cb_member(first)) return 0;
     // the run: copies with the first one's layouts, possibly separated by no-op view nodes (consumed with the run)
