@@ -292,6 +292,7 @@ struct common_speculative_impl_draft_simple : public common_speculative_impl {
         // keep track of which sequences are still drafting
         int n_drafting = 0;
         std::vector<bool> drafting(n_seq);
+        std::vector<float> cum_log_p(n_seq, 0.0f);
 
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             auto & dp = dparams[seq_id];
@@ -345,6 +346,15 @@ struct common_speculative_impl_draft_simple : public common_speculative_impl {
                     drafting[seq_id] = false;
                     n_drafting--;
                     continue;
+                }
+
+                if (params.draft_cutoff_logw < 0.0f) {
+                    cum_log_p[seq_id] += std::log(std::max(1e-10f, cur_p->data[0].p));
+                    if (cum_log_p[seq_id] < params.draft_cutoff_logw) {
+                        drafting[seq_id] = false;
+                        n_drafting--;
+                        continue;
+                    }
                 }
 
                 // only collect very high-confidence draft tokens
@@ -744,6 +754,7 @@ struct common_speculative_impl_draft_eagle3 : public common_speculative_impl {
         // keep track of which sequences are still drafting
         int n_drafting = 0;
         std::vector<bool> drafting(n_seq);
+        std::vector<float> cum_log_p(n_seq, 0.0f);
 
         const size_t row_bytes = (size_t) n_embd_dec * sizeof(float);
 
@@ -811,6 +822,15 @@ struct common_speculative_impl_draft_eagle3 : public common_speculative_impl {
                 }
 
                 const llama_token id = cur_p->data[0].id;
+
+                if (params.draft_cutoff_logw < 0.0f) {
+                    cum_log_p[seq_id] += std::log(std::max(1e-10f, cur_p->data[0].p));
+                    if (cum_log_p[seq_id] < params.draft_cutoff_logw) {
+                        drafting[seq_id] = false;
+                        n_drafting--;
+                        continue;
+                    }
+                }
 
                 // only collect very high-confidence draft tokens
                 // (configurable via --spec-draft-p-min, set to 0.0 to disable early-stop)
@@ -1345,6 +1365,7 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
                 // DSpark predicts the next token from position 0 and optionally truncates
                 // at the first position below the confidence threshold.
                 const float * conf = params.p_min > 0.0f ? llama_get_embeddings_nextn(ctx_dft) : nullptr;
+                float cum_log_p = 0.0f;
 
                 for (int32_t i = 0; i < n_block_tokens; ++i) {
                     const int32_t idx = beg + i;
@@ -1369,12 +1390,20 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
                         break;
                     }
 
+                    if (params.draft_cutoff_logw < 0.0f) {
+                        cum_log_p += std::log(std::max(1e-10f, cur_p->data[0].p));
+                        if (cum_log_p < params.draft_cutoff_logw) {
+                            break;
+                        }
+                    }
+
                     common_sampler_accept(smpl, id, true);
 
                     result.push_back(id);
                 }
             } else {
                 // greedily read the predicted block at this sequence's noise positions 1..n_block_tokens-1
+                float cum_log_p = 0.0f;
                 for (int32_t i = 1; i < n_block_tokens; ++i) {
                     common_sampler_sample(smpl, ctx_dft, beg + i, true);
 
@@ -1390,6 +1419,13 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
 
                     if (params.draft_vocab > 0 && id >= params.draft_vocab) {
                         break;
+                    }
+
+                    if (params.draft_cutoff_logw < 0.0f) {
+                        cum_log_p += std::log(std::max(1e-10f, cur_p->data[0].p));
+                        if (cum_log_p < params.draft_cutoff_logw) {
+                            break;
+                        }
                     }
 
                     if (cur_p->data[0].p < params.p_min) {
@@ -1949,6 +1985,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         // keep track of which sequences are still drafting
         int n_drafting = 0;
         std::vector<bool> drafting(n_seq);
+        std::vector<float> cum_log_p(n_seq, 0.0f);
 
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
@@ -2062,6 +2099,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 const float * lp = llama_get_logits(ctx_dft);
 
                 auto & result = *dp.result;
+                float chain_cum_log_p = 0.0f;
                 for (int j = 0; j < n_chain; ++j) {
                     const llama_token id = (llama_token) lp[2*j + 0];
                     const float       p  =               lp[2*j + 1];
@@ -2069,6 +2107,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     SPC_DBG(" - seq_id %d, chain candidate %3d: %6d (%8.3f) '%s'\n",
                             seq_one, j, id, p,
                             common_token_to_piece(ctx_dft, id).c_str());
+
+                    if (params.draft_cutoff_logw < 0.0f) {
+                        chain_cum_log_p += std::log(std::max(1e-10f, p));
+                        if (chain_cum_log_p < params.draft_cutoff_logw) {
+                            break;
+                        }
+                    }
 
                     if (p < params.p_min) {
                         break;
@@ -2200,6 +2245,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 // add drafted token for each sequence
                 const llama_token id = cur_p->data[0].id;
+
+                if (params.draft_cutoff_logw < 0.0f) {
+                    cum_log_p[seq_id] += std::log(std::max(1e-10f, cur_p->data[0].p));
+                    if (cum_log_p[seq_id] < params.draft_cutoff_logw) {
+                        drafting[seq_id] = false;
+                        n_drafting--;
+                        continue;
+                    }
+                }
 
                 // only collect very high-confidence draft tokens
                 if (cur_p->data[0].p < params.p_min) {

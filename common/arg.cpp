@@ -1277,6 +1277,15 @@ bool common_params_parse(int argc, char ** argv, common_params & params, llama_e
         }
 
         params.lr.init();
+
+        if (params.prompt_normalize) {
+            if (!params.prompt.empty()) {
+                params.prompt = common_normalize_prompt(params.prompt);
+            }
+            if (!params.system_prompt.empty()) {
+                params.system_prompt = common_normalize_prompt(params.system_prompt);
+            }
+        }
     } catch (const std::invalid_argument & ex) {
         fprintf(stderr, "%s\n", ex.what());
         ctx_arg.params = params_org;
@@ -1743,6 +1752,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.system_prompt = value;
         }
     ).set_examples({LLAMA_EXAMPLE_COMPLETION, LLAMA_EXAMPLE_CLI, LLAMA_EXAMPLE_DIFFUSION, LLAMA_EXAMPLE_MTMD}));
+    add_opt(common_arg(
+        {"--prompt-normalize", "--normalize-prompt"},
+        string_format("normalize prompt whitespace, line endings, and consecutive newlines before tokenization (default: %s)",
+            params.prompt_normalize ? "true" : "false"),
+        [](common_params & params) {
+            params.prompt_normalize = true;
+        }
+    ).set_examples({LLAMA_EXAMPLE_COMPLETION, LLAMA_EXAMPLE_CLI, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_SPECULATIVE}).set_env("LLAMA_ARG_PROMPT_NORMALIZE"));
     add_opt(common_arg(
         {"--perf"},
         {"--no-perf"},
@@ -4323,6 +4340,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.speculative.draft.draft_vocab = value;
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_DRAFT_VOCAB"));
+    add_opt(common_arg(
+        {"--draft-cutoff-logw", "--spec-cutoff-logw", "--spec-draft-cutoff-logw"}, "LOGW",
+        string_format("cumulative log-probability cutoff for speculative drafting (default: %.2f = disabled, e.g. -4.0)",
+            params.speculative.draft.draft_cutoff_logw),
+        [](common_params & params, const std::string & value) {
+            params.speculative.draft.draft_cutoff_logw = std::stof(value);
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_DRAFT_CUTOFF_LOGW"));
     add_opt(common_arg(
         {"--spec-gumbel"},
         string_format("couple speculative draft and target sampling via Gumbel-Max noise sharing (default: %s)",

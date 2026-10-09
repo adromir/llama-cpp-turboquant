@@ -1808,6 +1808,79 @@ void common_batch_add(
     batch.n_tokens++;
 }
 
+std::string common_normalize_prompt(const std::string & text) {
+    if (text.empty()) {
+        return text;
+    }
+
+    // 1. Normalize line endings: \r\n / \r -> \n
+    std::string s1;
+    s1.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r') {
+            if (i + 1 < text.size() && text[i + 1] == '\n') {
+                continue;
+            }
+            s1.push_back('\n');
+        } else {
+            s1.push_back(text[i]);
+        }
+    }
+
+    // 2. Replace non-breaking spaces (U+00A0 in UTF-8: 0xC2 0xA0) with standard space ' '
+    std::string s2;
+    s2.reserve(s1.size());
+    for (size_t i = 0; i < s1.size(); ++i) {
+        if ((uint8_t)s1[i] == 0xC2 && i + 1 < s1.size() && (uint8_t)s1[i + 1] == 0xA0) {
+            s2.push_back(' ');
+            i++;
+        } else {
+            s2.push_back(s1[i]);
+        }
+    }
+
+    // 3. Strip trailing line whitespace: drop ' ' and '\t' runs immediately before '\n'
+    // End-of-string trailing whitespace is preserved for completion-style prompts
+    std::string s3;
+    s3.reserve(s2.size());
+    std::string pending_ws;
+    for (char c : s2) {
+        if (c == ' ' || c == '\t') {
+            pending_ws.push_back(c);
+        } else if (c == '\n') {
+            pending_ws.clear();
+            s3.push_back('\n');
+        } else {
+            if (!pending_ws.empty()) {
+                s3.append(pending_ws);
+                pending_ws.clear();
+            }
+            s3.push_back(c);
+        }
+    }
+    if (!pending_ws.empty()) {
+        s3.append(pending_ws);
+    }
+
+    // 4. Collapse newline runs: \n{3,} -> \n\n
+    std::string out;
+    out.reserve(s3.size());
+    int nl_run = 0;
+    for (char c : s3) {
+        if (c == '\n') {
+            nl_run++;
+            if (nl_run <= 2) {
+                out.push_back('\n');
+            }
+        } else {
+            nl_run = 0;
+            out.push_back(c);
+        }
+    }
+
+    return out;
+}
+
 //
 // Vocab utils
 //

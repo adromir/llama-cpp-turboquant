@@ -704,7 +704,7 @@ typedef tile<16, 8, half2, get_input_data_layout()> tq_tile_B;
 typedef tile<16, 16, float, DATA_LAYOUT_J_MAJOR>    tq_tile_C;
 
 template <int NWARPS>
-static __global__ void mul_mat_tq4_1s_wmma_kernel(
+static __global__ void __launch_bounds__(NWARPS * 32, 2) mul_mat_tq4_1s_wmma_kernel(
         const void  * __restrict__ vx,
         const float * __restrict__ vy_rot,
         float       * __restrict__ dst,
@@ -795,7 +795,7 @@ static __global__ void mul_mat_tq4_1s_wmma_kernel(
 }
 
 template <int NWARPS>
-static __global__ void mul_mat_tq3_1s_wmma_kernel(
+static __global__ void __launch_bounds__(NWARPS * 32, 2) mul_mat_tq3_1s_wmma_kernel(
         const void  * __restrict__ vx,
         const float * __restrict__ vy_rot,
         float       * __restrict__ dst,
@@ -890,7 +890,7 @@ static __global__ void mul_mat_tq3_1s_wmma_kernel(
 
 
 template <int NWARPS>
-static __global__ void mul_mat_tq4_1s_wmma_kernel(
+static __global__ void __launch_bounds__(NWARPS * 32, 2) mul_mat_tq4_1s_wmma_kernel(
         const void  * __restrict__ vx,
         const float * __restrict__ vy_rot,
         float       * __restrict__ dst,
@@ -988,7 +988,7 @@ static __global__ void mul_mat_tq4_1s_wmma_kernel(
 }
 
 template <int NWARPS>
-static __global__ void mul_mat_tq3_1s_wmma_kernel(
+static __global__ void __launch_bounds__(NWARPS * 32, 2) mul_mat_tq3_1s_wmma_kernel(
         const void  * __restrict__ vx,
         const float * __restrict__ vy_rot,
         float       * __restrict__ dst,
@@ -1088,7 +1088,7 @@ static __global__ void mul_mat_tq3_1s_wmma_kernel(
 #else // defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
 
 template <int NWARPS>
-static __global__ void mul_mat_tq4_1s_wmma_kernel(
+static __global__ void __launch_bounds__(NWARPS * 32, 2) mul_mat_tq4_1s_wmma_kernel(
         const void  * __restrict__ vx,
         const float * __restrict__ vy_rot,
         float       * __restrict__ dst,
@@ -1102,7 +1102,7 @@ static __global__ void mul_mat_tq4_1s_wmma_kernel(
 }
 
 template <int NWARPS>
-static __global__ void mul_mat_tq3_1s_wmma_kernel(
+static __global__ void __launch_bounds__(NWARPS * 32, 2) mul_mat_tq3_1s_wmma_kernel(
         const void  * __restrict__ vx,
         const float * __restrict__ vy_rot,
         float       * __restrict__ dst,

@@ -358,7 +358,7 @@ struct common_params_speculative_draft {
     int32_t n_ctx                 = 0;     // draft context size
     int32_t n_ubatch              = 0;     // physical maximum batch size for the draft context (0 = inherit target ubatch)
     int32_t draft_vocab           = 0;     // limit speculative draft vocabulary to top N tokens (0 = full vocab)
-
+    float   draft_cutoff_logw     = 0.0f;  // cumulative log-probability cutoff for speculative drafting (0.0 = disabled, negative = active threshold)
 };
 
 struct common_params_speculative_ngram_mod {
@@ -477,6 +477,7 @@ struct common_params {
     std::string moe_expert_profile_save = ""; // learned profile auto-save path (STRP format)
     bool    moe_cache_pin         =  true; // pin host expert memory for async DMA uploads
     int32_t vram_reserve_mib      =   512; // safety VRAM headroom reserve in MiB to detect WDDM paging
+    bool    prompt_normalize      = false; // normalize prompt whitespace, line endings, and consecutive newlines before tokenization
     int32_t n_keep                =     0; // number of tokens to keep from initial prompt
     int32_t n_chunks              =    -1; // max number of chunks to process (-1 = unlimited)
     int32_t n_parallel            =     1; // number of parallel sequences to decode
@@ -1041,6 +1042,9 @@ bool common_prompt_batch_decode(
 // replays the last token after loading state to regenerate logits
 // used after loading session state to ensure the sampling context has valid logits
 bool common_replay_last_token(struct llama_context * ctx, llama_token last_token, int32_t pos);
+
+// normalizes prompt whitespace, line endings (\r\n -> \n), non-breaking spaces, and collapses \n{3,} -> \n\n
+std::string common_normalize_prompt(const std::string & text);
 
 //
 // Vocab utils
