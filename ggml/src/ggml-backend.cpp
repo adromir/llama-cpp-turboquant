@@ -1800,13 +1800,21 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                 }
 
                 // when offloading MoE weights, we can reduce the amount of data copied by copying only the experts that are used
-                ggml_tensor * node = split->graph.nodes[0];
-                if (split->graph.n_nodes > 0 &&
+                ggml_tensor * node = nullptr;
+                int node_n_consumers = 0;
+                for (int ni = 0; ni < split->graph.n_nodes; ni++) {
+                    ggml_tensor * cand = split->graph.nodes[ni];
+                    if (cand->op == GGML_OP_MUL_MAT_ID && cand->src[0] == input_cpy) {
+                        node_n_consumers++;
+                        if (node == nullptr) {
+                            node = cand;
+                        }
+                    }
+                }
+
+                if (node != nullptr && node_n_consumers == 1 &&
                     ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
-                    ggml_backend_buffer_is_host(input->buffer) && (
-                    (node->src[0] == input_cpy && node->op == GGML_OP_MUL_MAT_ID)
-                    //|| (node->src[1] == input_cpy && node->op == GGML_OP_ADD_ID) /* GGML_OP_ADD_ID weights are small and not worth splitting */
-                    )) {
+                    ggml_backend_buffer_is_host(input->buffer)) {
 
                     const int64_t n_expert   = node->op == GGML_OP_MUL_MAT_ID ? input->ne[2] : input->ne[1];
                     const size_t expert_size = node->op == GGML_OP_MUL_MAT_ID ? input->nb[2] : input->nb[1];
