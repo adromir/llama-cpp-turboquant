@@ -796,8 +796,29 @@ llama_context::llama_context(const llama_model & model, llama_context_params par
 
         const bool moe_cache_enabled = llama_moe_cache_init(
             model, *this, params.n_moe_cache_slots, params.n_moe_cache_inserts,
-            params.moe_expert_profile, params.moe_cache_pin);
+            params.moe_expert_profile, params.moe_cache_pin, params.moe_expert_profile_save);
         cparams.n_moe_cache_slots = moe_cache_enabled ? params.n_moe_cache_slots : 0;
+
+        // check VRAM headroom against safety reserve to warn against Windows WDDM paging thrashing
+        int32_t vram_reserve = params.vram_reserve_mib;
+        const char * env_res = getenv("LLAMA_VRAM_RESERVE_MIB");
+        if (env_res && env_res[0]) {
+            vram_reserve = atoi(env_res);
+        }
+        if (vram_reserve > 0) {
+            for (const auto & dev : model.devices) {
+                ggml_backend_dev_props props;
+                ggml_backend_dev_get_props(dev.dev, &props);
+                if (props.type == GGML_BACKEND_DEVICE_TYPE_GPU) {
+                    const size_t free_mb = props.memory_free / (1024 * 1024);
+                    if (free_mb < (size_t)vram_reserve) {
+                        LLAMA_LOG_WARN("%s: WARNING: low VRAM headroom on %s (%zu MiB free < %d MiB reserve). "
+                                       "Windows WDDM may silently page buffers to system RAM, severely degrading decode speed!\n",
+                                       __func__, ggml_backend_dev_name(dev.dev), free_mb, vram_reserve);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -4504,6 +4525,8 @@ llama_context_params llama_context_default_params() {
         /*.kv_stream_arena_mib         =*/0,
         /*.moe_expert_profile          =*/nullptr,
         /*.moe_cache_pin               =*/true,
+        /*.moe_expert_profile_save     =*/nullptr,
+        /*.vram_reserve_mib            =*/512,
     };
 
     return result;

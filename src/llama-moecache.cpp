@@ -6,6 +6,7 @@
 #include "ggml.h"
 #include "ggml-backend.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <condition_variable>
 #include <cstring>
@@ -88,6 +89,44 @@ static bool read_strp_profile(const char * path,
     return true;
 }
 
+static bool write_strp_profile(const char * path,
+                               uint32_t n_layers, uint32_t n_expert,
+                               const std::vector<std::pair<int32_t, int32_t>> & ranked) {
+    if (!path || !path[0]) {
+        return false;
+    }
+    FILE * f = fopen(path, "wb");
+    if (!f) {
+        LLAMA_LOG_WARN("moe-cache: cannot open '%s' for writing profile\n", path);
+        return false;
+    }
+    const char magic[4] = {'S', 'T', 'R', 'P'};
+    const uint32_t hdr[5] = {
+        1,                         // version
+        n_layers,                  // n_layers
+        n_expert,                  // n_expert
+        (uint32_t) ranked.size(),  // slots
+        (uint32_t) ranked.size()   // n_ranked
+    };
+    if (fwrite(magic, 1, 4, f) != 4 || fwrite(hdr, 4, 5, f) != 5) {
+        fclose(f);
+        LLAMA_LOG_WARN("moe-cache: failed to write STRP header to '%s'\n", path);
+        return false;
+    }
+    std::vector<uint16_t> raw(ranked.size() * 2);
+    for (size_t i = 0; i < ranked.size(); ++i) {
+        raw[i * 2 + 0] = (uint16_t) ranked[i].first;
+        raw[i * 2 + 1] = (uint16_t) ranked[i].second;
+    }
+    if (!raw.empty() && fwrite(raw.data(), 2, raw.size(), f) != raw.size()) {
+        fclose(f);
+        LLAMA_LOG_WARN("moe-cache: failed to write ranked pairs to '%s'\n", path);
+        return false;
+    }
+    fclose(f);
+    return true;
+}
+
 struct layer_state {
     llama_moe_cache_layer pub;
 
@@ -99,6 +138,7 @@ struct layer_state {
     std::vector<uint64_t> slot_last_use; // slot -> lamport clock of last hit
     std::vector<int32_t>  pending;       // uncached ids observed since last step (dedup, obs order)
     std::vector<int32_t>  table;
+    std::vector<uint64_t> expert_hits;   // cumulative hits for online learning
 
     std::vector<bool> slot_in_flight;   // slot has an upload pending
     std::vector<bool> expert_in_flight; // expert has an upload pending
@@ -124,6 +164,8 @@ struct moe_cache {
 
     uint64_t clock   = 0;
     uint64_t n_steps = 0;
+
+    std::string save_profile_path;
 
     std::mutex mtx; // guards pending lists + clock (observe runs during graph exec)
 
@@ -178,6 +220,9 @@ void moe_obs_cb(const struct ggml_tensor * experts, const struct ggml_tensor * i
                 continue;
             }
             const int32_t slot = ls->expert_slot[id];
+            if (id < (int32_t) ls->expert_hits.size()) {
+                ls->expert_hits[id]++;
+            }
             if (slot >= 0) {
                 ls->n_hit++;
                 ls->slot_last_use[slot] = ++mc->clock;
@@ -219,7 +264,8 @@ void set_table_entry(layer_state & ls, int32_t expert, int32_t slot_or_dummy) {
 bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
                           int32_t n_slots, int32_t max_inserts,
                           const char * profile_path,
-                          bool pin_host) {
+                          bool pin_host,
+                          const char * profile_save_path) {
     std::lock_guard<std::mutex> init_lock(g_init_mtx);
     if (g_cache) {
         return false;
@@ -236,6 +282,14 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
         mc->n_slots = n_slots;
         if (max_inserts > 0) {
             mc->max_inserts = max_inserts;
+        }
+        if (profile_save_path && profile_save_path[0]) {
+            mc->save_profile_path = profile_save_path;
+        } else {
+            const char * env_save = getenv("LLAMA_MOE_EXPERT_PROFILE_SAVE");
+            if (env_save && env_save[0]) {
+                mc->save_profile_path = env_save;
+            }
         }
 
         // collect the host-resident expert layers, grouped by the device buffer
@@ -377,6 +431,7 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
             ls.slot_in_flight.assign(n_slots, false);
             ls.expert_in_flight.assign(n_expert, false);
             ls.table.assign(n_expert, n_slots);
+            ls.expert_hits.assign(n_expert, 0);
 
             ggml_backend_tensor_set(ls.pub.dev_table,  ls.table.data(), 0, n_expert*sizeof(int32_t));
             ggml_backend_tensor_set(ls.pub.host_table, ls.table.data(), 0, n_expert*sizeof(int32_t));
@@ -567,6 +622,44 @@ bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
 }
 
 void free_cache(moe_cache * mc) {
+    if (!mc->save_profile_path.empty() && !mc->layers.empty()) {
+        const uint32_t nl = (uint32_t) mc->layers.size();
+        const uint32_t ne = (uint32_t) mc->layers[0].expert_slot.size();
+
+        struct pair_hit {
+            int32_t layer;
+            int32_t expert;
+            uint64_t hits;
+        };
+        std::vector<pair_hit> all_pairs;
+        all_pairs.reserve(nl * ne);
+
+        for (uint32_t l = 0; l < nl; ++l) {
+            const auto & ls = mc->layers[l];
+            for (uint32_t e = 0; e < ne; ++e) {
+                uint64_t hits = (e < ls.expert_hits.size()) ? ls.expert_hits[e] : 0;
+                all_pairs.push_back({ (int32_t)ls.pub.il, (int32_t)e, hits });
+            }
+        }
+
+        std::stable_sort(all_pairs.begin(), all_pairs.end(), [](const pair_hit & a, const pair_hit & b) {
+            return a.hits > b.hits;
+        });
+
+        std::vector<std::pair<int32_t, int32_t>> ranked;
+        ranked.reserve(all_pairs.size());
+        size_t non_zero = 0;
+        for (const auto & p : all_pairs) {
+            if (p.hits > 0) non_zero++;
+            ranked.push_back({ p.layer, p.expert });
+        }
+
+        if (write_strp_profile(mc->save_profile_path.c_str(), nl, ne, ranked)) {
+            LLAMA_LOG_INFO("moe-cache: saved learned profile to '%s' (%zu active pairs, %zu total)\n",
+                    mc->save_profile_path.c_str(), non_zero, ranked.size());
+        }
+    }
+
     ggml_set_moe_obs_callback(nullptr, nullptr);
     g_cache = nullptr;
     {

@@ -1032,6 +1032,9 @@ struct llama_sampler_dist : public llama_sampler_backend {
     std::mt19937 rng;
 
     ggml_tensor * inp_uniform;
+
+    bool     gumbel      = false;
+    uint32_t gumbel_step = 0;
 };
 
 static const char * llama_sampler_dist_name(const struct llama_sampler * smpl) {
@@ -1052,6 +1055,33 @@ static void llama_sampler_dist_apply(struct llama_sampler * smpl, llama_token_da
 
     if (cur_p->size == 1) {
         cur_p->data[0].p = 1.0f;
+        return;
+    }
+
+    if (ctx->gumbel) {
+        float max_score = -FLT_MAX;
+        size_t best_idx = 0;
+        const uint32_t step = ctx->gumbel_step++;
+        const uint32_t s = ctx->seed_cur ? ctx->seed_cur : 12345;
+
+        for (size_t i = 0; i < cur_p->size; ++i) {
+            const llama_token tok = cur_p->data[i].id;
+            uint64_t h = (uint64_t)s ^ ((uint64_t)step << 32) ^ (uint64_t)tok;
+            h ^= h >> 30;
+            h *= 0xbf58476d1ce4e5b9ULL;
+            h ^= h >> 27;
+            h *= 0x94d049bb133111ebULL;
+            h ^= h >> 31;
+
+            double u = ((double)(h & 0xFFFFFFFFFFFFULL) + 1.0) / ((double)0x1000000000000ULL + 2.0);
+            double g = -std::log(-std::log(u));
+            float score = cur_p->data[i].logit + (float)g;
+            if (score > max_score) {
+                max_score = score;
+                best_idx = i;
+            }
+        }
+        cur_p->selected = best_idx;
         return;
     }
 
@@ -1115,17 +1145,20 @@ static void llama_sampler_dist_reset(struct llama_sampler * smpl) {
     auto * ctx = (llama_sampler_dist *) smpl->ctx;
     ctx->seed_cur = get_rng_seed(ctx->seed);
     ctx->rng.seed(ctx->seed_cur);
+    ctx->gumbel_step = 0;
 }
 
 static struct llama_sampler * llama_sampler_dist_clone(const struct llama_sampler * smpl) {
     const auto * ctx = (const llama_sampler_dist *) smpl->ctx;
-    auto * result = llama_sampler_init_dist(ctx->seed);
+    auto * result = ctx->gumbel ? llama_sampler_init_dist_gumbel(ctx->seed) : llama_sampler_init_dist(ctx->seed);
 
     // copy the state
     {
         auto * result_ctx = (llama_sampler_dist *) result->ctx;
 
         result_ctx->rng = ctx->rng;
+        result_ctx->gumbel = ctx->gumbel;
+        result_ctx->gumbel_step = ctx->gumbel_step;
     }
 
     return result;
@@ -1236,18 +1269,30 @@ static struct llama_sampler_i llama_sampler_dist_i = {
     /* .backend_set_input = */ llama_sampler_dist_backend_set_input,
 };
 
+static bool is_gumbel_env_enabled() {
+    const char * env1 = getenv("LLAMA_SPEC_GUMBEL");
+    const char * env2 = getenv("STRATA_SPEC_GUMBEL");
+    return (env1 && atoi(env1) != 0) || (env2 && atoi(env2) != 0);
+}
+
 struct llama_sampler * llama_sampler_init_dist(uint32_t seed) {
     auto seed_cur = get_rng_seed(seed);
-    return llama_sampler_init(
-        /* .iface = */ &llama_sampler_dist_i,
-        /* .ctx   = */ new llama_sampler_dist {
-            ("dist"),
-            /* .seed        = */ seed,
-            /* .seed_cur    = */ seed_cur,
-            /* .rng         = */ std::mt19937(seed_cur),
-            /* .inp_uniform = */ nullptr,
-        }
-    );
+    auto * sctx = new llama_sampler_dist {
+        ("dist"),
+        /* .seed        = */ seed,
+        /* .seed_cur    = */ seed_cur,
+        /* .rng         = */ std::mt19937(seed_cur),
+        /* .inp_uniform = */ nullptr,
+    };
+    sctx->gumbel = is_gumbel_env_enabled();
+    return llama_sampler_init(&llama_sampler_dist_i, sctx);
+}
+
+struct llama_sampler * llama_sampler_init_dist_gumbel(uint32_t seed) {
+    auto * smpl = llama_sampler_init_dist(seed);
+    auto * sctx = (llama_sampler_dist *) smpl->ctx;
+    sctx->gumbel = true;
+    return smpl;
 }
 
 // top-k

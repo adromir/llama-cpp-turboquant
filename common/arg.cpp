@@ -2793,12 +2793,26 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_MOE_EXPERT_PROFILE"));
     add_opt(common_arg(
+        {"--moe-expert-profile-save"}, "FILE",
+        "save updated online-learned MoE expert profile (STRP format) on exit",
+        [](common_params & params, const std::string & value) {
+            params.moe_expert_profile_save = value;
+        }
+    ).set_env("LLAMA_ARG_MOE_EXPERT_PROFILE_SAVE"));
+    add_opt(common_arg(
         {"--moe-cache-pin"}, {"--no-moe-cache-pin"},
         string_format("pin host expert memory for async DMA uploads (default: %s)", params.moe_cache_pin ? "true" : "false"),
         [](common_params & params, bool value) {
             params.moe_cache_pin = value;
         }
     ).set_env("LLAMA_ARG_MOE_CACHE_PIN"));
+    add_opt(common_arg(
+        {"--vram-reserve-mib"}, "N",
+        string_format("safety VRAM headroom reserve in MiB to detect WDDM paging (default: %d)", params.vram_reserve_mib),
+        [](common_params & params, int value) {
+            params.vram_reserve_mib = value;
+        }
+    ).set_env("LLAMA_ARG_VRAM_RESERVE_MIB"));
     GGML_ASSERT(params.n_gpu_layers < 0); // string_format would need to be extended for a default >= 0
     add_opt(common_arg(
         {"-ngl", "--gpu-layers", "--n-gpu-layers"}, "N",
@@ -4301,6 +4315,22 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.speculative.draft.mparams.hf_file = value; // will be used if --spec-draft-hf is set
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_MODEL"));
+    add_opt(common_arg(
+        {"--draft-vocab", "--spec-draft-vocab"}, "N",
+        string_format("limit speculative draft vocabulary to top N tokens (default: %d = full vocab)",
+            params.speculative.draft.draft_vocab),
+        [](common_params & params, int value) {
+            params.speculative.draft.draft_vocab = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_DRAFT_VOCAB"));
+    add_opt(common_arg(
+        {"--spec-gumbel"},
+        string_format("couple speculative draft and target sampling via Gumbel-Max noise sharing (default: %s)",
+            params.sampling.spec_gumbel ? "true" : "false"),
+        [](common_params & params) {
+            params.sampling.spec_gumbel = true;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_GUMBEL"));
     add_opt(common_arg(
         {"--spec-type"}, common_speculative_all_types_str(),
         string_format("comma-separated list of types of speculative decoding to use (default: %s)\n",

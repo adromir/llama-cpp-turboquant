@@ -294,6 +294,7 @@ struct common_params_sampling {
     bool                      reasoning_control = false;       // create the budget sampler on demand so reasoning can be ended at runtime
 
     bool backend_sampling = false;
+    bool spec_gumbel      = false; // couple speculative draft and target sampling via Gumbel-Max noise sharing
 
     // print the parameters into a string
     std::string print() const;
@@ -356,6 +357,7 @@ struct common_params_speculative_draft {
     bool    dflash_defer_injection = true;  // defer encoder KV injection to draft time (set false for higher acceptance on some models)
     int32_t n_ctx                 = 0;     // draft context size
     int32_t n_ubatch              = 0;     // physical maximum batch size for the draft context (0 = inherit target ubatch)
+    int32_t draft_vocab           = 0;     // limit speculative draft vocabulary to top N tokens (0 = full vocab)
 
 };
 
@@ -472,7 +474,9 @@ struct common_params {
     int32_t n_moe_cache_slots     =     0; // GPU cache slots per host-resident MoE expert layer (0 = disabled)
     int32_t n_moe_cache_inserts   =     2; // max expert uploads per layer per decode step
     std::string moe_expert_profile =    ""; // pre-ranked expert profile path (STRP format)
+    std::string moe_expert_profile_save = ""; // learned profile auto-save path (STRP format)
     bool    moe_cache_pin         =  true; // pin host expert memory for async DMA uploads
+    int32_t vram_reserve_mib      =   512; // safety VRAM headroom reserve in MiB to detect WDDM paging
     int32_t n_keep                =     0; // number of tokens to keep from initial prompt
     int32_t n_chunks              =    -1; // max number of chunks to process (-1 = unlimited)
     int32_t n_parallel            =     1; // number of parallel sequences to decode

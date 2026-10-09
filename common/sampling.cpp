@@ -396,7 +396,7 @@ struct common_sampler * common_sampler_init(
             samplers.push_back(llama_sampler_init_adaptive_p(params.adaptive_target, params.adaptive_decay, params.seed));
         } else {
             // default: sample from distribution
-            samplers.push_back(llama_sampler_init_dist(params.seed));
+            samplers.push_back(params.spec_gumbel ? llama_sampler_init_dist_gumbel(params.seed) : llama_sampler_init_dist(params.seed));
         }
     } else if (params.mirostat == 1) {
         samplers.push_back(llama_sampler_init_temp(params.temp));

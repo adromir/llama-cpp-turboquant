@@ -472,6 +472,8 @@ extern "C" {
         // [EXPERIMENTAL] pre-ranked expert profile (STRP format) and host pinning control
         const char * moe_expert_profile;
         bool         moe_cache_pin;
+        const char * moe_expert_profile_save;
+        int32_t      vram_reserve_mib;
     };
 
     struct llama_model_tensor_override {
@@ -1439,6 +1441,7 @@ extern "C" {
 
     /// seed == LLAMA_DEFAULT_SEED to use a random seed.
     LLAMA_API struct llama_sampler * llama_sampler_init_dist(uint32_t seed);
+    LLAMA_API struct llama_sampler * llama_sampler_init_dist_gumbel(uint32_t seed);
 
     /// @details Top-K sampling described in academic paper "The Curious Case of Neural Text Degeneration" https://arxiv.org/abs/1904.09751
     /// Setting k <= 0 makes this a noop

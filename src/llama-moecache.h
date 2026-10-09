@@ -57,7 +57,8 @@ struct llama_moe_cache_layer {
 bool llama_moe_cache_init(const llama_model & model, const llama_context & ctx,
                           int32_t n_slots, int32_t max_inserts,
                           const char * profile_path = nullptr,
-                          bool pin_host = true);
+                          bool pin_host = true,
+                          const char * profile_save_path = nullptr);
 
 void llama_moe_cache_free(const llama_context & ctx);
 void llama_moe_cache_free(const llama_model & model);

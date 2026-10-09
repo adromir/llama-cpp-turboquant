@@ -1702,10 +1702,12 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.n_outputs_max     = std::max(params.n_outputs_max, 0);
     cparams.n_batch           = params.n_batch;
     cparams.n_ubatch          = params.n_ubatch;
-    cparams.n_moe_cache_slots   = params.n_moe_cache_slots;
-    cparams.n_moe_cache_inserts = params.n_moe_cache_inserts;
-    cparams.moe_expert_profile  = params.moe_expert_profile.empty() ? nullptr : params.moe_expert_profile.c_str();
-    cparams.moe_cache_pin       = params.moe_cache_pin;
+    cparams.n_moe_cache_slots       = params.n_moe_cache_slots;
+    cparams.n_moe_cache_inserts     = params.n_moe_cache_inserts;
+    cparams.moe_expert_profile      = params.moe_expert_profile.empty() ? nullptr : params.moe_expert_profile.c_str();
+    cparams.moe_cache_pin           = params.moe_cache_pin;
+    cparams.moe_expert_profile_save = params.moe_expert_profile_save.empty() ? nullptr : params.moe_expert_profile_save.c_str();
+    cparams.vram_reserve_mib        = params.vram_reserve_mib;
 
     if (cparams.n_rs_seq > 0) {
         const uint32_t n_batch_min = cparams.n_rs_seq + 2;
