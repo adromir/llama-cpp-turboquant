@@ -8,13 +8,14 @@ on:
         required: true
         type: string
       flavor:
-        description: 'Flavor to build (all, vanilla, experimental)'
+        description: 'Flavor to build (all, vanilla, experimental, experimental-avx512)'
         required: true
         type: choice
         options:
           - all
           - vanilla
           - experimental
+          - experimental-avx512
         default: 'all'
   push:
     tags:
@@ -34,11 +35,13 @@ jobs:
         run: |
           FLAVOR="${{ github.event.inputs.flavor }}"
           if [ -z "$FLAVOR" ] || [ "$FLAVOR" = "all" ]; then
-            echo 'matrix={"include":[{"flavor":"vanilla","branch":"custom-workflow"},{"flavor":"experimental","branch":"experiment/rdna-boosts"}]}' >> $GITHUB_OUTPUT
+            echo 'matrix={"include":[{"flavor":"vanilla","branch":"custom-workflow","avx512":false},{"flavor":"experimental","branch":"experiment/rdna-boosts","avx512":false},{"flavor":"experimental-avx512","branch":"experiment/rdna-boosts","avx512":true}]}' >> $GITHUB_OUTPUT
           elif [ "$FLAVOR" = "vanilla" ]; then
-            echo 'matrix={"include":[{"flavor":"vanilla","branch":"custom-workflow"}]}' >> $GITHUB_OUTPUT
+            echo 'matrix={"include":[{"flavor":"vanilla","branch":"custom-workflow","avx512":false}]}' >> $GITHUB_OUTPUT
           elif [ "$FLAVOR" = "experimental" ]; then
-            echo 'matrix={"include":[{"flavor":"experimental","branch":"experiment/rdna-boosts"}]}' >> $GITHUB_OUTPUT
+            echo 'matrix={"include":[{"flavor":"experimental","branch":"experiment/rdna-boosts","avx512":false},{"flavor":"experimental-avx512","branch":"experiment/rdna-boosts","avx512":true}]}' >> $GITHUB_OUTPUT
+          elif [ "$FLAVOR" = "experimental-avx512" ]; then
+            echo 'matrix={"include":[{"flavor":"experimental-avx512","branch":"experiment/rdna-boosts","avx512":true}]}' >> $GITHUB_OUTPUT
           fi
       - id: set-tag
         run: |
@@ -158,7 +161,27 @@ jobs:
             }
         }
         
-        $CoreFlags = "-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno"
+        if ("${{ matrix.avx512 }}" -eq "true") {
+            Write-Host "Configuring for specialized AVX-512 CPU target (AVX512F, VBMI, VNNI, BF16)..."
+            $SimdFlags = "-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vbmi -mavx512vnni -mavx512bf16"
+            $CmakeSimdFlags = @(
+                "-DGGML_AVX512=ON",
+                "-DGGML_AVX512_VBMI=ON",
+                "-DGGML_AVX512_VNNI=ON",
+                "-DGGML_AVX512_BF16=ON"
+            )
+        } else {
+            Write-Host "Configuring for standard AVX2 CPU target (universal compatibility)..."
+            $SimdFlags = "-mno-avx512f"
+            $CmakeSimdFlags = @(
+                "-DGGML_AVX512=OFF",
+                "-DGGML_AVX512_VBMI=OFF",
+                "-DGGML_AVX512_VNNI=OFF",
+                "-DGGML_AVX512_BF16=OFF"
+            )
+        }
+        
+        $CoreFlags = "-O3 -w -Wno-ignored-attributes $SimdFlags -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno"
         
         $env:HIP_PATH = $RocmPath
         $env:ROCM_PATH = $RocmPath
@@ -191,7 +214,7 @@ jobs:
           "-DCMAKE_C_FLAGS=$CoreFlags",
           "-DCMAKE_CXX_FLAGS=$CoreFlags",
           "-DCMAKE_HIP_FLAGS=$CoreFlags -Xclang -fno-cuda-host-device-constexpr -mllvm -amdgpu-early-inline-all=true"
-        )
+        ) + $CmakeSimdFlags
         
         if ($RcCompiler) {
             $CMakeArgs += "-DCMAKE_RC_COMPILER=$RcCompiler"
@@ -326,7 +349,17 @@ jobs:
         mkdir build
         cd build
         
-        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes -mno-avx512f -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno"
+        if [ "${{ matrix.avx512 }}" = "true" ]; then
+            echo "Configuring for specialized AVX-512 CPU target (AVX512F, VBMI, VNNI, BF16)..."
+            SIMD_FLAGS="-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vbmi -mavx512vnni -mavx512bf16"
+            CMAKE_SIMD_FLAGS="-DGGML_AVX512=ON -DGGML_AVX512_VBMI=ON -DGGML_AVX512_VNNI=ON -DGGML_AVX512_BF16=ON"
+        else
+            echo "Configuring for standard AVX2 CPU target (universal compatibility)..."
+            SIMD_FLAGS="-mno-avx512f"
+            CMAKE_SIMD_FLAGS="-DGGML_AVX512=OFF -DGGML_AVX512_VBMI=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AVX512_BF16=OFF"
+        fi
+
+        export CORE_FLAGS="-O3 -w -Wno-ignored-attributes $SIMD_FLAGS -Wno-keyword-macro -Wno-extern-initializer -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-language-extension-token -Wno-deprecated-declarations -Wno-double-promotion -fno-math-errno"
         
         cmake -G "Ninja" \
           -DCMAKE_C_COMPILER=${ROCM_PATH}/lib/llvm/bin/clang \
@@ -347,6 +380,7 @@ jobs:
           -DCMAKE_C_FLAGS="$CORE_FLAGS" \
           -DCMAKE_CXX_FLAGS="$CORE_FLAGS" \
           -DCMAKE_HIP_FLAGS="$CORE_FLAGS -mllvm -amdgpu-early-inline-all=true" \
+          ${CMAKE_SIMD_FLAGS} \
           ..
           
         cmake --build . --config Release --parallel $(nproc)
@@ -398,7 +432,7 @@ jobs:
       id: prep
       run: |
         TAG_BASE="${{ needs.setup.outputs.tag_name }}"
-        TAG_BASE=$(echo "$TAG_BASE" | sed -e 's/-vanilla$//' -e 's/-experimental$//')
+        TAG_BASE=$(echo "$TAG_BASE" | sed -e 's/-vanilla$//' -e 's/-experimental-avx512$//' -e 's/-experimental$//')
         FINAL_TAG="${TAG_BASE}-${{ matrix.flavor }}"
 
         COMMIT_SHA=$(git rev-parse HEAD)
@@ -409,9 +443,12 @@ jobs:
         if [ "${{ matrix.flavor }}" = "vanilla" ]; then
           echo "flavor_title=Vanilla TurboQuant" >> $GITHUB_OUTPUT
           echo "flavor_desc=Upstream llama.cpp base with TurboQuant KV cache compression." >> $GITHUB_OUTPUT
+        elif [ "${{ matrix.flavor }}" = "experimental-avx512" ]; then
+          echo "flavor_title=Experimental RDNA Boosts (Specialized AVX-512)" >> $GITHUB_OUTPUT
+          echo "flavor_desc=TurboQuant KV cache + Stew's RDNA Boosts (native-BF16 FA, WMMA, fused GDN, fused MoE) + ROCmFPX quantization family + DFlash2 speculative decoding, compiled with specialized native AVX-512 vector extensions (AVX512F, VBMI, VNNI, BF16) for maximum CPU and hybrid offload performance (e.g. Qwen 3.8 Flash-Next 51B, 70B+ models) on AMD Zen 4 / Zen 5 and modern Intel CPUs." >> $GITHUB_OUTPUT
         else
-          echo "flavor_title=Experimental RDNA Boosts" >> $GITHUB_OUTPUT
-          echo "flavor_desc=TurboQuant KV cache + Stew's RDNA Boosts (native-BF16 FA, WMMA, fused GDN, fused MoE) + ROCmFPX quantization family + DFlash2 speculative decoding." >> $GITHUB_OUTPUT
+          echo "flavor_title=Experimental RDNA Boosts (Universal AVX2)" >> $GITHUB_OUTPUT
+          echo "flavor_desc=TurboQuant KV cache + Stew's RDNA Boosts (native-BF16 FA, WMMA, fused GDN, fused MoE) + ROCmFPX quantization family + DFlash2 speculative decoding. Universal AVX2 build compatible with all modern x86-64 CPUs." >> $GITHUB_OUTPUT
         fi
 
     - name: Download Windows Artifact
@@ -425,7 +462,7 @@ jobs:
         name: llama-rocm-${{ matrix.flavor }}-linux
 
     - name: Package Platform Scripts Archives
-      if: matrix.flavor == 'experimental'
+      if: matrix.flavor == 'experimental' || matrix.flavor == 'experimental-avx512'
       run: |
         echo "Packaging platform-specific scripts for experimental release..."
         mkdir -p staging-win/scripts staging-linux/scripts
@@ -449,8 +486,8 @@ jobs:
         files: |
           llama-rocm-${{ matrix.flavor }}-windows.zip
           llama-rocm-${{ matrix.flavor }}-linux.zip
-          ${{ matrix.flavor == 'experimental' && 'llama-rocm-experimental-scripts-windows.zip' || '' }}
-          ${{ matrix.flavor == 'experimental' && 'llama-rocm-experimental-scripts-linux.zip' || '' }}
+          ${{ (matrix.flavor == 'experimental' || matrix.flavor == 'experimental-avx512') && 'llama-rocm-experimental-scripts-windows.zip' || '' }}
+          ${{ (matrix.flavor == 'experimental' || matrix.flavor == 'experimental-avx512') && 'llama-rocm-experimental-scripts-linux.zip' || '' }}
         body: |
           ### Release Information
           - **Flavor:** `${{ steps.prep.outputs.flavor_title }}`
@@ -458,15 +495,16 @@ jobs:
           - **Commit:** `${{ steps.prep.outputs.commit_sha }}`
           - **ROCm Core SDK:** 10.1.0 (TheRock)
           - **Target GPU Architectures:** `gfx900;gfx906;gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx1102;gfx1200;gfx1201`
+          - **CPU Target:** `${{ matrix.avx512 && 'Specialized AVX-512 (Zen 4/5, modern Intel - high-speed hybrid offloading)' || 'Standard AVX2 (Universal x86-64 compatibility)' }}`
 
           ### Description
           ${{ steps.prep.outputs.flavor_desc }}
 
           Unified ROCm 10.1.0 (TheRock) release built for Windows and Linux.
           Packages include required AMD ROCm runtime libraries (`rocblas`, `hipblaslt`, `hipblas`, `amdhip64`) for portable out-of-the-box execution.
-          ${{ matrix.flavor == 'experimental' && '- **Windows Scripts:** `llama-rocm-experimental-scripts-windows.zip` (PowerShell quantization scripts for Windows)' || '' }}
-          ${{ matrix.flavor == 'experimental' && '- **Linux Scripts:** `llama-rocm-experimental-scripts-linux.zip` (Bash quantization scripts for Linux)' || '' }}
+          ${{ (matrix.flavor == 'experimental' || matrix.flavor == 'experimental-avx512') && '- **Windows Scripts:** `llama-rocm-experimental-scripts-windows.zip` (PowerShell quantization scripts for Windows)' || '' }}
+          ${{ (matrix.flavor == 'experimental' || matrix.flavor == 'experimental-avx512') && '- **Linux Scripts:** `llama-rocm-experimental-scripts-linux.zip` (Bash quantization scripts for Linux)' || '' }}
         draft: false
-        prerelease: ${{ matrix.flavor == 'experimental' }}
+        prerelease: ${{ matrix.flavor == 'experimental' || matrix.flavor == 'experimental-avx512' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
