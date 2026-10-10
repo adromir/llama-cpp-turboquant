@@ -2649,7 +2649,9 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
     const int64_t n_vocab  = vocab.n_tokens();
     const bool    mtp_embd = cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP && batch_inp.embd;
-    const int64_t n_embd   = mtp_embd ? hparams.n_embd_out() : hparams.n_embd_inp();
+    // DFlash embd batches carry the fused target features at the encoder input width
+    const bool    dflash_embd = model.arch == LLM_ARCH_DFLASH && batch_inp.embd;
+    const int64_t n_embd   = mtp_embd ? hparams.n_embd_out() : dflash_embd ? hparams.n_embd_inp_enc() : hparams.n_embd_inp();
 
     // when computing embeddings, all tokens are output
     const bool output_all   = cparams.embeddings;
@@ -4839,6 +4841,21 @@ float * llama_get_embeddings_layer_inp(llama_context * ctx, uint32_t lid) {
 
 bool llama_set_sampler(llama_context * ctx, llama_seq_id seq_id, llama_sampler * smpl) {
     return ctx->set_sampler(seq_id, smpl);
+}
+
+llama_sampling_output_view llama_get_sampling_output_ith(llama_context * ctx, int32_t i) {
+    ctx->synchronize();
+    llama_sampling_output_view result{};
+    result.token = ctx->get_sampled_token_ith(i);
+    result.probs = ctx->get_sampled_probs_ith(i);
+    result.sampled_logits = ctx->get_sampled_logits_ith(i);
+    result.candidates = const_cast<llama_token *>(ctx->get_sampled_candidates_ith(i));
+    result.n_probs = static_cast<uint32_t>(ctx->get_sampled_probs_count(i));
+    result.n_logits = static_cast<uint32_t>(ctx->get_sampled_logits_count(i));
+    if (!result.sampled_logits) {
+        result.logits = ctx->get_logits_ith(i);
+    }
+    return result;
 }
 
 llama_token llama_get_sampled_token_ith(llama_context * ctx, int32_t i) {

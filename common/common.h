@@ -334,6 +334,7 @@ struct common_params_speculative_draft {
 
     bool chain = false; // chained drafting: all n_max tokens in one GPU decode (MTP only)
     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
+    bool adaptive = false; // dynamic adaptive draft depth based on measured acceptance
 
     common_params_model mparams;
 

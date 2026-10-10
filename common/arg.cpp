@@ -4229,6 +4229,19 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE"));
 
     add_opt(common_arg(
+        {"--spec-draft-adaptive"},
+        "enable adaptive speculative draft depth based on measured acceptance rate",
+        [](common_params & params) {
+            params.speculative.draft.adaptive = true;
+            for (auto & t : params.speculative.types) {
+                if (t == COMMON_SPECULATIVE_TYPE_DRAFT_MTP) {
+                    t = COMMON_SPECULATIVE_TYPE_DRAFT_MTP_ADAPTIVE;
+                }
+            }
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_ADAPTIVE"));
+
+    add_opt(common_arg(
         {"--spec-draft-n-start"}, "N",
         "initial adaptive MTP draft depth: the first verify round of each generation starts here "
         "instead of the default cold start. Clamped to [--spec-draft-n-min-adaptive, "

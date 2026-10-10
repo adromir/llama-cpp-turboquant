@@ -580,8 +580,8 @@
         <span class="brand-name">llama.cpp <span class="brand-tag">TurboQuant + ROCm</span></span>
       </div>
       <div class="nav-links">
-        <a href="benchmark-results-3way.html" class="nav-link">
-          <span>&#128202;</span> 4-Way Benchmarks
+        <a href="benchmark-results.html" class="nav-link">
+          <span>&#128202;</span> <span id="navTextBench">5-Way Benchmarks</span>
         </a>
         <a href="experimental-fork.html" class="nav-link">
           <span>&#9881;</span> About Fork
@@ -1443,6 +1443,7 @@
     var translations = {
       en: {
         langBtn: 'Switch to Deutsch',
+        navTextBench: '5-Way Benchmarks',
         headerTitle: 'Empirical 3-Way Benchmark Comparison',
         headerSubtitle: 'Comprehensive comparative evaluation on RDNA4 hardware: Upstream llama.cpp (b11146), our Experimental Fork on unoptimized Q4_K_M, and our fully optimized ROCmFP4 engine with MTP speculative decoding and TurboQuant KV compression.',
         legendTitle1: 'Config 1: Upstream (b11146)',
@@ -1542,6 +1543,7 @@
       },
       de: {
         langBtn: 'Auf Englisch umschalten',
+        navTextBench: '5-Wege Benchmarks',
         headerTitle: 'Empirischer 3-Wege-Benchmark-Vergleich',
         headerSubtitle: 'Umfassende vergleichende Evaluierung auf RDNA4-Hardware: Upstream llama.cpp (b11146), unser experimenteller Fork auf unoptimiertem Q4_K_M sowie unsere vollwertig optimierte ROCmFP4-Engine mit spekulativer MTP-Decodierung und TurboQuant KV-Kompression.',
         legendTitle1: 'Konfig 1: Upstream (b11146)',
@@ -1646,6 +1648,7 @@
       var t = translations[currentLang];
 
       document.getElementById('langBtnText').textContent = t.langBtn;
+      if (document.getElementById('navTextBench')) document.getElementById('navTextBench').textContent = t.navTextBench;
       document.getElementById('headerTitle').textContent = t.headerTitle;
       document.getElementById('headerSubtitle').textContent = t.headerSubtitle;
       document.getElementById('legendTitle1').textContent = t.legendTitle1;

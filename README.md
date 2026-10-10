@@ -161,7 +161,7 @@ A comprehensive 3-way benchmark evaluation was conducted on AMD RDNA 4 hardware 
 > **Live Interactive Benchmark Dashboard (GitHub Pages)**:
 > An interactive dashboard with Chart.js visualization, real-time comparisons, Strata MoE profiling, and per-metric breakdowns is hosted live on GitHub Pages:
 > - **Live Dashboard**: [https://adromir.github.io/llama-cpp-turboquant/](https://adromir.github.io/llama-cpp-turboquant/)
-> - **Source in Repo**: [`docs/index.html`](docs/index.html) or [`docs/benchmark-results-3way.html`](docs/benchmark-results-3way.html)
+> - **Source in Repo**: [`docs/index.html`](docs/index.html) or [`docs/benchmark-results.html`](docs/benchmark-results.html)
 
 ### Testbed Environment
 - **GPU**: AMD Radeon RX 9060 XT 16GB (RDNA 4, `gfx1200`, 16,304 MiB VRAM)
@@ -312,14 +312,15 @@ This repository maintains two distinct build targets published as separate relea
 
 Pre-compiled, self-contained zip packages for both **Windows** and **Linux** are available under [Releases](https://github.com/adromir/llama-cpp-turboquant/releases):
 
-- `llama-rocm-vanilla-windows.zip` / `llama-rocm-vanilla-linux.zip`: Stable TurboQuant builds.
-- `llama-rocm-experimental-windows.zip` / `llama-rocm-experimental-linux.zip`: RDNA boosts, ROCmFPX, and experimental feature builds.
+- `llama-rocm-vanilla-windows.zip` / `llama-rocm-vanilla-linux.zip`: Stable TurboQuant builds (universal AVX2 compatibility).
+- `llama-rocm-experimental-windows.zip` / `llama-rocm-experimental-linux.zip`: RDNA boosts, ROCmFPX, and DFlash2 experimental builds (universal AVX2 compatibility for all modern x86-64 CPUs).
+- `llama-rocm-experimental-avx512-windows.zip` / `llama-rocm-experimental-avx512-linux.zip`: Specialized **AVX-512** experimental builds (compiled with AVX512F, VBMI, VNNI, BF16). Unlocks maximum performance for **hybrid CPU+GPU offloading** (e.g. Qwen 3.8 Flash-Next 51B, 70B+ models exceeding VRAM) and 2x-3x faster model quantization on AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7000/9000 series) and modern Intel CPUs.
 - `llama-rocm-experimental-scripts-windows.zip`: Standalone PowerShell quantization scripts (`quantize-rocmfpx.ps1`, `quantize-rocmfpx-agent.ps1`, etc.) for Windows.
 - `llama-rocm-experimental-scripts-linux.zip`: Standalone Bash quantization scripts (`quantize-rocmfpx-agent.sh`, `quantize-rocmfpx-from-kquant.sh`, etc.) for Linux.
 
 ### Installation
 
-1. Download the zip archive for your operating system from the latest release.
+1. Download the zip archive for your operating system and CPU architecture from the latest release.
 2. Extract the archive to any folder.
 3. Open a terminal in the extracted folder.
 4. Run `llama-cli.exe` or `llama-server.exe` directly!
@@ -417,6 +418,20 @@ If you prefer building from source, ensure you have CMake and Ninja installed.
 
 ### Windows (AMD ROCm 10 / HIP)
 
+#### Option A: Automated Build Script (`build.ps1`)
+
+The repository includes an automated build script supporting both standard AVX2 and specialized AVX-512 architectures:
+
+```powershell
+# Interactive build (prompts for local branch and CPU architecture)
+.\build.ps1
+
+# Directly build with specialized AVX-512 target (Zen 4/5, modern Intel)
+.\build.ps1 -Avx512
+```
+
+#### Option B: Manual CMake & Ninja Build
+
 You can build with AMD ROCm 10 (TheRock), official AMD ROCm 6.x+, or any custom installation.
 The build snippet automatically detects your ROCm root from `$env:HIP_PATH` or `$env:ROCM_PATH`, or allows defining your custom path:
 
@@ -428,6 +443,7 @@ $ClangBin = "$RocmPath/lib/llvm/bin"
 mkdir build
 cd build
 
+# Universal build (Standard AVX2):
 cmake -G "Ninja" `
   -DCMAKE_C_COMPILER="$ClangBin/clang.exe" `
   -DCMAKE_CXX_COMPILER="$ClangBin/clang++.exe" `
@@ -442,6 +458,9 @@ cmake -G "Ninja" `
   -DGGML_OPENMP=OFF `
   -DCMAKE_PREFIX_PATH="$RocmPath;$RocmPath/lib/cmake" `
   ..
+
+# Or for Specialized AVX-512 (Zen 4/5, modern Intel), append:
+#   -DGGML_AVX512=ON -DGGML_AVX512_VBMI=ON -DGGML_AVX512_VNNI=ON -DGGML_AVX512_BF16=ON
 
 cmake --build . --config Release --parallel
 ```

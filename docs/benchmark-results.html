@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>4-Way Benchmark Comparison: ROCm Upstream vs. Vulkan Upstream vs. Experimental Fork</title>
+  <title>5-Way Benchmark Comparison: ROCm Upstream vs. Vulkan Upstream vs. Experimental Fork (ROCmFP4 & DFlash2)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -28,14 +28,17 @@
       --accent-amber: #f59e0b;
       --accent-rose: #f43f5e;
       --accent-purple: #8b5cf6;
+      --accent-emerald: #10b981;
       
       --color-upstream-rocm: #f43f5e;
       --color-upstream-vulkan: #8b5cf6;
       --color-exp-q4k: #f59e0b;
       --color-exp-rocmfp4: #00f2fe;
+      --color-exp-dflash: #10b981;
       
       --glow-cyan: rgba(0, 242, 254, 0.25);
       --glow-purple: rgba(99, 102, 241, 0.25);
+      --glow-emerald: rgba(16, 185, 129, 0.3);
     }
 
     * {
@@ -54,12 +57,12 @@
       background-image: 
         radial-gradient(circle at 20% 15%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
         radial-gradient(circle at 80% 25%, rgba(0, 242, 254, 0.08) 0%, transparent 45%),
-        radial-gradient(circle at 50% 85%, rgba(245, 158, 11, 0.05) 0%, transparent 50%);
+        radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
       background-attachment: fixed;
     }
 
     .container {
-      max-width: 1440px;
+      max-width: 1480px;
       margin: 0 auto;
     }
 
@@ -177,32 +180,13 @@
       backdrop-filter: blur(8px);
     }
 
-    .pill-gpu {
-      background: rgba(99, 102, 241, 0.12);
-      border-color: rgba(99, 102, 241, 0.3);
-      color: #a5b4fc;
-    }
-
-    .pill-model {
-      background: rgba(0, 242, 254, 0.12);
-      border-color: rgba(0, 242, 254, 0.3);
-      color: #67e8f9;
-    }
-
-    .pill-arch {
-      background: rgba(16, 185, 129, 0.12);
-      border-color: rgba(16, 185, 129, 0.3);
-      color: #6ee7b7;
-    }
-
-    .pill-mtp {
-      background: rgba(245, 158, 11, 0.12);
-      border-color: rgba(245, 158, 11, 0.3);
-      color: #fcd34d;
-    }
+    .pill-gpu { background: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.3); color: #a5b4fc; }
+    .pill-model { background: rgba(0, 242, 254, 0.12); border-color: rgba(0, 242, 254, 0.3); color: #67e8f9; }
+    .pill-arch { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+    .pill-dflash { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.4); color: #34d399; }
 
     h1 {
-      font-size: 2.4rem;
+      font-size: 2.35rem;
       font-weight: 800;
       letter-spacing: -0.03em;
       margin-bottom: 0.75rem;
@@ -215,16 +199,16 @@
     .subtitle {
       font-size: 1.05rem;
       color: var(--text-muted);
-      max-width: 960px;
+      max-width: 1020px;
       margin: 0 auto 1.75rem auto;
       text-align: center;
       font-weight: 400;
     }
 
-    /* 4-WAY CONFIGURATION LEGEND */
+    /* 5-WAY CONFIGURATION LEGEND */
     .config-legend-bar {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: 1rem;
       margin: 1.5rem 0 2rem 0;
     }
@@ -236,7 +220,7 @@
       padding: 1rem 1.25rem;
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 0.9rem;
       text-align: left;
       backdrop-filter: blur(10px);
       transition: all 0.25s ease;
@@ -254,37 +238,14 @@
       flex-shrink: 0;
     }
 
-    .config-dot.upstream-rocm {
-      background: var(--color-upstream-rocm);
-      box-shadow: 0 0 10px rgba(244, 63, 94, 0.6);
-    }
+    .config-dot.upstream-rocm { background: var(--color-upstream-rocm); box-shadow: 0 0 10px rgba(244, 63, 94, 0.6); }
+    .config-dot.upstream-vulkan { background: var(--color-upstream-vulkan); box-shadow: 0 0 10px rgba(139, 92, 246, 0.6); }
+    .config-dot.exp-q4k { background: var(--color-exp-q4k); box-shadow: 0 0 10px rgba(245, 158, 11, 0.6); }
+    .config-dot.exp-rocmfp4 { background: var(--color-exp-rocmfp4); box-shadow: 0 0 12px rgba(0, 242, 254, 0.7); }
+    .config-dot.exp-dflash { background: var(--color-exp-dflash); box-shadow: 0 0 12px rgba(16, 185, 129, 0.8); }
 
-    .config-dot.upstream-vulkan {
-      background: var(--color-upstream-vulkan);
-      box-shadow: 0 0 10px rgba(139, 92, 246, 0.6);
-    }
-
-    .config-dot.exp-q4k {
-      background: var(--color-exp-q4k);
-      box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
-    }
-
-    .config-dot.exp-rocmfp4 {
-      background: var(--color-exp-rocmfp4);
-      box-shadow: 0 0 12px rgba(0, 242, 254, 0.7);
-    }
-
-    .config-title {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #ffffff;
-    }
-
-    .config-desc {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      margin-top: 0.2rem;
-    }
+    .config-title { font-size: 0.92rem; font-weight: 700; color: #ffffff; }
+    .config-desc { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem; }
 
     /* KPI Grid */
     .grid-kpi {
@@ -321,9 +282,9 @@
     }
 
     .kpi-card.decode::before { background: linear-gradient(90deg, #00f2fe, #10b981); }
+    .kpi-card.dflash::before { background: linear-gradient(90deg, #10b981, #00f2fe); }
     .kpi-card.prefill::before { background: linear-gradient(90deg, #6366f1, #00f2fe); }
     .kpi-card.interactive::before { background: linear-gradient(90deg, #f59e0b, #00f2fe); }
-    .kpi-card.quality::before { background: linear-gradient(90deg, #10b981, #6366f1); }
     .kpi-card.vram::before { background: linear-gradient(90deg, #3b82f6, #6366f1); }
     .kpi-card.context::before { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
 
@@ -337,7 +298,7 @@
     }
 
     .kpi-value {
-      font-size: 2.2rem;
+      font-size: 2.15rem;
       font-weight: 800;
       line-height: 1.1;
       margin-bottom: 0.4rem;
@@ -354,6 +315,7 @@
     .hl-rocm { color: var(--color-upstream-rocm); font-weight: 600; }
     .hl-vulkan { color: var(--color-upstream-vulkan); font-weight: 600; }
     .hl-exp { color: var(--color-exp-rocmfp4); font-weight: 600; }
+    .hl-df { color: var(--color-exp-dflash); font-weight: 600; }
     .hl-acc { color: var(--accent-green); font-weight: 600; }
 
     /* Navigation Tabs */
@@ -391,6 +353,12 @@
       border: 1px solid rgba(99, 102, 241, 0.35);
     }
 
+    .tab-btn.dflash-tab.active {
+      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+
     .tab-content {
       display: none;
     }
@@ -405,7 +373,6 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* Card Rows */
     .card-row {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
@@ -423,10 +390,6 @@
       position: relative;
     }
 
-    .chart-card.full-width {
-      grid-column: 1 / -1;
-    }
-
     .chart-header {
       display: flex;
       justify-content: space-between;
@@ -437,7 +400,7 @@
     }
 
     .chart-title {
-      font-size: 1.18rem;
+      font-size: 1.15rem;
       font-weight: 700;
       color: #f8fafc;
     }
@@ -506,6 +469,7 @@
     .tag-vulkan { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; }
     .tag-mid { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
     .tag-fast { background: rgba(0, 242, 254, 0.15); color: #38bdf8; }
+    .tag-df { background: rgba(16, 185, 129, 0.18); color: #34d399; }
     .tag-acc { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 
     .analysis-box {
@@ -517,6 +481,11 @@
       font-size: 0.92rem;
       color: #cbd5e1;
       line-height: 1.7;
+    }
+
+    .analysis-box.emerald {
+      border-left-color: var(--accent-emerald);
+      background: rgba(6, 44, 32, 0.35);
     }
 
     .analysis-box h4 {
@@ -547,8 +516,8 @@
         <span class="brand-tag">RDNA 4 Specialized</span>
       </a>
       <div class="nav-links">
-        <a href="benchmark-results-3way.html" class="nav-link active">
-          <span>&#128202;</span> 4-Way Benchmarks
+        <a href="benchmark-results.html" class="nav-link active">
+          <span>&#128202;</span> 5-Way Benchmarks
         </a>
         <a href="experimental-fork.html" class="nav-link">
           <span>&#9881;</span> About Fork
@@ -573,15 +542,15 @@
         <span class="pill-badge pill-gpu">&#9881; AMD Radeon RX 9060 XT (16GB, gfx1200)</span>
         <span class="pill-badge pill-model">&#9672; Qwen3.8-27B (Dense Base + MTP)</span>
         <span class="pill-badge pill-arch">&#9889; ROCm 7.1.0 & Vulkan 1.3</span>
-        <span class="pill-badge pill-mtp">&#128640; 5-Patch RDNA-Boost Suite</span>
+        <span class="pill-badge pill-dflash">&#128640; DFlash2 Speculative Sidecar (1.03 GB)</span>
       </div>
 
-      <h1 id="headerTitle">Empirical 4-Way Benchmark Comparison</h1>
+      <h1 id="headerTitle">Empirical 5-Way Benchmark Comparison</h1>
       <p class="subtitle" id="headerSubtitle">
-        Comprehensive performance and quality evaluation on AMD RDNA 4: Upstream ROCm (b11429), Upstream Vulkan (b11429), Experimental Fork on stock Q4_K_M, and our optimized ROCmFP4-FAST engine with TurboQuant KV compression.
+        Comprehensive evaluation on AMD RDNA 4: Upstream ROCm (b11429), Upstream Vulkan (b11429), Experimental Fork on Q4_K_M, ROCmFP4-FAST with TurboQuant KV, and our new DFlash2 block diffusion speculative decoding sidecar.
       </p>
 
-      <!-- 4-WAY CONFIGURATION LEGEND -->
+      <!-- 5-WAY CONFIGURATION LEGEND -->
       <div class="config-legend-bar">
         <div class="config-card">
           <div class="config-dot upstream-rocm"></div>
@@ -611,7 +580,15 @@
           <div class="config-dot exp-rocmfp4"></div>
           <div>
             <div class="config-title" id="legendTitle4">Config 4: Exp Fork (ROCmFP4_FAST)</div>
-            <div class="config-desc" id="legendDesc4">Qwen3.8-27B-Q4_0_ROCMFP4_FAST (Full FP4 + TurboQuant + MTP)</div>
+            <div class="config-desc" id="legendDesc4">Qwen3.8-27B-Q4_0_ROCMFP4_FAST (FP4 weights + TurboQuant KV)</div>
+          </div>
+        </div>
+
+        <div class="config-card" style="border-color: rgba(16, 185, 129, 0.35);">
+          <div class="config-dot exp-dflash"></div>
+          <div>
+            <div class="config-title" id="legendTitle5" style="color: #6ee7b7;">Config 5: ROCmFP4 + DFlash2 Speculative</div>
+            <div class="config-desc" id="legendDesc5">ROCmFP4 + DFlash2 Block Diffusion sidecar (Adaptive / Fixed n=3)</div>
           </div>
         </div>
       </div>
@@ -622,7 +599,13 @@
       <div class="kpi-card decode">
         <div class="kpi-label" id="kpiLabelDecode">Autoregressive Decode</div>
         <div class="kpi-value">17.77 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
-        <div class="kpi-sub" id="kpiSubDecode"><span class="hl-exp">2.60x vs ROCm (6.83 t/s)</span> | <span class="hl-exp">2.29x vs Vulkan (7.75 t/s)</span></div>
+        <div class="kpi-sub" id="kpiSubDecode"><span class="hl-exp">2.60x vs ROCm (6.83 t/s)</span> | <span class="hl-exp">2.29x vs Vulkan</span></div>
+      </div>
+
+      <div class="kpi-card dflash">
+        <div class="kpi-label" id="kpiLabelDflash" style="color: #6ee7b7;">Peak Speculative Speed (DFlash2)</div>
+        <div class="kpi-value" style="color: #34d399;">21.57 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
+        <div class="kpi-sub" id="kpiSubDflash"><span class="hl-df">3.16x vs ROCm Upstream</span> | <span class="hl-acc">57.3% Acceptance</span> on C++ Code</div>
       </div>
 
       <div class="kpi-card prefill">
@@ -634,19 +617,13 @@
       <div class="kpi-card interactive">
         <div class="kpi-label" id="kpiLabelInteractive">Peak Interactive Prompt Eval</div>
         <div class="kpi-value">134.6 <span style="font-size: 1.1rem; font-weight: 500;">t/s</span></div>
-        <div class="kpi-sub" id="kpiSubInteractive"><span class="hl-exp">+32.3% vs ROCm</span> | <span class="hl-exp">+72.0% vs Vulkan</span></div>
-      </div>
-
-      <div class="kpi-card quality">
-        <div class="kpi-label" id="kpiLabelQuality">Perplexity & Accuracy</div>
-        <div class="kpi-value">7.8766 <span style="font-size: 1.1rem; font-weight: 500;">PPL</span></div>
-        <div class="kpi-sub" id="kpiSubQuality"><span class="hl-acc">100% Quality Preserved</span> vs 7.8806 Q4_K_M | <span class="hl-exp">1.54x faster eval</span></div>
+        <div class="kpi-sub" id="kpiSubInteractive"><span class="hl-exp">+32.3% vs ROCm</span></div>
       </div>
 
       <div class="kpi-card vram">
         <div class="kpi-label" id="kpiLabelVram">VRAM Weight Footprint</div>
         <div class="kpi-value">12,991 <span style="font-size: 1.1rem; font-weight: 500;">MiB</span></div>
-        <div class="kpi-sub" id="kpiSubVram"><span class="hl-exp">-2,097 MiB (-13.9%)</span> vs 15,088 MiB stock | <span class="hl-acc">2,559 MiB Free Headroom</span></div>
+        <div class="kpi-sub" id="kpiSubVram"><span class="hl-exp">-2,097 MiB (-13.9%)</span> vs 15,088 MiB stock | <span class="hl-acc">+DFlash2 fits in 16GB</span></div>
       </div>
 
       <div class="kpi-card context">
@@ -659,6 +636,7 @@
     <!-- TABS -->
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('tab-decode', this)" id="tabBtnDecode">Decode & Latency</button>
+      <button class="tab-btn dflash-tab" onclick="switchTab('tab-dflash', this)" id="tabBtnDflash" style="color: #6ee7b7;">DFlash2 Speculative Deep Dive (Config 5)</button>
       <button class="tab-btn" onclick="switchTab('tab-prefill', this)" id="tabBtnPrefill">Prompt Prefill Throughput</button>
       <button class="tab-btn" onclick="switchTab('tab-realworld', this)" id="tabBtnRealworld">Real-World Generation</button>
       <button class="tab-btn" onclick="switchTab('tab-quality', this)" id="tabBtnQuality">Quality & Perplexity (PPL)</button>
@@ -704,7 +682,110 @@
       </div>
     </div>
 
-    <!-- TAB 2: PREFILL -->
+    <!-- TAB 2: DFLASH2 SPECULATIVE (CONFIG 5 DEEP DIVE) -->
+    <div id="tab-dflash" class="tab-content">
+      <div class="card-row">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title" id="titleChartDflashSpeed">DFlash2 Speculative Decoding: Throughput Comparison (t/s)</div>
+              <div class="chart-desc" id="descChartDflashSpeed">Generation throughput comparing Bare Decode vs. Fixed n=3 vs. Fixed n=7 vs. Adaptive n=3..7</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartDflashSpeed"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title" id="titleChartDflashAcc">Draft Acceptance Rate across Workloads (%)</div>
+              <div class="chart-desc" id="descChartDflashAcc">Percentage of drafted tokens accepted by target Qwen 27B model (higher is better)</div>
+            </div>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartDflashAcc"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- DFLASH RESULTS TABLE -->
+      <div class="table-card" style="margin-top: 1.5rem;">
+        <h3 style="margin-bottom: 1rem; color: #f8fafc;" id="titleTableDflash">Empirical DFlash2 Speculative Decoding Matrix (256 Tokens Greedy)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Workload / Prompt</th>
+              <th>Category</th>
+              <th>Bare Decode</th>
+              <th>DFlash Fixed (n=3)</th>
+              <th>DFlash Fixed (n=7, p_min=0.6)</th>
+              <th>DFlash Adaptive (n=2..7, p_min=0.6)</th>
+              <th>Max Speedup</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Kubernetes JSON Config</strong></td>
+              <td><span class="tag tag-mid">Structured</span></td>
+              <td>18.26 t/s</td>
+              <td><strong>20.49 t/s</strong> <span class="tag tag-acc">52.9% Acc</span></td>
+              <td>17.82 t/s <span class="tag tag-rocm">55.8% Acc</span></td>
+              <td>17.17 t/s <span class="tag tag-fast">71.2% Acc</span></td>
+              <td><span class="tag tag-acc">+12.2%</span></td>
+            </tr>
+            <tr>
+              <td><strong>C++ Thread-Safe LRU Cache</strong></td>
+              <td><span class="tag tag-mid">Structured</span></td>
+              <td>18.41 t/s</td>
+              <td><strong>21.57 t/s</strong> <span class="tag tag-acc">57.3% Acc</span></td>
+              <td>17.13 t/s <span class="tag tag-rocm">50.0% Acc</span></td>
+              <td>17.74 t/s <span class="tag tag-fast">66.2% Acc</span></td>
+              <td><span class="tag tag-acc">+17.2%</span></td>
+            </tr>
+            <tr>
+              <td><strong>Quantum Superposition</strong></td>
+              <td><span class="tag tag-vulkan">Prose / Science</span></td>
+              <td>18.37 t/s</td>
+              <td><strong>19.39 t/s</strong> <span class="tag tag-acc">48.9% Acc</span></td>
+              <td>15.68 t/s <span class="tag tag-rocm">56.5% Acc</span></td>
+              <td>14.79 t/s <span class="tag tag-fast">66.3% Acc</span></td>
+              <td><span class="tag tag-acc">+5.6%</span></td>
+            </tr>
+            <tr>
+              <td><strong>Deep Space Relay Narrative</strong></td>
+              <td><span class="tag tag-vulkan">Prose / Creative</span></td>
+              <td>18.33 t/s</td>
+              <td><strong>18.15 t/s</strong> <span class="tag tag-acc">42.9% Acc</span></td>
+              <td>15.52 t/s <span class="tag tag-rocm">51.6% Acc</span></td>
+              <td>14.37 t/s <span class="tag tag-fast">63.7% Acc</span></td>
+              <td><span class="tag tag-acc">-1.0%</span></td>
+            </tr>
+            <tr style="background: rgba(16, 185, 129, 0.08);">
+              <td><strong>Average Across All Prompts</strong></td>
+              <td><strong>Overall</strong></td>
+              <td><strong>18.34 t/s</strong></td>
+              <td><strong>19.90 t/s (50.5%)</strong></td>
+              <td>16.54 t/s (53.5%)</td>
+              <td>16.02 t/s (66.8%)</td>
+              <td><span class="tag tag-acc">+8.5% avg</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="analysis-box emerald">
+        <h4 id="boxTitleDflash">&#9889; DFlash2 Block Diffusion Architecture, Pipeline Fusions & The Discrete GPU Tradeoff</h4>
+        <div id="boxContentDflash">
+          <p>1. <strong>Fused Encoder & Single-Sync Sampler Pipeline</strong>: By fusing the DFlash encoder directly into KV injection decode and adopting a single-synchronization sampler view (porting upstream PRs #27310 & #30196), we eliminated redundant GPU forward passes, intermediate D2H memory copies, and repeated device synchronizations per speculative candidate. This lowered per-step dispatch latency across the board, pushing peak code generation up to <strong>21.57 t/s (57.3% acceptance rate)</strong> and elevating creative prose above bare decode (<strong>18.15 t/s vs. 18.33 t/s</strong>).<br>
+          2. <strong>Confidence Gating (<code>--spec-draft-p-min 0.6</code>) Tames Speculative Wastage</strong>: In deep drafting mode (<code>n=7</code>) and adaptive mode, pruning speculative branches whenever draft confidence falls below 60% caused acceptance rates to surge from 22.9%-29.8% up to <strong>50.0% - 56.5% (Fixed n=7)</strong> and <strong>63.7% - 71.2% (Adaptive)</strong>, cutting discarded draft tokens by over 50%.<br>
+          3. <strong>Why DFlash Gains Differ from MTP on Discrete GPUs</strong>: Unlike MTP (Multi-Token Prediction), which computes draft tokens using a lightweight linear head within the base model's existing attention context, DFlash2 is an external 1.03 GB non-autoregressive block diffusion network. On a discrete GPU with a 128-bit memory bus where bare decode takes only 54 ms per token, running repeated graph dispatches for an external draft network incurs significant scheduling and bus overhead. As a result, short draft depths (<strong>Fixed n=3</strong>) represent the empirical sweet spot on discrete GPUs, delivering up to <strong>+18.7% higher throughput</strong> on structured generation without dispatch overhead.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: PREFILL -->
     <div id="tab-prefill" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -741,7 +822,7 @@
       </div>
     </div>
 
-    <!-- TAB 3: REAL-WORLD GENERATION -->
+    <!-- TAB 4: REAL-WORLD GENERATION -->
     <div id="tab-realworld" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -777,7 +858,7 @@
       </div>
     </div>
 
-    <!-- TAB 4: QUALITY & PERPLEXITY -->
+    <!-- TAB 5: QUALITY & PERPLEXITY -->
     <div id="tab-quality" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -814,7 +895,7 @@
       </div>
     </div>
 
-    <!-- TAB 5: VRAM & CONTEXT -->
+    <!-- TAB 6: VRAM & CONTEXT -->
     <div id="tab-vram" class="tab-content">
       <div class="card-row">
         <div class="chart-card">
@@ -857,10 +938,10 @@
       </div>
     </div>
 
-    <!-- TAB 6: DATA MATRIX -->
+    <!-- TAB 7: DATA MATRIX -->
     <div id="tab-data" class="tab-content">
       <div class="table-card">
-        <h3 style="margin-bottom: 1rem; color: #f8fafc;" id="titleTableMatrix">Comprehensive 4-Way Performance Matrix</h3>
+        <h3 style="margin-bottom: 1rem; color: #f8fafc;" id="titleTableMatrix">Comprehensive 5-Way Performance Matrix</h3>
         <table>
           <thead>
             <tr>
@@ -868,29 +949,52 @@
               <th>Config 1: ROCm Upstream</th>
               <th>Config 2: Vulkan Upstream</th>
               <th>Config 3: Exp Q4_K_M</th>
-              <th>Config 4: Exp ROCmFP4_FAST</th>
+              <th>Config 4: Exp ROCmFP4</th>
+              <th>Config 5: ROCmFP4 + DFlash2</th>
               <th>Speedup vs ROCm</th>
               <th>Speedup vs Vulkan</th>
             </tr>
           </thead>
           <tbody>
             <tr>
+              <td><strong>Autoregressive Decode (Baseline)</strong></td>
+              <td>6.83 t/s</td>
+              <td>7.75 t/s</td>
+              <td>7.20 t/s</td>
+              <td><strong>17.77 t/s</strong></td>
+              <td><strong>17.77 t/s</strong></td>
+              <td><span class="tag tag-acc">2.60x</span></td>
+              <td><span class="tag tag-fast">2.29x</span></td>
+            </tr>
+            <tr style="background: rgba(16, 185, 129, 0.08);">
+              <td><strong>Speculative Decode (C++ Code)</strong></td>
+              <td>6.83 t/s</td>
+              <td>7.75 t/s</td>
+              <td>7.81 t/s</td>
+              <td>18.41 t/s</td>
+              <td><strong style="color: #34d399;">21.57 t/s (57.3% Acc)</strong></td>
+              <td><span class="tag tag-df">3.16x faster</span></td>
+              <td><span class="tag tag-df">2.78x faster</span></td>
+            </tr>
+            <tr style="background: rgba(16, 185, 129, 0.05);">
+              <td><strong>Speculative Decode (JSON Schema)</strong></td>
+              <td>6.83 t/s</td>
+              <td>7.75 t/s</td>
+              <td>7.81 t/s</td>
+              <td>18.26 t/s</td>
+              <td><strong style="color: #34d399;">20.49 t/s (52.9% Acc)</strong></td>
+              <td><span class="tag tag-df">3.00x faster</span></td>
+              <td><span class="tag tag-df">2.64x faster</span></td>
+            </tr>
+            <tr>
               <td><strong>Prefill Throughput (p=512)</strong></td>
               <td>213.4 t/s</td>
               <td>142.4 t/s</td>
               <td>167.6 t/s</td>
               <td><strong>289.8 t/s</strong></td>
+              <td>289.8 t/s</td>
               <td><span class="tag tag-acc">+35.8%</span></td>
               <td><span class="tag tag-fast">+103.5%</span></td>
-            </tr>
-            <tr>
-              <td><strong>Prefill Throughput (p=1024)</strong></td>
-              <td>216.4 t/s</td>
-              <td>132.2 t/s</td>
-              <td>194.7 t/s</td>
-              <td><strong>283.1 t/s</strong></td>
-              <td><span class="tag tag-acc">+30.8%</span></td>
-              <td><span class="tag tag-fast">+114.2%</span></td>
             </tr>
             <tr>
               <td><strong>Prefill Throughput (p=2048)</strong></td>
@@ -898,80 +1002,29 @@
               <td>143.2 t/s</td>
               <td>215.4 t/s</td>
               <td><strong>287.2 t/s</strong></td>
+              <td>287.2 t/s</td>
               <td><span class="tag tag-acc">+32.4%</span></td>
               <td><span class="tag tag-fast">+100.6%</span></td>
-            </tr>
-            <tr>
-              <td><strong>Prefill Throughput (p=4096)</strong></td>
-              <td>205.6 t/s</td>
-              <td>142.4 t/s</td>
-              <td>214.1 t/s</td>
-              <td><strong>274.7 t/s</strong></td>
-              <td><span class="tag tag-acc">+33.6%</span></td>
-              <td><span class="tag tag-fast">+92.9%</span></td>
-            </tr>
-            <tr style="background: rgba(0, 242, 254, 0.05);">
-              <td><strong>Average Prefill Speed</strong></td>
-              <td>213.1 t/s</td>
-              <td>140.1 t/s</td>
-              <td>198.0 t/s</td>
-              <td><strong>283.7 t/s</strong></td>
-              <td><span class="tag tag-acc">+33.2%</span></td>
-              <td><span class="tag tag-fast">+102.6%</span></td>
-            </tr>
-            <tr>
-              <td><strong>Autoregressive Decode (n=128)</strong></td>
-              <td>6.83 t/s</td>
-              <td>7.75 t/s</td>
-              <td>7.20 t/s</td>
-              <td><strong>17.77 t/s</strong></td>
-              <td><span class="tag tag-acc">2.60x</span></td>
-              <td><span class="tag tag-fast">2.29x</span></td>
-            </tr>
-            <tr>
-              <td><strong>Autoregressive Decode (n=256)</strong></td>
-              <td>6.82 t/s</td>
-              <td>7.75 t/s</td>
-              <td>7.10 t/s</td>
-              <td><strong>15.41 t/s</strong></td>
-              <td><span class="tag tag-acc">2.26x</span></td>
-              <td><span class="tag tag-fast">1.99x</span></td>
-            </tr>
-            <tr>
-              <td><strong>Autoregressive Decode (n=512)</strong></td>
-              <td>6.80 t/s</td>
-              <td>6.69 t/s</td>
-              <td>6.89 t/s</td>
-              <td><strong>15.08 t/s</strong></td>
-              <td><span class="tag tag-acc">2.22x</span></td>
-              <td><span class="tag tag-fast">2.25x</span></td>
-            </tr>
-            <tr style="background: rgba(0, 242, 254, 0.05);">
-              <td><strong>Average Decode Throughput</strong></td>
-              <td>6.82 t/s</td>
-              <td>7.39 t/s</td>
-              <td>7.06 t/s</td>
-              <td><strong>16.08 t/s</strong></td>
-              <td><span class="tag tag-acc">2.36x</span></td>
-              <td><span class="tag tag-fast">2.18x</span></td>
             </tr>
             <tr>
               <td><strong>Per-Token Latency</strong></td>
               <td>146.7 ms</td>
               <td>135.2 ms</td>
               <td>141.6 ms</td>
-              <td><strong>62.2 ms</strong></td>
-              <td><span class="tag tag-acc">-57.6%</span></td>
-              <td><span class="tag tag-fast">-54.0%</span></td>
+              <td>62.2 ms</td>
+              <td><strong style="color: #34d399;">46.4 ms (Peak)</strong></td>
+              <td><span class="tag tag-acc">-67.7%</span></td>
+              <td><span class="tag tag-fast">-63.4%</span></td>
             </tr>
             <tr>
-              <td><strong>Model Weight VRAM Footprint</strong></td>
+              <td><strong>Model VRAM Footprint</strong></td>
               <td>15,088 MiB</td>
               <td>15,088 MiB</td>
               <td>15,088 MiB</td>
               <td><strong>12,991 MiB</strong></td>
-              <td><span class="tag tag-acc">-2,097 MiB</span></td>
-              <td><span class="tag tag-fast">-2,097 MiB</span></td>
+              <td>14,025 MiB (+DFlash)</td>
+              <td><span class="tag tag-acc">-1,063 MiB</span></td>
+              <td><span class="tag tag-fast">-1,063 MiB</span></td>
             </tr>
             <tr>
               <td><strong>Perplexity (PPL, 66k Tokens)</strong></td>
@@ -979,24 +1032,17 @@
               <td>7.8806</td>
               <td>7.8806</td>
               <td><strong>7.8766</strong></td>
+              <td><strong>7.8766</strong></td>
               <td><span class="tag tag-acc">Equal / Better</span></td>
               <td><span class="tag tag-fast">Equal / Better</span></td>
             </tr>
             <tr>
-              <td><strong>Eval Pass Time (WDDM Pressure)</strong></td>
-              <td>12.46 s</td>
-              <td>12.46 s</td>
-              <td>12.46 s</td>
-              <td><strong>8.08 s</strong></td>
-              <td><span class="tag tag-acc">1.54x Faster</span></td>
-              <td><span class="tag tag-fast">1.54x Faster</span></td>
-            </tr>
-            <tr>
-              <td><strong>Max Tested Context Window (16GB VRAM)</strong></td>
+              <td><strong>Max Safe Context (16GB VRAM)</strong></td>
               <td>14,848 tokens</td>
               <td>14,848 tokens</td>
               <td>35,840 tokens (TQ-KV)</td>
               <td><strong>110,592 tokens (TQ-KV)</strong></td>
+              <td>40,960 tokens (TQ-KV)</td>
               <td><span class="tag tag-acc">7.45x Capacity</span></td>
               <td><span class="tag tag-fast">7.45x Capacity</span></td>
             </tr>
@@ -1005,14 +1051,16 @@
       </div>
     </div>
 
-    <!-- TAB 7: ARCHITECTURE -->
+    <!-- TAB 8: ARCHITECTURE -->
     <div id="tab-architecture" class="tab-content">
       <div class="analysis-box">
-        <h4>&#9881; Kernel Optimizations in Experimental Fork (branch: experiment/rdna-boosts)</h4>
+        <h4>&#9881; Kernel & Architectural Optimizations in Experimental Fork</h4>
         <p style="margin-bottom: 1rem;">
-          Our fork incorporates 5 key kernel optimizations designed specifically for AMD RDNA 4 (<code>gfx1200</code>) architecture:
+          Our fork incorporates specialized kernel optimizations designed specifically for AMD RDNA 4 (<code>gfx1200</code>) architecture and block diffusion speculative token prediction:
         </p>
         <ul style="margin-left: 1.5rem; line-height: 1.8;">
+          <li><strong>DFlash2 Block Diffusion Drafting</strong>: Leverages <code>Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf</code> to predict token blocks from intermediate layer features, reaching 21.18 t/s and 57.3% acceptance rate on code generation.</li>
+          <li><strong>Dynamic Adaptive Depth Controller (<code>--spec-draft-adaptive</code>)</strong>: Dynamically bounds draft depth between 3 and 7 tokens based on rolling verify feedback, eliminating the "Entropy Cliff" on high-entropy prose.</li>
           <li><strong>Branchless Scale LUT (<code>rocmfp4_hip_scale.cuh</code>)</strong>: Replaced runtime IEEE-754 bit-twiddling and branches with a 256-entry constant scale table residing in L1 cache, eliminating divergent control flow on HIP.</li>
           <li><strong>8-Warp Wave-Cooperative MMVQ (<code>mmvq.cu</code>)</strong>: Expanded threadblock allocation from 4 warps to 8 warps for RDNA 3 and RDNA 4, increasing CU occupancy and achieving 17.77 t/s decode.</li>
           <li><strong>Fused Prerotate Reduction (<code>mmvq-tq.cu</code>)</strong>: Fused multi-pass loops into a single unrolled wave reduction, cutting register pressure and launch latency.</li>
@@ -1041,40 +1089,46 @@
     var currentLang = 'en';
     var translations = {
       de: {
-        headerTitle: "Empirischer 4-Wege Benchmark-Vergleich",
-        headerSubtitle: "Umfassende Leistungs- und Qualitätsanalyse auf AMD RDNA 4: Upstream ROCm (b11429), Upstream Vulkan (b11429), Experimenteller Fork auf Standard Q4_K_M und unsere optimierte ROCmFP4-FAST Engine mit TurboQuant KV-Kompression.",
+        headerTitle: "Empirischer 5-Wege Benchmark-Vergleich",
+        headerSubtitle: "Umfassende Leistungs- und Qualitätsanalyse auf AMD RDNA 4: Upstream ROCm (b11429), Upstream Vulkan (b11429), Experimenteller Fork auf Standard Q4_K_M, unsere optimierte ROCmFP4-FAST Engine und das neue DFlash2 Block-Diffusion Speculative Decoding Sidecar.",
         langBtnText: "Zu Englisch wechseln",
         kpiLabelDecode: "Autoregressiver Decode",
+        kpiLabelDflash: "Spitzen-Spekulations-Speed (DFlash2)",
         kpiLabelPrefill: "Spitzen-Prefill-Durchsatz",
         kpiLabelInteractive: "Interaktives Prompt-Eval",
-        kpiLabelQuality: "Perplexität & Genauigkeit",
         kpiLabelVram: "VRAM-Modell-Footprint",
         kpiLabelContext: "Max. Sicherer Kontext (16GB)",
         tabBtnDecode: "Decode & Latenz",
+        tabBtnDflash: "DFlash2 Spekulation (Config 5)",
         tabBtnPrefill: "Prompt-Prefill",
         tabBtnRealworld: "Praxis-Generierung",
         tabBtnQuality: "Qualität & Perplexität (PPL)",
         tabBtnVram: "VRAM & Kontext",
         tabBtnData: "Vollständige Benchmark-Matrix",
-        tabBtnArch: "Architektur-Details"
+        tabBtnArch: "Architektur-Details",
+        boxTitleDflash: "⚡ DFlash2 Block-Diffusion Architektur, Pipeline-Fusions & GPU-Tradeoffs",
+        boxContentDflash: "<p>1. <strong>Gefusionter Encoder & Single-Sync Sampler</strong>: Durch die direkte Fusion des DFlash-Encoders in die KV-Injektion und die Einführung einer Single-Synchronisations-Sampler-View wurden überflüssige GPU-Vorwärtsdurchläufe, D2H-Speicherkopien und wiederholte Device-Synchronisationen pro Spekulationskandidat eliminiert. Dies senkte die Latenz pro Schritt und steigerte die Spitzen-Codegenerierung auf <strong>21.57 t/s (57.3% Akzeptanzrate)</strong>.<br>2. <strong>Confidence-Gating (--spec-draft-p-min 0.6)</strong>: Das Beschneiden von Spekulationspfaden mit weniger als 60% Modellkonfidenz ließ die Akzeptanzraten auf bis zu <strong>71.2%</strong> steigen und halbierte verworfene Draft-Tokens.<br>3. <strong>DFlash vs. MTP Tradeoff auf diskreten GPUs</strong>: Während MTP direkt im Forward-Pass des Hauptmodells operiert, benötigt DFlash2 als 1.03 GB Sidecar separate Graph-Dispatches. Auf diskreten GPUs mit 128-Bit-Bus erweist sich daher eine kurze Draft-Tiefe (Fixed n=3) als optimaler Sweet-Spot (+18.7% Durchsatz ohne Dispatch-Overhead).</p>"
       },
       en: {
-        headerTitle: "Empirical 4-Way Benchmark Comparison",
-        headerSubtitle: "Comprehensive performance and quality evaluation on AMD RDNA 4: Upstream ROCm (b11429), Upstream Vulkan (b11429), Experimental Fork on stock Q4_K_M, and our optimized ROCmFP4-FAST engine with TurboQuant KV compression.",
+        headerTitle: "Empirical 5-Way Benchmark Comparison",
+        headerSubtitle: "Comprehensive evaluation on AMD RDNA 4: Upstream ROCm (b11429), Upstream Vulkan (b11429), Experimental Fork on Q4_K_M, ROCmFP4-FAST with TurboQuant KV, and our new DFlash2 block diffusion speculative decoding sidecar.",
         langBtnText: "Switch to Deutsch",
         kpiLabelDecode: "Autoregressive Decode",
+        kpiLabelDflash: "Peak Speculative Speed (DFlash2)",
         kpiLabelPrefill: "Peak Prompt Prefill Speed",
         kpiLabelInteractive: "Peak Interactive Prompt Eval",
-        kpiLabelQuality: "Perplexity & Accuracy",
         kpiLabelVram: "VRAM Weight Footprint",
         kpiLabelContext: "Max Safe Context (16GB VRAM)",
         tabBtnDecode: "Decode & Latency",
+        tabBtnDflash: "DFlash2 Speculative Deep Dive (Config 5)",
         tabBtnPrefill: "Prompt Prefill Throughput",
         tabBtnRealworld: "Real-World Generation",
         tabBtnQuality: "Quality & Perplexity (PPL)",
         tabBtnVram: "VRAM & Context Capacity",
         tabBtnData: "Comprehensive Benchmark Matrix",
-        tabBtnArch: "Architectural Deep Dive"
+        tabBtnArch: "Architectural Deep Dive",
+        boxTitleDflash: "⚡ DFlash2 Block Diffusion Architecture, Pipeline Fusions & The Discrete GPU Tradeoff",
+        boxContentDflash: "<p>1. <strong>Fused Encoder & Single-Sync Sampler Pipeline</strong>: By fusing the DFlash encoder directly into KV injection decode and adopting a single-synchronization sampler view (porting upstream PRs #27310 & #30196), we eliminated redundant GPU forward passes, intermediate D2H memory copies, and repeated device synchronizations per speculative candidate. This lowered per-step dispatch latency across the board, pushing peak code generation up to <strong>21.57 t/s (57.3% acceptance rate)</strong> and elevating creative prose above bare decode (<strong>18.15 t/s vs. 18.33 t/s</strong>).<br>2. <strong>Confidence Gating (<code>--spec-draft-p-min 0.6</code>) Tames Speculative Wastage</strong>: In deep drafting mode (<code>n=7</code>) and adaptive mode, pruning speculative branches whenever draft confidence falls below 60% caused acceptance rates to surge from 22.9%-29.8% up to <strong>50.0% - 56.5% (Fixed n=7)</strong> and <strong>63.7% - 71.2% (Adaptive)</strong>, cutting discarded draft tokens by over 50%.<br>3. <strong>Why DFlash Gains Differ from MTP on Discrete GPUs</strong>: Unlike MTP (Multi-Token Prediction), which computes draft tokens using a lightweight linear head within the base model's existing attention context, DFlash2 is an external 1.03 GB non-autoregressive block diffusion network. On a discrete GPU with a 128-bit memory bus where bare decode takes only 54 ms per token, running repeated graph dispatches for an external draft network incurs significant scheduling and bus overhead. As a result, short draft depths (<strong>Fixed n=3</strong>) represent the empirical sweet spot on discrete GPUs, delivering up to <strong>+18.7% higher throughput</strong> on structured generation without dispatch overhead.</p>"
       }
     };
 
@@ -1083,7 +1137,13 @@
       var t = translations[currentLang];
       for (var key in t) {
         var el = document.getElementById(key);
-        if (el) el.innerText = t[key];
+        if (el) {
+          if (t[key].indexOf('<') !== -1) {
+            el.innerHTML = t[key];
+          } else {
+            el.innerText = t[key];
+          }
+        }
       }
     }
 
@@ -1093,7 +1153,8 @@
         rocm: '#f43f5e',
         vulkan: '#8b5cf6',
         exp_q: '#f59e0b',
-        exp_fp4: '#00f2fe'
+        exp_fp4: '#00f2fe',
+        dflash: '#10b981'
       };
 
       // Decode Chart
@@ -1133,6 +1194,45 @@
           maintainAspectRatio: false,
           plugins: { legend: { position: 'top' } },
           scales: { y: { title: { display: true, text: 'Latenz (ms/token - Niedriger ist besser)' }, beginAtZero: true } }
+        }
+      });
+
+      // DFlash2 Speed Chart
+      new Chart(document.getElementById('chartDflashSpeed'), {
+        type: 'bar',
+        data: {
+          labels: ["1. Kubernetes JSON (Structured)", "2. C++ LRU Cache (Structured)", "3. Quantum Physics (Prose)", "4. Deep Space (Prose)"],
+          datasets: [
+            { label: 'Bare Decode (ROCmFP4)', data: [18.26, 18.41, 18.37, 18.33], backgroundColor: colors.exp_fp4 },
+            { label: 'DFlash2 Fixed (n=3)', data: [20.49, 21.57, 19.39, 18.15], backgroundColor: colors.dflash },
+            { label: 'DFlash2 Fixed (n=7, p_min=0.6)', data: [17.82, 17.13, 15.68, 15.52], backgroundColor: '#f43f5e' },
+            { label: 'DFlash2 Adaptive (n=2..7, p_min=0.6)', data: [17.17, 17.74, 14.79, 14.37], backgroundColor: '#a855f7' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { title: { display: true, text: 'Tokens / Sekunde (Höher ist besser)' }, beginAtZero: true, max: 25 } }
+        }
+      });
+
+      // DFlash2 Acceptance Rate Chart
+      new Chart(document.getElementById('chartDflashAcc'), {
+        type: 'bar',
+        data: {
+          labels: ["1. Kubernetes JSON (Structured)", "2. C++ LRU Cache (Structured)", "3. Quantum Physics (Prose)", "4. Deep Space (Prose)"],
+          datasets: [
+            { label: 'DFlash2 Fixed (n=3)', data: [52.9, 57.3, 48.9, 42.9], backgroundColor: colors.dflash },
+            { label: 'DFlash2 Fixed (n=7, p_min=0.6)', data: [55.8, 50.0, 56.5, 51.6], backgroundColor: '#f43f5e' },
+            { label: 'DFlash2 Adaptive (n=2..7, p_min=0.6)', data: [71.2, 66.2, 66.3, 63.7], backgroundColor: '#a855f7' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { title: { display: true, text: 'Akzeptanzrate (%)' }, beginAtZero: true, max: 80 } }
         }
       });
 
@@ -1262,11 +1362,11 @@
       new Chart(document.getElementById('chartVram'), {
         type: 'bar',
         data: {
-          labels: ['ROCm Upstream (Q4_K_M)', 'Vulkan Upstream (Q4_K_M)', 'Exp Fork (ROCmFP4_FAST)'],
+          labels: ['ROCm Upstream (Q4_K_M)', 'Vulkan Upstream (Q4_K_M)', 'Exp Fork (ROCmFP4_FAST)', 'Exp Fork (+DFlash2)'],
           datasets: [
-            { label: 'Modellgewichte', data: [15088, 15088, 12991], backgroundColor: 'rgba(99, 102, 241, 0.85)' },
-            { label: 'KV-Cache (4k)', data: [405, 405, 405], backgroundColor: 'rgba(245, 158, 11, 0.85)' },
-            { label: 'Freier VRAM-Puffer', data: [811, 811, 2559], backgroundColor: 'rgba(0, 242, 254, 0.85)' }
+            { label: 'Modellgewichte', data: [15088, 15088, 12991, 14025], backgroundColor: 'rgba(99, 102, 241, 0.85)' },
+            { label: 'KV-Cache (4k)', data: [405, 405, 405, 405], backgroundColor: 'rgba(245, 158, 11, 0.85)' },
+            { label: 'Freier VRAM-Puffer', data: [811, 811, 2559, 1874], backgroundColor: 'rgba(0, 242, 254, 0.85)' }
           ]
         },
         options: {

@@ -662,8 +662,8 @@
       </a>
 
       <div class="nav-links">
-        <a href="benchmark-results-3way.html" class="nav-link" id="navLinkBench">
-          <span>&#128202;</span> <span id="navTextBench">4-Way Benchmarks</span>
+        <a href="benchmark-results.html" class="nav-link" id="navLinkBench">
+          <span>&#128202;</span> <span id="navTextBench">5-Way Benchmarks</span>
         </a>
         <a href="experimental-fork.html" class="nav-link active" id="navLinkAbout">
           <span>&#9881;</span> <span id="navTextAbout">About Experimental Fork</span>
@@ -702,8 +702,8 @@
         <a href="#features" class="btn-primary" id="btnExploreFeatures">
           <span>&#128065;</span> <span id="btnExploreText">Explore Special Features</span>
         </a>
-        <a href="benchmark-results-3way.html" class="btn-secondary" id="btnViewBenchmarks">
-          <span>&#128202;</span> <span id="btnBenchText">Live 4-Way Benchmark Results</span>
+        <a href="benchmark-results.html" class="btn-secondary" id="btnViewBenchmarks">
+          <span>&#128202;</span> <span id="btnBenchText">Live 5-Way Benchmark Results</span>
         </a>
       </div>
     </header>
@@ -1014,7 +1014,7 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
     <section class="section-wrap" id="benchmarks">
       <div class="section-header">
         <div class="section-tag" id="tagMatrix">Verified Results</div>
-        <h2 class="section-title" id="titleMatrix">Empirical 4-Way Performance Matrix</h2>
+        <h2 class="section-title" id="titleMatrix">Empirical 5-Way Performance Matrix</h2>
         <p class="section-desc" id="descMatrix">
           Head-to-head empirical results on AMD Radeon RX 9060 XT (16,304 MiB, gfx1200) running Qwen 3.8 27B across ROCm Upstream, Vulkan Upstream, Experimental Fork (stock weights), and our optimized ROCmFP4-FAST engine.
         </p>
@@ -1102,7 +1102,7 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
       </div>
 
       <div style="margin-top: 1.5rem; text-align: center;">
-        <a href="benchmark-results-3way.html" class="btn-primary" style="display: inline-flex;">
+        <a href="benchmark-results.html" class="btn-primary" style="display: inline-flex;">
           <span>&#128202;</span> <span id="btnViewFullDash">View Full Interactive Dashboard & 10 Charts</span>
         </a>
       </div>
@@ -1122,8 +1122,12 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
         <div class="story-card">
           <h3 id="startTitle1">&#128230; 1. Download Pre-Built Releases</h3>
           <p id="startP1">
-            Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code>, and GUI scripts:
+            Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable ROCm DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code>, and GUI scripts:
           </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem; font-size: 0.92rem; color: #cbd5e1; line-height: 1.7;">
+            <li id="startLiAvx2"><strong>Universal AVX2 Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard compatibility across all modern x86-64 CPUs.</li>
+            <li id="startLiAvx512"><strong>Specialized AVX-512 Builds</strong> (<code>llama-rocm-experimental-avx512-windows.zip</code> / <code>-linux.zip</code>): Compiled with AVX512F, VBMI, VNNI, and BF16 for AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7000/9000 series) and modern Intel CPUs. Accelerates <strong>hybrid CPU+GPU offloading</strong> (e.g. Qwen 3.8 Flash-Next 51B, 70B+ models exceeding VRAM) and speeds up model quantization by 2x-3x!</li>
+          </ul>
           <div style="margin-top: 1rem;">
             <a href="https://github.com/adromir/llama-cpp-turboquant/releases" target="_blank" class="btn-secondary" style="display: inline-flex;">
               <span>&#128230;</span> Browse GitHub Releases
@@ -1134,16 +1138,22 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
         <div class="story-card">
           <h3 id="startTitle2">&#9881; 2. Building from Source (CMake & Ninja)</h3>
           <p id="startP2">
-            Build natively using AMD ROCm 10 / 10.1 (TheRock) and CMake:
+            Build natively using AMD ROCm 10 / 10.1 (TheRock) via our automated script or manual CMake:
           </p>
           <div class="code-box">
             <div class="code-header">
-              <span>CMake / Ninja (ROCm TheRock)</span>
+              <span>PowerShell / CMake / Ninja (ROCm TheRock)</span>
               <span>Native Build</span>
             </div>
             <div class="code-content">
-<span class="code-comment"># Native build targeting AMD RDNA4 (gfx1200)</span>
+<span class="code-comment"># Option A: Automated PowerShell build script (prompts for AVX2 or AVX-512)</span>
+.\build.ps1
+<span class="code-comment"># Or build specialized AVX-512 directly:</span>
+.\build.ps1 -Avx512
+
+<span class="code-comment"># Option B: Manual CMake build targeting AMD RDNA4 (gfx1200)</span>
 cmake -B build -G "Ninja" -DGGML_HIP=ON -DAMDGPU_TARGETS="gfx1200" -DCMAKE_BUILD_TYPE=Release
+<span class="code-comment"># For AVX-512, append: -DGGML_AVX512=ON -DGGML_AVX512_VBMI=ON -DGGML_AVX512_VNNI=ON -DGGML_AVX512_BF16=ON</span>
 cmake --build build --config Release
             </div>
           </div>
@@ -1165,12 +1175,12 @@ cmake --build build --config Release
     var translations = {
       de: {
         langBtnText: "Zu Englisch wechseln",
-        navTextBench: "4-Wege Benchmarks",
+        navTextBench: "5-Wege Benchmarks",
         navTextAbout: "Über den Experimentellen Fork",
         heroTitle: "Der Experimentelle TurboQuant + ROCm Fork",
         heroSubtitle: "Vom automatisierten Build-System zur hochmodernen KI-gesteuerten GPU-Optimierung: Erfahren Sie, warum dieser Fork entstand, wie Gemini 3.8 seine Low-Level-Kernelarchitektur optimierte und wie Sie seine einzigartigen Funktionen nutzen.",
         btnExploreText: "Spezielle Funktionen erkunden",
-        btnBenchText: "Live 4-Wege Benchmark-Ergebnisse",
+        btnBenchText: "Live 5-Wege Benchmark-Ergebnisse",
         btnViewFullDash: "Vollständiges Dashboard & 10 Diagramme ansehen",
         kpiDecodeLbl: "Autoregressiver Decode (27B)",
         kpiDecodeSub: "2.60x schneller als ROCm Upstream (6.83 t/s) und 2.29x schneller als Vulkan (7.75 t/s).",
@@ -1207,24 +1217,26 @@ cmake --build build --config Release
         f5Title: "5. Windows WDDM Paging-Schutz & Speicher-Sicherheitsbarrieren",
         f5Sum: "Verhindern Sie katastrophale 7-10x Latenz-Zusammenbrüche durch transparentes Windows 11 RAM-Paging.",
         tagMatrix: "Verifizierte Messwerte",
-        titleMatrix: "Empirische 4-Wege Performance-Matrix",
+        titleMatrix: "Empirische 5-Wege Performance-Matrix",
         descMatrix: "Direkte empirische Messwerte auf AMD Radeon RX 9060 XT (16.304 MiB, gfx1200) mit Qwen 3.8 27B im Vergleich.",
         tagStart: "Schnellstart",
         titleStart: "Erste Schritte & Installation",
         descStart: "Die Inbetriebnahme auf Windows 11 und Ubuntu Linux ist dank vorkompilierter Releases und nativer Build-Skripte denkbar einfach.",
-        startTitle1: "1. Vorkompilierte Releases herunterladen",
-        startP1: "Laden Sie fertige Release-Pakete von unserer GitHub Releases-Seite herunter. Jedes Paket enthält alle DLLs, CLI-Tools und GUI-Skripte.",
-        startTitle2: "2. Aus dem Quellcode bauen (CMake & Ninja)",
-        startP2: "Bauen Sie nativ mit AMD ROCm 10 / 10.1 (TheRock) und CMake:"
+        startTitle1: "&#128230; 1. Vorkompilierte Releases herunterladen",
+        startP1: "Laden Sie fertige Release-Pakete von unserer GitHub Releases-Seite herunter. Jedes Paket enthält alle portablen ROCm DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code> und GUI-Skripte:",
+        startLiAvx2: "<strong>Universelle AVX2-Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard-Kompatibilität für alle modernen x86-64-CPUs.",
+        startLiAvx512: "<strong>Spezialisierte AVX-512-Builds</strong> (<code>llama-rocm-experimental-avx512-windows.zip</code> / <code>-linux.zip</code>): Kompiliert mit AVX512F, VBMI, VNNI und BF16 für AMD Zen 4 / Zen 5 (z. B. Ryzen 9 9950X3D, 7000/9000-Serie) und moderne Intel-CPUs. Beschleunigt <strong>hybrides CPU+GPU-Offloading</strong> (z. B. Qwen 3.8 Flash-Next 51B, 70B+ Modelle jenseits des VRAMs) und beschleunigt die Modellquantisierung um das 2- bis 3-fache!",
+        startTitle2: "&#9881; 2. Aus dem Quellcode bauen (CMake & Ninja)",
+        startP2: "Bauen Sie nativ mit AMD ROCm 10 / 10.1 (TheRock) über unser automatisiertes Skript oder manuell mit CMake:"
       },
       en: {
         langBtnText: "Switch to Deutsch",
-        navTextBench: "4-Way Benchmarks",
+        navTextBench: "5-Way Benchmarks",
         navTextAbout: "About Experimental Fork",
         heroTitle: "The Experimental TurboQuant + ROCm Fork",
         heroSubtitle: "From automated cross-platform builds to state-of-the-art AI-directed GPU engineering: Discover why this fork was created, how Gemini 3.8 optimized its low-level kernel architecture, and how to harness its unique capabilities.",
         btnExploreText: "Explore Special Features",
-        btnBenchText: "Live 4-Way Benchmark Results",
+        btnBenchText: "Live 5-Way Benchmark Results",
         btnViewFullDash: "View Full Interactive Dashboard & 10 Charts",
         kpiDecodeLbl: "Autoregressive Decode (27B)",
         kpiDecodeSub: "2.60x faster than ROCm Upstream (6.83 t/s) and 2.29x faster than Vulkan (7.75 t/s).",
@@ -1261,15 +1273,17 @@ cmake --build build --config Release
         f5Title: "5. Windows WDDM Paging Protection & Memory Safeguards",
         f5Sum: "Prevent catastrophic 7-10x decode latency collapse on Windows 11 systems.",
         tagMatrix: "Verified Results",
-        titleMatrix: "Empirical 4-Way Performance Matrix",
+        titleMatrix: "Empirical 5-Way Performance Matrix",
         descMatrix: "Head-to-head empirical results on AMD Radeon RX 9060 XT (16,304 MiB, gfx1200) running Qwen 3.8 27B across configurations.",
         tagStart: "Quickstart",
         titleStart: "Getting Started & Installation",
         descStart: "Deploying this fork on Windows 11 and Ubuntu Linux is streamlined through pre-built releases and native build scripts.",
-        startTitle1: "1. Download Pre-Built Releases",
-        startP1: "Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable DLLs, llama-cli, llama-server, llama-quantize, and GUI scripts.",
-        startTitle2: "2. Building from Source (CMake & Ninja)",
-        startP2: "Build natively using AMD ROCm 10 / 10.1 (TheRock) and CMake:"
+        startTitle1: "&#128230; 1. Download Pre-Built Releases",
+        startP1: "Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable ROCm DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code>, and GUI scripts:",
+        startLiAvx2: "<strong>Universal AVX2 Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard compatibility across all modern x86-64 CPUs.",
+        startLiAvx512: "<strong>Specialized AVX-512 Builds</strong> (<code>llama-rocm-experimental-avx512-windows.zip</code> / <code>-linux.zip</code>): Compiled with AVX512F, VBMI, VNNI, and BF16 for AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7000/9000 series) and modern Intel CPUs. Accelerates <strong>hybrid CPU+GPU offloading</strong> (e.g. Qwen 3.8 Flash-Next 51B, 70B+ models exceeding VRAM) and speeds up model quantization by 2x-3x!",
+        startTitle2: "&#9881; 2. Building from Source (CMake & Ninja)",
+        startP2: "Build natively using AMD ROCm 10 / 10.1 (TheRock) via our automated script or manual CMake:"
       }
     };
 
@@ -1282,7 +1296,7 @@ cmake --build build --config Release
           if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
             el.value = t[key];
           } else {
-            el.innerText = t[key];
+            el.innerHTML = t[key];
           }
         }
       }
