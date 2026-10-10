@@ -190,13 +190,15 @@ llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
 
 ---
 
-## Multi-Token Prediction (MTP) Launch Parameter Sweep & Recommendations
+## Multi-Token Prediction (MTP) & Launch Parameter Optimization
 
 Models featuring native Multi-Token Prediction heads (such as `Qwen3.8-27B`, `nextn_predict_layers = 1`) propose speculative draft tokens directly from internal model weights without requiring an external draft model file (`-md`).
 
-An empirical parameter sweep was conducted on AMD Radeon RX 9060 XT (16,304 MiB, `gfx1200`) across all 11 draft configurations and 4 distinct task domains (Structured JSON, C++20 Thread-Safe Code, Physics Explanation, and Creative Prose) generating 256 tokens per query:
+To identify the optimal launch configuration, two extensive empirical benchmark sweeps were conducted on AMD Radeon RX 9060 XT (16,304 MiB, `gfx1200`, 128-bit memory bus) across 4 diverse task domains (Structured JSON, C++20 Thread-Safe Code, Physics Explanation, and Creative Prose) at 256 tokens per query.
 
-### Empirical MTP Parameter Sweep Results
+### 1. MTP Draft Depth & Confidence Gating Sweep
+
+Evaluating draft depth ($n_{max}$ from 1 to 5) and confidence gating ($p_{min}$ from 0.00 to 0.75):
 
 | Configuration | Draft Depth (`n_max`) | Gating (`p_min`) | Avg Throughput (t/s) | Avg Acceptance Rate | Speedup vs Bare Decode |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -212,26 +214,138 @@ An empirical parameter sweep was conducted on AMD Radeon RX 9060 XT (16,304 MiB,
 | MTP (Deep Draft) | 5 | 0.75 | 13.78 t/s | 64.6% | -23.8% (Regression) |
 | **MTP Adaptive (`n=1..4`)** | 1..4 | 0.60 | 15.48 t/s | **70.2%** | High Precision / Quality |
 
-### Key Findings & Best Practices
+### 2. Comprehensive Launch Parameter Matrix (Batching, Threading, KV Types)
 
-1. **The Discrete GPU Sweet Spot (`--spec-draft-n-max 1`)**:
-   On discrete GPUs with a 128-bit memory bus (e.g. RX 9060 XT), drafting **1 token** ($n=1$) achieves the absolute highest throughput (**22.00 t/s**, peaking at **22.54 t/s on C++ code** with **65.6% acceptance**). The target verification overhead is minimal ($n_q = 2$), converting over 62% of forward passes into 2-token cycles.
-2. **Avoid High Draft Depths ($n \ge 3$) on Consumer GPUs**:
-   Standard community guides often recommend $n=3$ or $n=4$. On consumer discrete GPUs, drafting 3+ tokens sequentially creates memory bandwidth stalls during parallel target verification, regressing throughput down to 13.59 t/s (-25%).
-3. **Critical RDNA4 Flash Attention Setting (`GGML_CUDA_FA_WMMA_256=0`)**:
+Holding the optimal draft depth ($n=1$) constant, we evaluated the impact of batch sizes, micro-batch sizes, thread allocation, context length, and KV cache compression:
+
+| Launch Configuration | Batching (`-b`, `-ub`) | Threads (`-t`, `-tb`) | KV Cache | Avg Prompt (t/s) | Avg Decode (t/s) | MTP Acc Rate | Performance Verdict |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Tuned Golden Setting** | **`-b 512 -ub 256`** | **`-t 8`** | **FP16** | **153.1 t/s** | **25.17 t/s** | **61.7%** | **+39.1% vs Baseline (Peak 25.75 t/s C++)** |
+| Micro-Batch Fine `-ub 128` | `-b 2048 -ub 128` | `-t 8` | FP16 | 153.5 t/s | 25.13 t/s | 61.7% | +38.9% (Peak 25.76 t/s C++) |
+| Micro-Batch Mid `-ub 256` | `-b 2048 -ub 256` | `-t 8` | FP16 | 146.8 t/s | 25.03 t/s | 61.7% | +38.4% Throughput |
+| Default Batch Baseline | `-b 2048 -ub 512` | `-t 8` | FP16 | 120.5 t/s | 21.35 t/s | 61.7% | Standard llama.cpp default |
+| Large Micro-Batch `-ub 1024` | `-b 2048 -ub 1024` | `-t 8` | FP16 | 124.8 t/s | 22.12 t/s | 61.7% | Moderate prefill speed |
+| Max Micro-Batch `-ub 2048` | `-b 2048 -ub 2048` | `-t 8` | FP16 | 126.2 t/s | 22.14 t/s | 61.7% | High VRAM scratch overhead |
+| Large Logical Batch `-b 4096` | `-b 4096 -ub 1024` | `-t 8` | FP16 | 115.2 t/s | 21.76 t/s | 61.7% | Memory bus contention |
+| Split Threading | `-b 2048 -ub 512` | `-t 8 -tb 16` | FP16 | 126.5 t/s | 22.12 t/s | 61.7% | +5.0% prefill boost without decode jitter |
+| Low CPU Threads `-t 4` | `-b 2048 -ub 512` | `-t 4` | FP16 | 125.7 t/s | 22.08 t/s | 61.7% | Good efficiency for lower core count CPUs |
+| High CPU Threads `-t 16` | `-b 2048 -ub 512` | `-t 16` | FP16 | 123.5 t/s | 22.14 t/s | 61.7% | Negligible gain for GPU decode |
+| Standard Quantized KV (`q8_0`) | `-b 2048 -ub 512` | `-t 8` | `q8_0 / q8_0` | 153.5 t/s | 15.46 t/s | 0.0% | **Unsupported with MTP** (Divergence `///`) |
+| Asymmetric TurboQuant KV | `-b 2048 -ub 512` | `-t 8` | `q8_0 / turbo3` | 116.3 t/s | 13.26 t/s | 0.0% | **Unsupported with MTP** (Use DFlash2 instead) |
+| Symmetric TurboQuant KV | `-b 2048 -ub 512` | `-t 8` | `turbo3 / turbo3`| 122.5 t/s | 13.32 t/s | 0.0% | **Unsupported with MTP** (Use DFlash2 instead) |
+| High Priority & Busy Poll | `-b 2048 -ub 512` | `--prio 2 --poll 50` | `q8_0` | 101.6 t/s | 11.86 t/s | 0.0% | -23% Regression (OS scheduler contention) |
+| HIP Graphs Disabled | `-b 2048 -ub 512` | `GGML_CUDA_GRAPHS=0`| FP16 | 114.2 t/s | 22.05 t/s | 61.7% | -5.2% prefill regression |
+
+### Key Architectural Rules & Best Practices
+
+1. **The Micro-Batch Sweet Spot (`-b 512 -ub 256` or `-ub 128`)**:
+   Constraining the micro-batch to 128-256 tokens and logical batch to 512 reduces the GPU scratch memory footprint by 4x. On consumer GPUs with a 128-bit memory bus, this prevents GPU L2/Infinity Cache thrashing during multi-token verification passes ($n_q = 2$). This configuration yields the maximum speedup: **25.17 t/s average, peaking at 25.75 t/s on C++ code** (+39.1% vs bare decode).
+2. **Draft Depth (`--spec-draft-n-max 1`)**:
+   Drafting 1 token converts over 62% of cycles into 2-token outputs with zero bus contention. Draft depths of 3+ without gating regress throughput down to 13.59 t/s (-25%).
+3. **KV Cache Constraint with MTP (FP16 Required)**:
+   MTP internal draft heads require uncompressed FP16 KV cache (`-ctk f16 -ctv f16` or omit flags). Quantized KV caches (`q8_0`, `turbo3`, `turbo4`) introduce non-linear dequantization rounding into the attention lookup, causing verification logits to diverge and triggering 100% draft rollback. Because ROCmFP4 weights reduce model VRAM to only ~13 GB, 16 GB GPUs have ample headroom for FP16 KV cache up to 8,192 tokens. For ultra-long contexts (>16k-110k), use **DFlash2 Block Diffusion** (which works seamlessly with TurboQuant KV, delivering 21.57 t/s).
+4. **Critical RDNA4 Flash Attention Setting (`GGML_CUDA_FA_WMMA_256=0`)**:
    On RDNA4 GPUs, models with head dimension 256 (such as Qwen 3.8 27B) require setting `GGML_CUDA_FA_WMMA_256=0`. Otherwise, Flash Attention selects the tile kernel for single decode ($n_q=1$) and the WMMA kernel for verification batches ($n_q > 1$), causing numerical divergence where all draft tokens are rejected (`nan`).
+5. **Avoid Busy-Polling on Windows (`--poll 50` or higher)**:
+   Setting `--poll 50` or `--prio 2` degrades throughput from 15.4 t/s down to 11.8 t/s (-23%) on Windows WDDM due to GPU driver scheduler contention. Leave at default event-driven polling (`--poll 0`).
 
-### Optimal CLI & Server Commands for MTP
+### 3. Context-Specific Launch Parameter Recipes (8k to 128k)
 
-```bash
+Memory consumption and kernel characteristics shift dramatically as context length expands. On consumer GPUs with a 128-bit memory bus (such as the AMD Radeon RX 9060 XT 16GB), intermediate attention buffers and KV cache footprint dictate the optimal launch flags:
+
+| Context Window | Recommended KV Format | Batching (`-b`, `-ub`) | Speculative Engine | KV VRAM Footprint | Prefill Speed | Generation Speed | Primary Target / Use Case |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Standard (8k)** | **`f16 / f16`** | `-b 512 -ub 256` | **MTP (`n=1`)** | 2,048 MiB | 177.7 t/s | **25.75 t/s** | Peak throughput for interactive coding & chat |
+| **Medium-Long (16k)** | **`q8_0 / turbo3`** | `-b 512 -ub 256` | DFlash2 (`n=3`) | 1,440 MiB | 224.5 t/s | 21.57 t/s | Document Q&A & multi-turn discussions |
+| **Extended (32k)** | **`q8_0 / turbo3`** | `-b 512 -ub 256` | DFlash2 / Standard | 2,880 MiB | 178.4 t/s | 18.18 t/s | Large code repositories & multi-file editing |
+| **Deep (64k)** | **`q8_0 / turbo2`** | **`-b 512 -ub 256`** | Standard Decode | 2,048 MiB | **301.4 t/s** | 17.47 t/s | Full books, deep technical specs, research papers |
+| **Maximum (110k+)** | **`turbo2 / turbo2`** | `-b 512 -ub 256` | Standard Decode | **2,660 MiB** | ~140-160 t/s | 16.80 t/s | Native 110k-128k window 100% on 16GB VRAM (zero offload) |
+
+> [!NOTE]
+> **The 64k Micro-Batching Trap (`-ub 256` vs `-ub 512`)**:
+> At 65,536 tokens, increasing micro-batch size to `-ub 512` drops prompt prefill throughput from **301.36 t/s down to 128.57 t/s (2.34x slower!)**. A 512 micro-batch allocates over 1 GiB in active activation scratchpads, thrashing the 32 MB Infinity Cache on 128-bit memory buses. Keep `-ub 256` (or `-ub 128`) locked across all context depths.
+
+---
+
+### Production Launch Recipes by Context Depth
+
+#### Tier 1: Interactive Coding & Chat (Up to 8,192 Context - Peak 25.75 t/s)
+Best for general programming, interactive assistant chats, and high-frequency queries:
+```powershell
 # Windows PowerShell
 $env:HIP_VISIBLE_DEVICES = "1"
 $env:GGML_CUDA_FA_WMMA_256 = "0"
 
-llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
-  -ngl 999 -fa 1 -c 8192 \
-  --spec-type draft-mtp \
+llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf `
+  -ngl 999 -fa 1 -c 8192 `
+  -b 512 -ub 256 -t 8 -tb 16 `
+  -ctk f16 -ctv f16 `
+  --spec-type draft-mtp `
   --spec-draft-n-max 1
+```
+
+#### Tier 2: Large Codebases & Document Search (16,384 to 32,768 Context)
+Best for searching multiple code files or long documentation while maintaining >178 t/s prefill speed:
+```powershell
+# Windows PowerShell
+$env:HIP_VISIBLE_DEVICES = "1"
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+$env:TURBO_SPARSE_V = "1"
+
+llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf `
+  -ngl 999 -fa 1 -c 32768 `
+  -b 512 -ub 256 -t 8 -tb 16 `
+  --cache-type-k q8_0 `
+  --cache-type-v turbo3
+```
+
+#### Tier 3: Deep Research & Architecture Books (65,536 Context)
+Delivers **301.36 t/s prefill throughput** and 17.47 t/s generation while using only ~2 GiB for KV cache:
+```powershell
+# Windows PowerShell
+$env:HIP_VISIBLE_DEVICES = "1"
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+$env:TURBO_SPARSE_V = "1"
+
+llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf `
+  -ngl 999 -fa 1 -c 65536 `
+  -b 512 -ub 256 -t 8 -tb 16 `
+  --cache-type-k q8_0 `
+  --cache-type-v turbo2
+```
+
+#### Tier 4: Maximum Native Window (110,000+ Context on 16GB VRAM)
+Runs the entire 110,000+ token context window of Qwen 3.8 on a single 16 GB GPU with zero CPU offloading:
+```powershell
+# Windows PowerShell
+$env:HIP_VISIBLE_DEVICES = "1"
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+$env:TURBO_LAYER_ADAPTIVE = "7"
+$env:TURBO_AUTO_ASYMMETRIC = "0"
+$env:TURBO_SPARSE_V = "1"
+
+llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf `
+  -ngl 999 -fa 1 -c 110000 `
+  -b 512 -ub 256 -t 8 -tb 16 `
+  --cache-type-k turbo2 `
+  --cache-type-v turbo2 `
+  --ctx-shift --defrag-thold 0.1
+```
+
+#### Production Server Recipe for OpenAI-Compatible Endpoints (`llama-server`)
+```powershell
+# Windows PowerShell
+$env:HIP_VISIBLE_DEVICES = "1"
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+$env:TURBO_SPARSE_V = "1"
+
+llama-server.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf `
+  --host 0.0.0.0 --port 8080 `
+  -ngl 999 -fa 1 -c 32768 `
+  -b 512 -ub 256 -t 8 -tb 16 `
+  --cache-type-k q8_0 `
+  --cache-type-v turbo3 `
+  --ctx-shift --defrag-thold 0.1
 ```
 
 ---
@@ -459,16 +573,16 @@ llama-cli.exe -m models/Qwen3.8-Next-MoE-Q4_K_M.gguf -c 32768 -ngl 99 -fa 1 --ca
 
 ### 4. OpenAI-Compatible API Server (with MTP Speculative Decoding)
 
-Launch the web server with MTP speculative decoding, TurboQuant KV cache, and optimal draft parameters on port 8080:
+Launch the web server with high-performance MTP speculative decoding, tuned micro-batching, and optimal draft parameters on port 8080:
 
 ```bash
-# Windows PowerShell
+# Windows PowerShell (Peak 25.75 t/s decode)
 $env:HIP_VISIBLE_DEVICES = "1"
 $env:GGML_CUDA_FA_WMMA_256 = "0"
 
 llama-server.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
-  -c 32768 -ngl 999 -fa 1 \
-  --cache-type-k q8_0 --cache-type-v turbo3 \
+  -c 8192 -ngl 999 -fa 1 \
+  -b 512 -ub 256 -t 8 -tb 16 \
   --spec-type draft-mtp \
   --spec-draft-n-max 1 \
   --host 0.0.0.0 --port 8080

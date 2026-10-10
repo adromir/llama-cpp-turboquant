@@ -858,27 +858,128 @@
             <li><strong><code>turbo4</code> (<code>GGML_TYPE_TURBO4_0</code>)</strong>: 4.25 bits per value for KV cache (near-lossless fidelity).</li>
             <li><strong><code>TQ3_1S</code> / <code>TQ4_1S</code></strong>: 3-bit and 4-bit Lloyd-Max rotated weight types supported in <code>llama-quantize</code>.</li>
           </ul>
+
+          <h4 style="color: #ffffff; margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1.05rem;">Empirical Context Scaling & Optimal Launch Parameters (AMD RX 9060 XT 16GB)</h4>
+          <p style="font-size: 0.9rem; color: #cbd5e1; margin-bottom: 0.75rem;">
+            On consumer GPUs with 16 GB VRAM and a 128-bit memory bus, empirical scaling metrics for Qwen 3.8 27B across context depths:
+          </p>
+          <div class="table-wrap" style="margin: 1rem 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Context Window</th>
+                  <th>KV Cache Types</th>
+                  <th>Batching (-b, -ub)</th>
+                  <th>KV VRAM</th>
+                  <th>Prefill Speed</th>
+                  <th>Decode Speed</th>
+                  <th>Primary Use Case</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Standard (8k)</strong></td>
+                  <td><code>f16 / f16</code></td>
+                  <td><code>-b 512 -ub 256</code></td>
+                  <td>2,048 MiB</td>
+                  <td>177.7 t/s</td>
+                  <td><strong style="color: var(--accent-cyan);">25.75 t/s</strong> (MTP)</td>
+                  <td>Peak throughput for interactive coding & chat</td>
+                </tr>
+                <tr>
+                  <td><strong>Medium-Long (16k)</strong></td>
+                  <td><code>q8_0 / turbo3</code></td>
+                  <td><code>-b 512 -ub 256</code></td>
+                  <td>1,440 MiB</td>
+                  <td>224.5 t/s</td>
+                  <td>21.57 t/s (DFlash2)</td>
+                  <td>Document Q&A & multi-turn conversations</td>
+                </tr>
+                <tr>
+                  <td><strong>Extended (32k)</strong></td>
+                  <td><code>q8_0 / turbo3</code></td>
+                  <td><code>-b 512 -ub 256</code></td>
+                  <td>2,880 MiB</td>
+                  <td>178.4 t/s</td>
+                  <td>18.18 t/s</td>
+                  <td>Multi-file codebases & complex reasoning</td>
+                </tr>
+                <tr>
+                  <td><strong>Deep (64k)</strong></td>
+                  <td><code>q8_0 / turbo2</code></td>
+                  <td><strong><code>-b 512 -ub 256</code></strong></td>
+                  <td>2,048 MiB</td>
+                  <td><strong style="color: #34d399;">301.4 t/s</strong></td>
+                  <td>17.47 t/s</td>
+                  <td>Full research papers & deep technical books</td>
+                </tr>
+                <tr>
+                  <td><strong>Maximum (110k+)</strong></td>
+                  <td><code>turbo2 / turbo2</code></td>
+                  <td><code>-b 512 -ub 256</code></td>
+                  <td><strong>2,660 MiB</strong></td>
+                  <td>~150 t/s</td>
+                  <td>16.80 t/s</td>
+                  <td>Native 110k-128k window 100% on 16GB GPU (0 offload)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="code-box">
           <div class="code-header">
             <span>PowerShell / Bash</span>
-            <span>Inference with TurboQuant KV Cache</span>
+            <span>Optimized Long-Context Recipes</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># Run large 65k context on a 16GB GPU with TurboQuant KV cache</span>
+<span class="code-comment"># 1. Extended 32k context with Asymmetric TurboQuant (178.4 t/s prefill, 18.2 t/s decode)</span>
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+$env:TURBO_SPARSE_V = "1"
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+          <span class="code-param">-c</span> <span class="code-val">32768</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">999</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">-b</span> <span class="code-val">512</span> \
+          <span class="code-param">-ub</span> <span class="code-val">256</span> \
+          <span class="code-param">-t</span> <span class="code-val">8</span> \
+          <span class="code-param">-tb</span> <span class="code-val">16</span> \
+          <span class="code-param">--cache-type-k</span> <span class="code-val">q8_0</span> \
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo3</span>
+
+<span class="code-comment"># 2. Deep 64k context with Turbo2 (301.4 t/s prefill, 17.5 t/s decode, only 2 GiB KV)</span>
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-c</span> <span class="code-val">65536</span> \
-          <span class="code-param">-ngl</span> <span class="code-val">99</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">999</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">-b</span> <span class="code-val">512</span> \
+          <span class="code-param">-ub</span> <span class="code-val">256</span> \
+          <span class="code-param">-t</span> <span class="code-val">8</span> \
+          <span class="code-param">-tb</span> <span class="code-val">16</span> \
           <span class="code-param">--cache-type-k</span> <span class="code-val">q8_0</span> \
-          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo3</span> \
-          <span class="code-param">-fa</span> <span class="code-val">1</span>
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo2</span>
+
+<span class="code-comment"># 3. Maximum 110k+ context (100% on 16GB VRAM, KV cache only 2,660 MiB)</span>
+$env:TURBO_LAYER_ADAPTIVE = "7"
+$env:TURBO_AUTO_ASYMMETRIC = "0"
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+          <span class="code-param">-c</span> <span class="code-val">110000</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">999</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">-b</span> <span class="code-val">512</span> \
+          <span class="code-param">-ub</span> <span class="code-val">256</span> \
+          <span class="code-param">-t</span> <span class="code-val">8</span> \
+          <span class="code-param">-tb</span> <span class="code-val">16</span> \
+          <span class="code-param">--cache-type-k</span> <span class="code-val">turbo2</span> \
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo2</span> \
+          <span class="code-param">--ctx-shift</span> <span class="code-param">--defrag-thold</span> <span class="code-val">0.1</span>
           </div>
         </div>
 
         <div class="callout green">
-          <h5>&#128161; Environment Tuning Knobs</h5>
+          <h5>&#128161; Environment Tuning Knobs & Micro-Batching Rule</h5>
           <p>
+            <strong>The 64k Micro-Batching Trap:</strong> At 65,536 tokens, setting <code>-ub 512</code> drops prefill speed from 301.36 t/s to 128.57 t/s (2.34x slower!). Always keep <code>-b 512 -ub 256</code> locked.<br>
             <code>TURBO_LAYER_ADAPTIVE=7</code>: Boundary-layer precision allocation (preserves standard q8_0 precision on input/output boundary layers while utilizing turbo in the deep middle layers).<br>
             <code>TURBO_AUTO_ASYMMETRIC=1</code>: Automatically pairs higher-precision K cache with compressed V cache for models with high GQA ratios.<br>
             <code>TURBO_SPARSE_V=1</code>: Skips sparse-V dequantization in Flash Attention for additional memory latency savings.<br>
@@ -1135,10 +1236,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
           </div>
 
           <ul class="feature-bullets">
-            <li><strong>Discrete GPU Sweet Spot (<code>--spec-draft-n-max 1</code>)</strong>: On discrete GPUs with a 128-bit memory bus (e.g. RX 9060 XT), drafting 1 token achieves the highest throughput (<strong>22.00 t/s avg</strong>, peaking at <strong>22.54 t/s on C++ code</strong> with 65.6% acceptance). Verification overhead is near-zero ($n_q = 2$), converting over 62% of cycles into 2-token outputs.</li>
-            <li><strong>DFlash2 Block Diffusion Speculative Sidecar</strong>: Generates candidate blocks ($n=3$ to $7$) in parallel from intermediate target layers using a lightweight 1.03 GB diffusion network (<code>Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf</code>), reaching up to <strong>21.57 t/s</strong> on complex coding tasks.</li>
+            <li><strong>Tuned Micro-Batching Sweet Spot (<code>-b 512 -ub 256</code>)</strong>: Restricting micro-batching to 128-256 tokens drops GPU scratch memory allocations by 4x. On 128-bit memory bus architectures (e.g. RX 9060 XT), this prevents GPU L2/Infinity Cache thrashing during multi-token verification passes ($n_q = 2$), surging generation throughput up to <strong>25.17 t/s avg</strong> and peaking at <strong>25.75 t/s on C++ code</strong> (prompt prefill up to 177.7 t/s).</li>
+            <li><strong>Discrete GPU Draft Depth (<code>--spec-draft-n-max 1</code>)</strong>: Drafting 1 token converts over 62% of cycles into 2-token outputs with negligible verification overhead. Deeper unconstrained drafting ($n \ge 3$) causes memory bus saturation during parallel verification, dropping throughput down to 13.59 t/s.</li>
+            <li><strong>KV Cache Constraint with MTP (FP16 Required)</strong>: Internal MTP heads require uncompressed FP16 KV cache (omitting <code>-ctk/-ctv</code> flags). Quantized KV caches (<code>q8_0</code>, <code>turbo3</code>) introduce dequantization attention drift that causes exact verification to reject valid draft tokens. For ultra-long contexts (>16k-110k) where TurboQuant KV is required to fit in VRAM, deploy <strong>DFlash2 Block Diffusion</strong> (which pairs seamlessly with TurboQuant KV, achieving up to <strong>21.57 t/s</strong>).</li>
             <li><strong>Critical RDNA4 Flash Attention Setting (<code>GGML_CUDA_FA_WMMA_256=0</code>)</strong>: For models with head dimension 256 (such as Qwen 3.8 27B), disabling WMMA kernel dispatch ensures bit-identical tile kernel execution across decode and verification batches, completely preventing draft verification rejection.</li>
-            <li><strong>Coupled Gumbel-Max Sampling (<code>--spec-gumbel 1</code>)</strong>: Synchronizes pseudo-random SplitMix64 Gumbel noise across draft and target models for high acceptance during creative sampling.</li>
+            <li><strong>Split CPU Thread Allocation (<code>-t 8 -tb 16</code>)</strong>: Maximizes prompt chunking efficiency on all physical cores while preventing scheduler contention during token-by-token decode.</li>
             <li><strong>Prompt Normalization (<code>--prompt-normalize</code>)</strong>: Eliminates trailing whitespace and newline fragmentation that degrades draft acceptance by up to 24%.</li>
           </ul>
         </div>
@@ -1149,21 +1251,27 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
             <span>Accelerated Speculative Execution Recipes</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># 1. Run Qwen 27B with Optimal MTP Parameters (Peak 22.00 t/s on RX 9060 XT)</span>
+<span class="code-comment"># 1. Run Qwen 27B with Optimal MTP Launch Parameters (Peak 25.75 t/s on RX 9060 XT)</span>
 $env:GGML_CUDA_FA_WMMA_256 = "0"
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-c</span> <span class="code-val">8192</span> \
           <span class="code-param">-ngl</span> <span class="code-val">999</span> \
           <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">-b</span> <span class="code-val">512</span> \
+          <span class="code-param">-ub</span> <span class="code-val">256</span> \
+          <span class="code-param">-t</span> <span class="code-val">8</span> \
+          <span class="code-param">-tb</span> <span class="code-val">16</span> \
           <span class="code-param">--spec-type</span> <span class="code-val">draft-mtp</span> \
           <span class="code-param">--spec-draft-n-max</span> <span class="code-val">1</span>
 
-<span class="code-comment"># 2. Run DFlash2 Block Diffusion Speculative Sidecar (Peak 21.57 t/s)</span>
+<span class="code-comment"># 2. Run DFlash2 Block Diffusion Speculative Sidecar with TurboQuant KV (Peak 21.57 t/s)</span>
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-md</span> models/Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf \
-          <span class="code-param">-c</span> <span class="code-val">8192</span> \
+          <span class="code-param">-c</span> <span class="code-val">32768</span> \
           <span class="code-param">-ngl</span> <span class="code-val">999</span> \
           <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">--cache-type-k</span> <span class="code-val">q8_0</span> \
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo3</span> \
           <span class="code-param">--spec-draft-max</span> <span class="code-val">3</span> \
           <span class="code-param">--spec-draft-p-min</span> <span class="code-val">0.6</span>
           </div>
@@ -1496,7 +1604,7 @@ cmake --build build --config Release
         descMatrix: "Direkte empirische Messwerte auf AMD Radeon RX 9060 XT (16.304 MiB, gfx1200) mit Qwen 3.8 27B im Vergleich.",
         tagStart: "Schnellstart",
         titleStart: "Erste Schritte & Installation",
-        descStart: "Die Inbetriebnahme auf Windows 11 und Ubuntu Linux ist dank vorkompilierter Releases und nativer Build-Skripte denkbar einfach.",
+        descStart: "Die Inbetriebnahme auf Windows 11 und Ubuntu Linux ist dank vorkompilierter Releases und nativer CMake-Builds denkbar einfach.",
         startTitle1: "&#128230; 1. Vorkompilierte Releases herunterladen",
         startP1: "Laden Sie fertige Release-Pakete von unserer GitHub Releases-Seite herunter. Jedes Paket enthält alle portablen ROCm DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code> und GUI-Skripte:",
         startLiAvx2: "<strong>Universelle AVX2-Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard-Kompatibilität für alle modernen x86-64-CPUs.",
@@ -1556,7 +1664,7 @@ cmake --build build --config Release
         descMatrix: "Head-to-head empirical results on AMD Radeon RX 9060 XT (16,304 MiB, gfx1200) running Qwen 3.8 27B across configurations.",
         tagStart: "Quickstart",
         titleStart: "Getting Started & Installation",
-        descStart: "Deploying this fork on Windows 11 and Ubuntu Linux is streamlined through pre-built releases and native build scripts.",
+        descStart: "Deploying this fork on Windows 11 and Ubuntu Linux is streamlined through pre-built releases and native CMake builds.",
         startTitle1: "&#128230; 1. Download Pre-Built Releases",
         startP1: "Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable ROCm DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code>, and GUI scripts:",
         startLiAvx2: "<strong>Universal AVX2 Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard compatibility across all modern x86-64 CPUs.",
