@@ -51,14 +51,12 @@ static __global__ void tq_prerotate_q8_1(
     val *= 0.17677669529663688f;
 
     float amax = fabsf(val);
-    #pragma unroll
-    for (int off = 16; off > 0; off >>= 1)
-        amax = fmaxf(amax, __shfl_xor_sync(0xffffffff, amax, off));
-
     float sum = val;
     #pragma unroll
-    for (int off = 16; off > 0; off >>= 1)
+    for (int off = 16; off > 0; off >>= 1) {
+        amax = fmaxf(amax, __shfl_xor_sync(0xffffffff, amax, off));
         sum += __shfl_xor_sync(0xffffffff, sum, off);
+    }
 
     const float d = amax / 127.0f;
     const float id = (d > 0.0f) ? 127.0f / amax : 0.0f;
@@ -417,18 +415,13 @@ static __global__ void tq_prerotate_activation(
     dst[offset] = val;
 }
 
+static __device__ __constant__ const float tq3_centroids_float[8] = {
+    -1.996684f, -1.291398f, -0.740341f, -0.247508f,
+     0.230106f,  0.725222f,  1.277503f,  1.988943f
+};
+
 static __device__ __forceinline__ float tq3_cent_reg(uint32_t idx) {
-    switch (idx & 7u) {
-        case 0: return -1.996684f;
-        case 1: return -1.291398f;
-        case 2: return -0.740341f;
-        case 3: return -0.247508f;
-        case 4: return  0.230106f;
-        case 5: return  0.725222f;
-        case 6: return  1.277503f;
-        case 7: return  1.988943f;
-        default: return 0.0f;
-    }
+    return tq3_centroids_float[idx & 7u];
 }
 
 static __device__ __forceinline__ uint32_t tq3_extract_index_fast(const uint8_t * __restrict__ qs, int lane) {
@@ -675,26 +668,15 @@ static void launch_tq3_1s_multi(
 // WMMA needs sm_70+; older arches get NO_DEVICE_CODE stubs
 // ============================================================================
 
+static __device__ __constant__ const float tq4_centroids_float[16] = {
+    -2.732590f, -2.069017f, -1.618046f, -1.256231f,
+    -0.942340f, -0.656759f, -0.388048f, -0.128395f,
+     0.128395f,  0.388048f,  0.656759f,  0.942340f,
+     1.256231f,  1.618046f,  2.069017f,  2.732590f
+};
+
 static __device__ __forceinline__ float tq4_cent_float(uint32_t idx) {
-    switch (idx & 0xFu) {
-        case 0:  return -2.732590f;
-        case 1:  return -2.069017f;
-        case 2:  return -1.618046f;
-        case 3:  return -1.256231f;
-        case 4:  return -0.942340f;
-        case 5:  return -0.656759f;
-        case 6:  return -0.388048f;
-        case 7:  return -0.128395f;
-        case 8:  return  0.128395f;
-        case 9:  return  0.388048f;
-        case 10: return  0.656759f;
-        case 11: return  0.942340f;
-        case 12: return  1.256231f;
-        case 13: return  1.618046f;
-        case 14: return  2.069017f;
-        case 15: return  2.732590f;
-        default: return  0.0f;
-    }
+    return tq4_centroids_float[idx & 0xFu];
 }
 
 #if defined(GGML_USE_HIP) && defined(AMD_WMMA_AVAILABLE)

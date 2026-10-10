@@ -5,7 +5,11 @@
 #include <cmath>
 
 #ifndef GGML_ROCMFP4_USE_SCALE_LUT
+#if defined(GGML_USE_HIP)
+#define GGML_ROCMFP4_USE_SCALE_LUT 1
+#else
 #define GGML_ROCMFP4_USE_SCALE_LUT 0
+#endif
 #endif
 
 #if defined(GGML_USE_HIP) && GGML_ROCMFP4_USE_SCALE_LUT
@@ -26,7 +30,7 @@
 #define ROCMFP4_SCALE_E14(M) ((8 + (M)) * 0x1p3f)
 #define ROCMFP4_SCALE_E15(M) ((8 + (M)) * 0x1p4f)
 
-static __device__ __constant__ const float rocmfp4_scale_ue4m3_half_lut[127] = {
+static __device__ __constant__ const float rocmfp4_scale_ue4m3_half_lut[256] = {
     ROCMFP4_SCALE_SUB(0), ROCMFP4_SCALE_SUB(1), ROCMFP4_SCALE_SUB(2), ROCMFP4_SCALE_SUB(3),
     ROCMFP4_SCALE_SUB(4), ROCMFP4_SCALE_SUB(5), ROCMFP4_SCALE_SUB(6), ROCMFP4_SCALE_SUB(7),
     ROCMFP4_SCALE_E1(0),  ROCMFP4_SCALE_E1(1),  ROCMFP4_SCALE_E1(2),  ROCMFP4_SCALE_E1(3),
@@ -94,7 +98,7 @@ static __device__ __forceinline__ float rocmfp4_u32_as_f32(uint32_t bits) {
 // generic FP8 NaN handling used by other formats.
 static __device__ __forceinline__ float rocmfp4_ue4m3_to_fp32_half_finite(uint8_t x) {
 #if defined(GGML_USE_HIP) && GGML_ROCMFP4_USE_SCALE_LUT
-    return x <= 0x7e ? rocmfp4_scale_ue4m3_half_lut[x] : 0.0f;
+    return rocmfp4_scale_ue4m3_half_lut[x];
 #else
     const int exp = (x >> 3) & 0xF;
     const int man = x & 0x7;
@@ -109,6 +113,9 @@ static __device__ __forceinline__ float rocmfp4_ue4m3_to_fp32_half_finite(uint8_
 }
 
 static __device__ __forceinline__ float rocmfpx_ue4m3_to_fp32_finite(uint8_t x) {
+#if defined(GGML_USE_HIP) && GGML_ROCMFP4_USE_SCALE_LUT
+    return rocmfp4_scale_ue4m3_half_lut[x];
+#else
     if (x > 0x7e) {
         return 0.0f;
     }
@@ -122,6 +129,7 @@ static __device__ __forceinline__ float rocmfpx_ue4m3_to_fp32_finite(uint8_t x) 
 
     const uint32_t bits = ((uint32_t) exp + 119u) << 23 | ((uint32_t) man << 20);
     return rocmfp4_u32_as_f32(bits);
+#endif
 }
 
 static __device__ __forceinline__ uint8_t rocmfpx_nearest_scale_ue4m3_cuda(float target_scale) {

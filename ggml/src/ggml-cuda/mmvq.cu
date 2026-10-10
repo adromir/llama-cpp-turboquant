@@ -238,6 +238,11 @@ static constexpr __host__ __device__ int get_mmvq_mmid_max_batch_rdna3(ggml_type
         case GGML_TYPE_Q4_K:    return 4;
         case GGML_TYPE_Q5_K:    return 4;
         case GGML_TYPE_Q6_K:    return 4;
+        case GGML_TYPE_Q4_0_ROCMFP4:      return 6;
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST: return 6;
+        case GGML_TYPE_Q4_0_ROCMI4:       return 6;
+        case GGML_TYPE_Q8_0_ROCMFPX:      return 6;
+        case GGML_TYPE_Q6_0_ROCMFPX:      return 4;
         default:                return MMVQ_MAX_BATCH_SIZE;
     }
 }
@@ -264,6 +269,11 @@ static constexpr __host__ __device__ int get_mmvq_mmid_max_batch_rdna4(ggml_type
         case GGML_TYPE_Q5_K:    return 5;
         case GGML_TYPE_Q6_K:    return 5;
         case GGML_TYPE_Q8_0:    return 7;
+        case GGML_TYPE_Q4_0_ROCMFP4:      return 7;
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST: return 7;
+        case GGML_TYPE_Q4_0_ROCMI4:       return 7;
+        case GGML_TYPE_Q8_0_ROCMFPX:      return 7;
+        case GGML_TYPE_Q6_0_ROCMFPX:      return 5;
         default:                return MMVQ_MAX_BATCH_SIZE;
     }
 }
@@ -465,6 +475,13 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
                 case GGML_TYPE_Q5_0:
                 case GGML_TYPE_Q5_1:
                 case GGML_TYPE_Q8_0:
+                case GGML_TYPE_Q4_0_ROCMFP4:
+                case GGML_TYPE_Q4_0_ROCMFP4_FAST:
+                case GGML_TYPE_Q4_0_ROCMI4:
+                case GGML_TYPE_Q8_0_ROCMFPX:
+                case GGML_TYPE_Q6_0_ROCMFPX:
+                case GGML_TYPE_MXFP4:
+                case GGML_TYPE_NVFP4:
                 case GGML_TYPE_Q2_K:
                 case GGML_TYPE_Q4_K:
                 case GGML_TYPE_Q5_K:
@@ -491,6 +508,13 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
                 case GGML_TYPE_Q5_0:
                 case GGML_TYPE_Q5_1:
                 case GGML_TYPE_Q8_0:
+                case GGML_TYPE_Q4_0_ROCMFP4:
+                case GGML_TYPE_Q4_0_ROCMFP4_FAST:
+                case GGML_TYPE_Q4_0_ROCMI4:
+                case GGML_TYPE_Q8_0_ROCMFPX:
+                case GGML_TYPE_Q6_0_ROCMFPX:
+                case GGML_TYPE_MXFP4:
+                case GGML_TYPE_NVFP4:
                 case GGML_TYPE_Q6_K:
                     // gfx1100 sweep 2026-08-28 (rdna3-boosts R5): nwarps=8 beats
                     // the old 2 by +0.8-1.0% decode; the other widened types

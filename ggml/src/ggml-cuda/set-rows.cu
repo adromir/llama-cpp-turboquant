@@ -405,17 +405,19 @@ static __global__ void k_set_rows_turbo3(
     }
     if (lane % 4 == 0) ggml_cuda_stcs(&blk->qs[qs_byte_idx], qs_byte);
 
-    // Pack signs: 8 elements per byte, 1 bit each. Gather each 8-lane group's sign bits
-    // via a width-32 shuffle so the group is self-contained on wave64 (a __ballot_sync
-    // returns a 64-bit mask there and would truncate into uint32_t). Same idiom as qs.
+    // Pack signs: 8 elements per byte, 1 bit each. Use hardware ballot across the wave
+    // to gather all lane signs in a single instruction, then each 8-lane group leader writes.
     const uint8_t my_sign = (idx >> 2) & 1;
     const int global_signs_byte = elem_in_block / 8;   // byte within block's signs array
-    uint8_t signs_byte = 0;
-#pragma unroll
-    for (int sb = 0; sb < 8; sb++) {
-        signs_byte |= (uint8_t)(__shfl_sync(0xffffffff, my_sign, (lane & ~7) + sb, WARP_SIZE) << sb);
+#if defined(GGML_USE_HIP)
+    const uint64_t signs_ballot = __ballot(my_sign);
+#else
+    const uint32_t signs_ballot = __ballot_sync(0xffffffff, my_sign);
+#endif
+    if (lane % 8 == 0) {
+        const uint8_t signs_byte = (uint8_t)((signs_ballot >> (lane & ~7)) & 0xFF);
+        ggml_cuda_stcs(&blk->signs[global_signs_byte], signs_byte);
     }
-    if (lane % 8 == 0) ggml_cuda_stcs(&blk->signs[global_signs_byte], signs_byte);
 
     // ---- Step 7: Reconstruction norm (parallel, same pattern as step 2) ----
     const float c = TURBO_CENTROIDS_3BIT[idx];
@@ -540,12 +542,15 @@ static __global__ void k_set_rows_turbo3_tail(
 
     const uint8_t my_sign = (idx >> 2) & 1;
     const int signs_byte_idx = lane / 8;
-    uint8_t signs_byte = 0;
-#pragma unroll
-    for (int sb = 0; sb < 8; sb++) {
-        signs_byte |= (uint8_t)(__shfl_sync(0xffffffff, my_sign, (lane & ~7) + sb, WARP_SIZE) << sb);
+#if defined(GGML_USE_HIP)
+    const uint64_t signs_ballot = __ballot(my_sign);
+#else
+    const uint32_t signs_ballot = __ballot_sync(0xffffffff, my_sign);
+#endif
+    if (lane % 8 == 0) {
+        const uint8_t signs_byte = (uint8_t)((signs_ballot >> (lane & ~7)) & 0xFF);
+        ggml_cuda_stcs(&blk->signs[signs_byte_idx], signs_byte);
     }
-    if (lane % 8 == 0) ggml_cuda_stcs(&blk->signs[signs_byte_idx], signs_byte);
 
     // ---- Reconstruction norm ----
     const float c = TURBO_CENTROIDS_3BIT[idx];
