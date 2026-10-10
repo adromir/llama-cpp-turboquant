@@ -190,6 +190,52 @@ llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
 
 ---
 
+## Multi-Token Prediction (MTP) Launch Parameter Sweep & Recommendations
+
+Models featuring native Multi-Token Prediction heads (such as `Qwen3.8-27B`, `nextn_predict_layers = 1`) propose speculative draft tokens directly from internal model weights without requiring an external draft model file (`-md`).
+
+An empirical parameter sweep was conducted on AMD Radeon RX 9060 XT (16,304 MiB, `gfx1200`) across all 11 draft configurations and 4 distinct task domains (Structured JSON, C++20 Thread-Safe Code, Physics Explanation, and Creative Prose) generating 256 tokens per query:
+
+### Empirical MTP Parameter Sweep Results
+
+| Configuration | Draft Depth (`n_max`) | Gating (`p_min`) | Avg Throughput (t/s) | Avg Acceptance Rate | Speedup vs Bare Decode |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Bare Decode (Baseline)** | 0 | - | 18.09 t/s | 0.0% | 1.00x (Baseline) |
+| **MTP (Optimal Peak Speed)** | **1** | **0.00** | **22.00 t/s** | **62.3%** | **+21.6% (1.22x)** |
+| **MTP (Balanced Multi-Draft)** | **2** | **0.00** | **21.35 t/s** | **46.7%** | **+18.0% (1.18x)** |
+| MTP (Standard Default) | 3 | 0.00 | 18.19 t/s | 33.9% | +0.6% (Neutral) |
+| MTP (Tuned Conservative) | 3 | 0.60 | 17.34 t/s | 58.0% | -4.1% (Gated) |
+| MTP (High Precision) | 3 | 0.75 | 16.74 t/s | 68.3% | -7.5% (High Acc) |
+| MTP (Over-Drafted Default) | 4 | 0.00 | 13.59 t/s | 26.9% | -24.9% (Regression) |
+| MTP (Gated Draft) | 4 | 0.60 | 14.88 t/s | 52.4% | -17.7% (Regression) |
+| MTP (Gated Draft) | 4 | 0.75 | 14.39 t/s | 66.1% | -20.5% (Regression) |
+| MTP (Deep Draft) | 5 | 0.75 | 13.78 t/s | 64.6% | -23.8% (Regression) |
+| **MTP Adaptive (`n=1..4`)** | 1..4 | 0.60 | 15.48 t/s | **70.2%** | High Precision / Quality |
+
+### Key Findings & Best Practices
+
+1. **The Discrete GPU Sweet Spot (`--spec-draft-n-max 1`)**:
+   On discrete GPUs with a 128-bit memory bus (e.g. RX 9060 XT), drafting **1 token** ($n=1$) achieves the absolute highest throughput (**22.00 t/s**, peaking at **22.54 t/s on C++ code** with **65.6% acceptance**). The target verification overhead is minimal ($n_q = 2$), converting over 62% of forward passes into 2-token cycles.
+2. **Avoid High Draft Depths ($n \ge 3$) on Consumer GPUs**:
+   Standard community guides often recommend $n=3$ or $n=4$. On consumer discrete GPUs, drafting 3+ tokens sequentially creates memory bandwidth stalls during parallel target verification, regressing throughput down to 13.59 t/s (-25%).
+3. **Critical RDNA4 Flash Attention Setting (`GGML_CUDA_FA_WMMA_256=0`)**:
+   On RDNA4 GPUs, models with head dimension 256 (such as Qwen 3.8 27B) require setting `GGML_CUDA_FA_WMMA_256=0`. Otherwise, Flash Attention selects the tile kernel for single decode ($n_q=1$) and the WMMA kernel for verification batches ($n_q > 1$), causing numerical divergence where all draft tokens are rejected (`nan`).
+
+### Optimal CLI & Server Commands for MTP
+
+```bash
+# Windows PowerShell
+$env:HIP_VISIBLE_DEVICES = "1"
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+
+llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+  -ngl 999 -fa 1 -c 8192 \
+  --spec-type draft-mtp \
+  --spec-draft-n-max 1
+```
+
+---
+
 ## Benchmark Results
 
 A comprehensive 5-way benchmark evaluation was conducted on AMD RDNA 4 hardware comparing upstream `llama.cpp` (ROCm & Vulkan) against this experimental distribution across **prefill throughput**, **decode speed**, **DFlash2 & MTP speculative acceptance rates**, **VRAM utilization**, and **maximum viable context length**.
@@ -413,10 +459,19 @@ llama-cli.exe -m models/Qwen3.8-Next-MoE-Q4_K_M.gguf -c 32768 -ngl 99 -fa 1 --ca
 
 ### 4. OpenAI-Compatible API Server (with MTP Speculative Decoding)
 
-Launch the web server with MTP speculative decoding, TurboQuant KV cache, and optimized draft parameters on port 8080:
+Launch the web server with MTP speculative decoding, TurboQuant KV cache, and optimal draft parameters on port 8080:
 
 ```bash
-llama-server -m models/model.gguf -c 32768 -ngl 99 -fa 1 --cache-type-k q8_0 --cache-type-v turbo3 --spec-type draft-mtp --spec-draft-n-max 6 --spec-draft-p-min 0.00 --host 0.0.0.0 --port 8080
+# Windows PowerShell
+$env:HIP_VISIBLE_DEVICES = "1"
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+
+llama-server.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+  -c 32768 -ngl 999 -fa 1 \
+  --cache-type-k q8_0 --cache-type-v turbo3 \
+  --spec-type draft-mtp \
+  --spec-draft-n-max 1 \
+  --host 0.0.0.0 --port 8080
 ```
 
 ### 5. Benchmark Performance
@@ -461,23 +516,9 @@ TurboQuant exposes fine-tuning knobs via environment variables:
 
 If you prefer building from source, ensure you have CMake and Ninja installed.
 
-### Windows (AMD ROCm 10 / HIP)
+### Windows (AMD ROCm 10 / HIP with CMake & Ninja)
 
-#### Option A: Automated Build Script (`build.ps1`)
-
-The repository includes an automated build script supporting both standard AVX2 and specialized AVX-512 architectures:
-
-```powershell
-# Interactive build (prompts for local branch and CPU architecture)
-.\build.ps1
-
-# Directly build with specialized AVX-512 target (Zen 4/5, modern Intel)
-.\build.ps1 -Avx512
-```
-
-#### Option B: Manual CMake & Ninja Build
-
-You can build with AMD ROCm 10 (TheRock), official AMD ROCm 6.x+, or any custom installation.
+You can build natively with AMD ROCm 10 (TheRock), official AMD ROCm 6.x+, or any custom installation.
 The build snippet automatically detects your ROCm root from `$env:HIP_PATH` or `$env:ROCM_PATH`, or allows defining your custom path:
 
 ```powershell
@@ -551,6 +592,7 @@ The ROCm backend supports automatic detection across diverse environments, but o
 | `HIP_PATH` / `ROCM_PATH` | Base path of the AMD ROCm SDK installation. Used by the build system and runtime path discovery. | `C:\TheRock\build` or `C:\Program Files\AMD\ROCm\6.2` or `/opt/rocm` |
 | `HIPBLASLT_TENSILE_PATH` | Path to hipBLASLt Tensile library kernels (`TensileLibrary_*.dat.zlib`). **Auto-discovered** from `$HIP_PATH\bin\hipblaslt\library` or `$HIP_PATH\lib\hipblaslt\library`. Can be manually overridden if using custom kernel packaging. | `$env:HIPBLASLT_TENSILE_PATH = "D:\CustomTensile"` |
 | `HIP_VISIBLE_DEVICES` | Controls which AMD GPU devices are visible to the process. Useful on systems with both integrated APUs and discrete GPUs. | `1` (Discrete GPU), `0` (APU/iGPU), `0,1` (All), `-1` (CPU Isolation) |
+| `GGML_CUDA_FA_WMMA_256` | Disables WMMA Flash Attention kernel for head_dim >= 256 on RDNA4, ensuring bit-identical tile kernel execution across decode and speculative MTP/DFlash verification batches (prevents draft verification rejection). | `0` (recommended for Qwen 27B speculative execution) |
 | `GGML_CUDA_GRAPHS` / `GGML_HIP_GRAPHS` | Enables HIP/CUDA Graph execution during single-token autoregressive decoding to eliminate CPU submission jitter. | `1` (default ON) |
 | `GGML_TQ_NATIVE` | Native TQ DP4A matrix-vector decode kernels without runtime dequantization. | `1` |
 
@@ -564,14 +606,14 @@ On RDNA3, RDNA3.5, RDNA4, and CDNA, this distribution automatically links and ut
 
 ### AMD Hardware, BIOS & Long-Context Tuning (128k+)
 
-Empirical profiling on AMD RDNA and unified APU architectures (such as Strix Halo / Radeon 8060S and desktop RDNA4) reveals critical settings for long context and speculative execution:
+Empirical profiling on AMD RDNA and unified APU architectures (such as desktop RDNA4 and Strix Halo / Radeon 8060S) reveals critical settings for long context and speculative execution:
 
 - **IOMMU Disabled in BIOS (+40% Prefill at 128k)**:
   On systems with unified memory architectures, disabling IOMMU in the motherboard BIOS (or booting with `amd_iommu=off` on Linux) reduces memory address translation overhead. This yields up to a **+40% prefill speedup at 128k context** (+1% at 4k, +6% at 16k, +11% to +21% at 32k) with zero degradation to decode speed.
-- **MTP Draft Depth (`--spec-draft-n-max 6`)**:
-  Empirical sweeps show draft depth `6` provides the best balance between draft acceptance and decode overhead (+2.8% to +7% decode boost over the default of 4). Setting `n-max 8` gains marginally at 32k but regresses on short prompts.
-- **Disable Probability Gating (`--spec-draft-p-min 0.00`)**:
-  Always keep `p-min` at `0.00` for MTP in `llama.cpp`. Adding draft probability filters (e.g. 0.75) causes a 4% to 15% decode speed loss due to prematurely truncated draft sequences.
+- **Discrete GPU MTP Tuning (`--spec-draft-n-max 1`)**:
+  On discrete GPUs with a 128-bit memory bus (e.g. RX 9060 XT), setting draft depth to `1` delivers the highest throughput (**22.00 t/s**, +21.6% faster than bare decode) with **62.3% draft acceptance**. Depths of 3+ without gating regress throughput down to 13.59 t/s due to memory bus saturation during verification.
+- **Unified APU MTP Tuning (`--spec-draft-n-max 3..6`)**:
+  On unified APUs with ultra-wide memory buses (such as Strix Halo with 256-bit LPDDR5X), higher draft depths (`3` to `6`) can be sustained, benefiting from higher cumulative draft lengths on large unified memory pools.
 - **Unified Memory Split on 128GB APUs**:
   On 128GB unified APUs, a balanced 64 GB host / 64 GB VRAM BIOS partition outperforms 96 GB / 32 GB for deep contexts because Windows ROCm allocations for large KV caches spill into host memory space.
 

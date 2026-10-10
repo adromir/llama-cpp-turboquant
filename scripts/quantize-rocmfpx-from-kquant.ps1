@@ -114,7 +114,7 @@ if (-not $Src -or -not $Out) {
 }
 
 if (-not $QuantizeBin -or -not (Test-Path $QuantizeBin)) {
-    Write-Error "Could not find llama-quantize binary. Build it with .\build.ps1 or specify -QuantizeBin."
+    Write-Error "Could not find llama-quantize binary. Build it with CMake or specify -QuantizeBin."
     exit 1
 }
 

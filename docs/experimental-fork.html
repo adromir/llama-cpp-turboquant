@@ -1014,50 +1014,158 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
         </div>
       </div>
 
-      <!-- FEATURE 4: SPECULATIVE DECODING & REASONING -->
+      <!-- FEATURE 4: SPECULATIVE DECODING & ACCELERATORS -->
       <div class="feature-card">
         <div class="feature-header">
           <div class="feature-title-wrap">
-            <h3 id="f4Title">&#128640; 4. Speculative Decoding & DFlash2 Diffusion Accelerators</h3>
-            <div class="feature-summary" id="f4Sum">Integrated advancements from DFlash2, Strata, and Hipfire for high-speed multi-token generation.</div>
+            <h3 id="f4Title">&#128640; 4. Speculative Decoding: Multi-Token Prediction (MTP) & DFlash2 Sidecar</h3>
+            <div class="feature-summary" id="f4Sum">Empirically tuned speculative engines: internal MTP draft heads and external DFlash2 block diffusion sidecars.</div>
           </div>
-          <span class="feature-badge">DFlash2 + Strata</span>
+          <span class="feature-badge">MTP + DFlash2</span>
         </div>
         <div class="feature-body" id="f4Body">
-          State-of-the-art speculative drafting and block-diffusion accelerators:
+          Our fork incorporates deep optimizations for both native internal Multi-Token Prediction (MTP) heads and external block-diffusion sidecars:
+
+          <h4 style="color: #ffffff; margin: 1rem 0 0.5rem 0; font-size: 1.05rem;">Multi-Token Prediction (MTP) Launch Parameter Sweep</h4>
+          <p>An exhaustive 11-configuration parameter sweep on AMD Radeon RX 9060 XT (16,304 MiB, <code>gfx1200</code>) across 4 diverse benchmark domains (Kubernetes JSON, C++20 Thread-Safe Code, Physics Explanation, and Creative Prose) at 256 tokens per query revealed critical architectural rules for discrete GPUs:</p>
+
+          <div class="table-wrap" style="margin: 1rem 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Configuration</th>
+                  <th>Draft Depth (<code>n_max</code>)</th>
+                  <th>Gating (<code>p_min</code>)</th>
+                  <th>Avg Decode Speed</th>
+                  <th>Acceptance Rate</th>
+                  <th>Performance Verdict</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Bare Decode (Baseline)</strong></td>
+                  <td>0</td>
+                  <td>-</td>
+                  <td>18.09 t/s</td>
+                  <td>0.0%</td>
+                  <td>1.00x Baseline</td>
+                </tr>
+                <tr>
+                  <td><strong>MTP Peak Throughput</strong></td>
+                  <td><strong>1</strong></td>
+                  <td><strong>0.00</strong></td>
+                  <td><strong style="color: var(--accent-cyan);">22.00 t/s</strong></td>
+                  <td><strong>62.3%</strong></td>
+                  <td><span class="badge-speed">+21.6% (Fastest)</span></td>
+                </tr>
+                <tr>
+                  <td><strong>MTP Balanced Multi-Draft</strong></td>
+                  <td><strong>2</strong></td>
+                  <td><strong>0.00</strong></td>
+                  <td><strong>21.35 t/s</strong></td>
+                  <td><strong>46.7%</strong></td>
+                  <td><span class="badge-speed">+18.0% Speedup</span></td>
+                </tr>
+                <tr>
+                  <td>MTP Standard Default</td>
+                  <td>3</td>
+                  <td>0.00</td>
+                  <td>18.19 t/s</td>
+                  <td>33.9%</td>
+                  <td>+0.6% (Neutral)</td>
+                </tr>
+                <tr>
+                  <td>MTP Tuned Conservative</td>
+                  <td>3</td>
+                  <td>0.60</td>
+                  <td>17.34 t/s</td>
+                  <td>58.0%</td>
+                  <td>-4.1% (Gated)</td>
+                </tr>
+                <tr>
+                  <td>MTP High Precision</td>
+                  <td>3</td>
+                  <td>0.75</td>
+                  <td>16.74 t/s</td>
+                  <td>68.3%</td>
+                  <td>-7.5% (High Acc)</td>
+                </tr>
+                <tr>
+                  <td>MTP Over-Drafted Default</td>
+                  <td>4</td>
+                  <td>0.00</td>
+                  <td>13.59 t/s</td>
+                  <td>26.9%</td>
+                  <td>-24.9% (Regression)</td>
+                </tr>
+                <tr>
+                  <td>MTP Gated Draft</td>
+                  <td>4</td>
+                  <td>0.60</td>
+                  <td>14.88 t/s</td>
+                  <td>52.4%</td>
+                  <td>-17.7% (Regression)</td>
+                </tr>
+                <tr>
+                  <td>MTP Gated Draft</td>
+                  <td>4</td>
+                  <td>0.75</td>
+                  <td>14.39 t/s</td>
+                  <td>66.1%</td>
+                  <td>-20.5% (Regression)</td>
+                </tr>
+                <tr>
+                  <td>MTP Deep Draft</td>
+                  <td>5</td>
+                  <td>0.75</td>
+                  <td>13.78 t/s</td>
+                  <td>64.6%</td>
+                  <td>-23.8% (Regression)</td>
+                </tr>
+                <tr>
+                  <td><strong>MTP Adaptive (<code>n=1..4</code>)</strong></td>
+                  <td>1..4</td>
+                  <td>0.60</td>
+                  <td>15.48 t/s</td>
+                  <td><strong style="color: #34d399;">70.2%</strong></td>
+                  <td>Peak Accuracy / Zero Stalls</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <ul class="feature-bullets">
-            <li><strong>DFlash2 Block Diffusion Speculative Sidecar</strong>: Generates candidate blocks ($n=3$ to $7$ tokens) in parallel from intermediate target layers using a lightweight 1.03 GB diffusion network (<code>Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf</code>). Ported upstream PRs #27310 & #30196 fuse the encoder directly into KV decode and bundle sampling outputs into a single GPU synchronization pass, eliminating intermediate D2H copy stalls.</li>
-            <li><strong>Confidence-Gated Speculative Early Stopping (<code>--spec-draft-p-min 0.6</code>)</strong>: Prunes low-confidence speculative candidates when model confidence drops below 60%, boosting draft acceptance rates from ~25% to <strong>50.0% - 71.2%</strong> and cutting discarded tokens by half.</li>
-            <li><strong>Discrete GPU Sweet Spot (<code>--spec-draft-max 3</code>)</strong>: On consumer GPUs with a 128-bit memory bus (e.g. RX 9060 XT), short draft depths eliminate graph dispatch stalls, pushing peak code generation up to <strong>21.57 t/s</strong> (+17.2% vs bare decode).</li>
-            <li><strong>Coupled Speculative Drafting with Gumbel-Max Sampling (<code>--spec-gumbel</code>)</strong>: Couples pseudo-random SplitMix64 Gumbel noise across target and draft models, keeping acceptance rates high during temperature-based creative sampling.</li>
-            <li><strong>Dynamic Cumulative Log-Probability Pruning (<code>--draft-cutoff-logw</code>)</strong>: Prunes speculative draft proposals early when branch confidence drops below a threshold (e.g. -4.0), preventing wasted target verification compute.</li>
-            <li><strong>Prompt Normalization Pipeline (<code>--prompt-normalize</code>)</strong>: Strips runaway newlines, trailing whitespace, and non-breaking spaces to stop BPE token fragmentation that hurts draft acceptance rates by up to 24%.</li>
-            <li><strong>MTP Draft Vocabulary Subsetting (<code>--draft-vocab</code>)</strong>: Limits multi-token prediction heads to the top-N active vocabulary items.</li>
+            <li><strong>Discrete GPU Sweet Spot (<code>--spec-draft-n-max 1</code>)</strong>: On discrete GPUs with a 128-bit memory bus (e.g. RX 9060 XT), drafting 1 token achieves the highest throughput (<strong>22.00 t/s avg</strong>, peaking at <strong>22.54 t/s on C++ code</strong> with 65.6% acceptance). Verification overhead is near-zero ($n_q = 2$), converting over 62% of cycles into 2-token outputs.</li>
+            <li><strong>DFlash2 Block Diffusion Speculative Sidecar</strong>: Generates candidate blocks ($n=3$ to $7$) in parallel from intermediate target layers using a lightweight 1.03 GB diffusion network (<code>Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf</code>), reaching up to <strong>21.57 t/s</strong> on complex coding tasks.</li>
+            <li><strong>Critical RDNA4 Flash Attention Setting (<code>GGML_CUDA_FA_WMMA_256=0</code>)</strong>: For models with head dimension 256 (such as Qwen 3.8 27B), disabling WMMA kernel dispatch ensures bit-identical tile kernel execution across decode and verification batches, completely preventing draft verification rejection.</li>
+            <li><strong>Coupled Gumbel-Max Sampling (<code>--spec-gumbel 1</code>)</strong>: Synchronizes pseudo-random SplitMix64 Gumbel noise across draft and target models for high acceptance during creative sampling.</li>
+            <li><strong>Prompt Normalization (<code>--prompt-normalize</code>)</strong>: Eliminates trailing whitespace and newline fragmentation that degrades draft acceptance by up to 24%.</li>
           </ul>
         </div>
 
         <div class="code-box">
           <div class="code-header">
             <span>PowerShell / Bash</span>
-            <span>Accelerated Speculative Inference</span>
+            <span>Accelerated Speculative Execution Recipes</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># 1. Run DFlash2 Block Diffusion Speculative Decoding (Fastest on Discrete GPUs)</span>
+<span class="code-comment"># 1. Run Qwen 27B with Optimal MTP Parameters (Peak 22.00 t/s on RX 9060 XT)</span>
+$env:GGML_CUDA_FA_WMMA_256 = "0"
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+          <span class="code-param">-c</span> <span class="code-val">8192</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">999</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">--spec-type</span> <span class="code-val">draft-mtp</span> \
+          <span class="code-param">--spec-draft-n-max</span> <span class="code-val">1</span>
+
+<span class="code-comment"># 2. Run DFlash2 Block Diffusion Speculative Sidecar (Peak 21.57 t/s)</span>
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-md</span> models/Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-c</span> <span class="code-val">8192</span> \
-          <span class="code-param">-ngl</span> <span class="code-val">99</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">999</span> \
           <span class="code-param">-fa</span> <span class="code-val">1</span> \
           <span class="code-param">--spec-draft-max</span> <span class="code-val">3</span> \
           <span class="code-param">--spec-draft-p-min</span> <span class="code-val">0.6</span>
-
-<span class="code-comment"># 2. Or run standard draft model with coupled Gumbel sampling & normalization</span>
-llama-cli <span class="code-param">-m</span> models/Target-27B.gguf \
-          <span class="code-param">-md</span> models/Draft-1.5B.gguf \
-          <span class="code-param">--spec-gumbel</span> <span class="code-val">1</span> \
-          <span class="code-param">--temp</span> <span class="code-val">0.7</span> \
-          <span class="code-param">--prompt-normalize</span> \
-          <span class="code-param">--draft-cutoff-logw</span> <span class="code-val">-4.0</span>
           </div>
         </div>
       </div>
@@ -1148,7 +1256,7 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-Next-MoE-Q4_K_M.gguf
             <li><strong>Native 512-bit SIMD Execution (AVX512F, VBMI, VNNI, BF16)</strong>: Specialized builds leverage full 512-bit vector registers and hardware integer dot-product instructions on AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7950X, 9900X) and modern Intel CPUs, delivering up to <strong>2.5x higher CPU compute throughput</strong> compared to baseline AVX2.</li>
             <li><strong>Accelerated Hybrid Offloading (<code>-ngl &lt;N&gt;</code>)</strong>: When partitioning layers across GPU and CPU, the AVX-512 backend drastically reduces CPU execution bottlenecks on non-offloaded layers, preventing CPU stall bubbles on large context evaluations.</li>
             <li><strong>2x-3x Faster Model Quantization</strong>: Running CPU-bound quantization passes in <code>llama-quantize</code> (including ROCmFPX, TQ Lloyd-Max, and k-quants) completes in a fraction of the time with native SIMD acceleration.</li>
-            <li><strong>Dedicated Release Packages</strong>: Available directly as <code>llama-rocm-experimental-avx512-windows.zip</code> and <code>llama-rocm-experimental-avx512-linux.zip</code>, or built locally with <code>.\build.ps1 -Avx512</code>.</li>
+            <li><strong>Dedicated Release Packages</strong>: Available directly as <code>llama-rocm-experimental-avx512-windows.zip</code> and <code>llama-rocm-experimental-avx512-linux.zip</code>, or built locally with CMake using <code>-DGGML_AVX512=ON</code>.</li>
           </ul>
         </div>
 
@@ -1302,22 +1410,21 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-Flash-Next-51B-Q4_K_
         <div class="story-card">
           <h3 id="startTitle2">&#9881; 2. Building from Source (CMake & Ninja)</h3>
           <p id="startP2">
-            Build natively using AMD ROCm 10 / 10.1 (TheRock) via our automated script or manual CMake:
+            Build natively using AMD ROCm 10 / 10.1 (TheRock) with CMake and Ninja:
           </p>
           <div class="code-box">
             <div class="code-header">
-              <span>PowerShell / CMake / Ninja (ROCm TheRock)</span>
+              <span>CMake / Ninja (ROCm TheRock)</span>
               <span>Native Build</span>
             </div>
             <div class="code-content">
-<span class="code-comment"># Option A: Automated PowerShell build script (prompts for AVX2 or AVX-512)</span>
-.\build.ps1
-<span class="code-comment"># Or build specialized AVX-512 directly:</span>
-.\build.ps1 -Avx512
-
-<span class="code-comment"># Option B: Manual CMake build targeting AMD RDNA4 (gfx1200)</span>
+<span class="code-comment"># 1. Standard build targeting AMD RDNA4 (gfx1200)</span>
 cmake -B build -G "Ninja" -DGGML_HIP=ON -DAMDGPU_TARGETS="gfx1200" -DCMAKE_BUILD_TYPE=Release
-<span class="code-comment"># For AVX-512, append: -DGGML_AVX512=ON -DGGML_AVX512_VBMI=ON -DGGML_AVX512_VNNI=ON -DGGML_AVX512_BF16=ON</span>
+cmake --build build --config Release
+
+<span class="code-comment"># 2. For specialized AVX-512 SIMD (AMD Zen 4/5 / Intel modern):</span>
+cmake -B build -G "Ninja" -DGGML_HIP=ON -DAMDGPU_TARGETS="gfx1200" -DCMAKE_BUILD_TYPE=Release `
+  -DGGML_AVX512=ON -DGGML_AVX512_VBMI=ON -DGGML_AVX512_VNNI=ON -DGGML_AVX512_BF16=ON
 cmake --build build --config Release
             </div>
           </div>
@@ -1376,8 +1483,8 @@ cmake --build build --config Release
         f2Sum: "Sub-Byte Gleitkommaformate, die speziell für AMD RDNA- und CDNA-Hardwarearchitekturen maßgeschneidert sind.",
         f3Title: "3. Gemini-Optimierte RDNA 3 & RDNA 4 Kernel-Suite",
         f3Sum: "Tiefgreifende HIP- und Assembler-Optimierungen auf Hardware-Ebene zur Beseitigung von GPU-Ausführungsengpässen.",
-        f4Title: "4. Spekulative Dekodierung & DFlash2 Diffusions-Beschleuniger",
-        f4Sum: "Integrierte Fortschritte aus DFlash2, Strata und Hipfire für hochfrequente Multi-Token-Generierung.",
+        f4Title: "4. Spekulative Dekodierung: Multi-Token Prediction (MTP) & DFlash2 Sidecar",
+        f4Sum: "Empirisch abgestimmte spekulative Engines: interne MTP-Draft-Heads und externe DFlash2-Blockdiffusions-Sidecars.",
         f5Title: "5. Windows WDDM Paging-Schutz & Speicher-Sicherheitsbarrieren",
         f5Sum: "Verhindern Sie katastrophale 7-10x Latenz-Zusammenbrüche durch transparentes Windows 11 RAM-Paging.",
         f6Title: "6. Strata MoE Expert-Cache & Startup Profil-Pre-Seeding",
@@ -1395,7 +1502,7 @@ cmake --build build --config Release
         startLiAvx2: "<strong>Universelle AVX2-Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard-Kompatibilität für alle modernen x86-64-CPUs.",
         startLiAvx512: "<strong>Spezialisierte AVX-512-Builds</strong> (<code>llama-rocm-experimental-avx512-windows.zip</code> / <code>-linux.zip</code>): Kompiliert mit AVX512F, VBMI, VNNI und BF16 für AMD Zen 4 / Zen 5 (z. B. Ryzen 9 9950X3D, 7000/9000-Serie) und moderne Intel-CPUs. Beschleunigt <strong>hybrides CPU+GPU-Offloading</strong> (z. B. Qwen 3.8 Flash-Next 51B, 70B+ Modelle jenseits des VRAMs) und beschleunigt die Modellquantisierung um das 2- bis 3-fache!",
         startTitle2: "&#9881; 2. Aus dem Quellcode bauen (CMake & Ninja)",
-        startP2: "Bauen Sie nativ mit AMD ROCm 10 / 10.1 (TheRock) über unser automatisiertes Skript oder manuell mit CMake:"
+        startP2: "Bauen Sie nativ mit AMD ROCm 10 / 10.1 (TheRock) manuell mit CMake und Ninja:"
       },
       en: {
         langBtnText: "Switch to Deutsch",
@@ -1436,8 +1543,8 @@ cmake --build build --config Release
         f2Sum: "Sub-byte floating point formats tailored specifically for AMD RDNA and CDNA hardware.",
         f3Title: "3. Gemini-Engineered RDNA 3 & RDNA 4 Kernel Suite",
         f3Sum: "Deep hardware-level HIP and assembly optimizations eliminating GPU execution stalls.",
-        f4Title: "4. Speculative Decoding & DFlash2 Diffusion Accelerators",
-        f4Sum: "Integrated advancements from DFlash2, Strata, and Hipfire for high-speed multi-token generation.",
+        f4Title: "4. Speculative Decoding: Multi-Token Prediction (MTP) & DFlash2 Sidecar",
+        f4Sum: "Empirically tuned speculative engines: internal MTP draft heads and external DFlash2 block diffusion sidecars.",
         f5Title: "5. Windows WDDM Paging Protection & Memory Safeguards",
         f5Sum: "Prevent catastrophic 7-10x decode latency collapse on Windows 11 systems.",
         f6Title: "6. Strata MoE Expert Cache & Startup Profile Pre-Seeding",
@@ -1455,7 +1562,7 @@ cmake --build build --config Release
         startLiAvx2: "<strong>Universal AVX2 Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard compatibility across all modern x86-64 CPUs.",
         startLiAvx512: "<strong>Specialized AVX-512 Builds</strong> (<code>llama-rocm-experimental-avx512-windows.zip</code> / <code>-linux.zip</code>): Compiled with AVX512F, VBMI, VNNI, and BF16 for AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7000/9000 series) and modern Intel CPUs. Accelerates <strong>hybrid CPU+GPU offloading</strong> (e.g. Qwen 3.8 Flash-Next 51B, 70B+ models exceeding VRAM) and speeds up model quantization by 2x-3x!",
         startTitle2: "&#9881; 2. Building from Source (CMake & Ninja)",
-        startP2: "Build natively using AMD ROCm 10 / 10.1 (TheRock) via our automated script or manual CMake:"
+        startP2: "Build natively using AMD ROCm 10 / 10.1 (TheRock) with CMake and Ninja:"
       }
     };
 
