@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About the Experimental Fork | llama.cpp TurboQuant + ROCm</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #080b11;
+      --bg-secondary: #0f1522;
+      --bg-card: rgba(18, 26, 42, 0.82);
+      --bg-card-hover: rgba(26, 38, 62, 0.9);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(0, 242, 254, 0.25);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-primary: #6366f1;
+      --accent-cyan: #00f2fe;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-purple: #8b5cf6;
+      
+      --glow-cyan: rgba(0, 242, 254, 0.25);
+      --glow-purple: rgba(99, 102, 241, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      line-height: 1.65;
+      padding: 2rem 1.5rem;
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(circle at 15% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 85% 20%, rgba(0, 242, 254, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* TOP NAVIGATION */
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.75rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 9999px;
+      margin-bottom: 2.5rem;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: #ffffff;
+      text-decoration: none;
+    }
+
+    .brand-tag {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      background: rgba(0, 242, 254, 0.15);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .nav-link.active {
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+    }
+
+    .lang-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(18, 26, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #cbd5e1;
+      padding: 0.45rem 0.95rem;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.2s ease;
+    }
+
+    .lang-toggle-btn:hover {
+      border-color: var(--accent-cyan);
+      color: #ffffff;
+      box-shadow: 0 0 12px var(--glow-cyan);
+    }
+
+    /* HERO HEADER */
+    .hero {
+      text-align: center;
+      padding: 2.5rem 1rem 3.5rem;
+      position: relative;
+    }
+
+    .badge-bar {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.9rem;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+      backdrop-filter: blur(8px);
+    }
+
+    .pill-cyan { background: rgba(0, 242, 254, 0.12); color: #38bdf8; border-color: rgba(0, 242, 254, 0.25); }
+    .pill-purple { background: rgba(139, 92, 246, 0.12); color: #c4b5fd; border-color: rgba(139, 92, 246, 0.25); }
+    .pill-amber { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border-color: rgba(245, 158, 11, 0.25); }
+    .pill-green { background: rgba(16, 185, 129, 0.12); color: #34d399; border-color: rgba(16, 185, 129, 0.25); }
+
+    .hero-title {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, #ffffff 30%, #cbd5e1 70%, #00f2fe 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      max-width: 950px;
+      margin: 0 auto 2rem;
+      font-size: 1.12rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+
+    .hero-cta {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 1.5rem;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: linear-gradient(135deg, var(--accent-cyan), #0284c7);
+      color: #04131f;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 0.75rem 1.6rem;
+      border-radius: 9999px;
+      text-decoration: none;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 20px rgba(0, 242, 254, 0.35);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 25px rgba(0, 242, 254, 0.5);
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 0.92rem;
+      padding: 0.75rem 1.6rem;
+      border-radius: 9999px;
+      text-decoration: none;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(10px);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent-cyan);
+      background: rgba(255, 255, 255, 0.05);
+      transform: translateY(-2px);
+    }
+
+    /* METRIC BANNER */
+    .metric-banner {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      backdrop-filter: blur(12px);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary));
+    }
+
+    .metric-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--border-glow);
+    }
+
+    .metric-val {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: #ffffff;
+      font-family: 'JetBrains Mono', monospace;
+      margin-bottom: 0.35rem;
+    }
+
+    .metric-val span {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+    }
+
+    .metric-lbl {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.35rem;
+    }
+
+    .metric-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* SECTION LAYOUT */
+    .section-wrap {
+      margin-bottom: 4rem;
+    }
+
+    .section-header {
+      margin-bottom: 2rem;
+    }
+
+    .section-tag {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-cyan);
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+
+    .section-title {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-desc {
+      font-size: 1.02rem;
+      color: var(--text-muted);
+      max-width: 900px;
+      line-height: 1.7;
+    }
+
+    /* ORIGIN STORY CARDS */
+    .story-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 1.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .story-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1.15rem;
+      padding: 2rem;
+      backdrop-filter: blur(12px);
+      position: relative;
+    }
+
+    .story-card.featured {
+      border-color: rgba(0, 242, 254, 0.3);
+      box-shadow: 0 8px 32px rgba(0, 242, 254, 0.08);
+    }
+
+    .story-card h3 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .story-card p {
+      font-size: 0.95rem;
+      color: #cbd5e1;
+      line-height: 1.75;
+      margin-bottom: 1rem;
+    }
+
+    .story-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* COLLABORATIVE ECOSYSTEM GRID */
+    .ecosystem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .eco-item {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border-color);
+      border-radius: 0.9rem;
+      padding: 1.35rem;
+      transition: all 0.2s ease;
+    }
+
+    .eco-item:hover {
+      border-color: rgba(255, 255, 255, 0.18);
+      transform: translateY(-2px);
+    }
+
+    .eco-item h4 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .eco-author {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin-bottom: 0.6rem;
+      display: inline-block;
+    }
+
+    .eco-item p {
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* FEATURES TABS & CARDS */
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1.25rem;
+      padding: 2.25rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(12px);
+      transition: border-color 0.2s ease;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(0, 242, 254, 0.35);
+    }
+
+    .feature-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .feature-title-wrap h3 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .feature-summary {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
+
+    .feature-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #c4b5fd;
+    }
+
+    .feature-body {
+      font-size: 0.95rem;
+      color: #cbd5e1;
+      line-height: 1.75;
+      margin-bottom: 1.5rem;
+    }
+
+    .feature-bullets {
+      margin-left: 1.5rem;
+      margin-bottom: 1.5rem;
+      line-height: 1.8;
+      font-size: 0.92rem;
+      color: #cbd5e1;
+    }
+
+    .feature-bullets strong {
+      color: #ffffff;
+    }
+
+    /* CODE SNIPPET BOX */
+    .code-box {
+      background: #05070d;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 0.75rem;
+      overflow: hidden;
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .code-content {
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.86rem;
+      line-height: 1.6;
+      color: #38bdf8;
+    }
+
+    .code-comment {
+      color: #64748b;
+    }
+
+    .code-param {
+      color: #f59e0b;
+    }
+
+    .code-val {
+      color: #34d399;
+    }
+
+    /* TABLE STYLES */
+    .table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      overflow-x: auto;
+      margin-top: 1.5rem;
+      backdrop-filter: blur(12px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(18, 26, 42, 0.9);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.9rem 1.1rem;
+      border-bottom: 1px solid var(--border-color);
+      text-transform: uppercase;
+      font-size: 0.74rem;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 0.95rem 1.1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge-speed {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 0.3rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+      font-family: 'Inter', sans-serif;
+      background: rgba(0, 242, 254, 0.15);
+      color: #38bdf8;
+    }
+
+    /* CALLOUT BOXES */
+    .callout {
+      background: rgba(15, 23, 42, 0.7);
+      border-left: 4px solid var(--accent-cyan);
+      border-radius: 0.6rem;
+      padding: 1.25rem 1.5rem;
+      margin: 1.5rem 0;
+      font-size: 0.92rem;
+      color: #cbd5e1;
+      line-height: 1.7;
+    }
+
+    .callout.amber {
+      border-left-color: var(--accent-amber);
+      background: rgba(245, 158, 11, 0.06);
+    }
+
+    .callout.green {
+      border-left-color: var(--accent-green);
+      background: rgba(16, 185, 129, 0.06);
+    }
+
+    .callout h5 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* FOOTER */
+    footer {
+      margin-top: 5rem;
+      text-align: center;
+      color: #64748b;
+      font-size: 0.84rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 2.5rem;
+    }
+
+    footer a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      .hero-title {
+        font-size: 2.1rem;
+      }
+      .story-grid {
+        grid-template-columns: 1fr;
+      }
+      .feature-card {
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- TOP NAVIGATION -->
+    <nav class="top-nav">
+      <a href="index.html" class="nav-brand">
+        <span>&#129302;</span>
+        <span>llama.cpp <span class="brand-tag">TurboQuant + ROCm</span></span>
+      </a>
+
+      <div class="nav-links">
+        <a href="benchmark-results-3way.html" class="nav-link" id="navLinkBench">
+          <span>&#128202;</span> <span id="navTextBench">4-Way Benchmarks</span>
+        </a>
+        <a href="experimental-fork.html" class="nav-link active" id="navLinkAbout">
+          <span>&#9881;</span> <span id="navTextAbout">About Experimental Fork</span>
+        </a>
+        <a href="https://github.com/adromir/llama-cpp-turboquant" target="_blank" class="nav-link">
+          <svg height="14" width="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 2px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/adromir/llama-cpp-turboquant/releases" target="_blank" class="nav-link">
+          <span>&#128230;</span> Releases
+        </a>
+      </div>
+
+      <div class="top-controls">
+        <button class="lang-toggle-btn" onclick="toggleLanguage()" id="langToggleBtn">
+          <span>&#127760;</span> <span id="langBtnText">Switch to Deutsch</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- HERO SECTION -->
+    <header class="hero">
+      <div class="badge-bar">
+        <span class="pill-badge pill-cyan">&#9881; AMD ROCm 10 / 10.1 (TheRock)</span>
+        <span class="pill-badge pill-purple">&#9889; AI-Engineered by Gemini 3.8</span>
+        <span class="pill-badge pill-amber">&#128640; Up to 2.60x Faster Decode</span>
+        <span class="pill-badge pill-green">&#128274; Zero Perplexity Loss (PPL 7.8766)</span>
+      </div>
+
+      <h1 class="hero-title" id="heroTitle">The Experimental TurboQuant + ROCm Fork</h1>
+      <p class="hero-subtitle" id="heroSubtitle">
+        From automated cross-platform builds to state-of-the-art AI-directed GPU engineering: Discover why this fork was created, how Gemini 3.8 optimized its low-level kernel architecture, and how to harness its unique capabilities.
+      </p>
+
+      <div class="hero-cta">
+        <a href="#features" class="btn-primary" id="btnExploreFeatures">
+          <span>&#128065;</span> <span id="btnExploreText">Explore Special Features</span>
+        </a>
+        <a href="benchmark-results-3way.html" class="btn-secondary" id="btnViewBenchmarks">
+          <span>&#128202;</span> <span id="btnBenchText">Live 4-Way Benchmark Results</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- KEY PERFORMANCE KPI BANNER -->
+    <div class="metric-banner">
+      <div class="metric-card">
+        <div class="metric-val">17.77 <span>t/s</span></div>
+        <div class="metric-lbl" id="kpiDecodeLbl">Autoregressive Decode (27B)</div>
+        <div class="metric-sub" id="kpiDecodeSub">2.60x faster than ROCm Upstream (6.83 t/s) and 2.29x faster than Vulkan (7.75 t/s).</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-val">289.8 <span>t/s</span></div>
+        <div class="metric-lbl" id="kpiPrefillLbl">Prompt Prefill Throughput</div>
+        <div class="metric-sub" id="kpiPrefillSub">+35.8% over ROCm Upstream and +103.5% over Vulkan on AMD RDNA 4.</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-val">110,592 <span>Tokens</span></div>
+        <div class="metric-lbl" id="kpiContextLbl">Max Safe Context on 16GB VRAM</div>
+        <div class="metric-sub" id="kpiContextSub">7.45x context expansion vs 14,848 stock limit; TurboQuant KV takes only 2,660 MiB.</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-val">-0.05% <span>Delta</span></div>
+        <div class="metric-lbl" id="kpiQualityLbl">Mathematical Accuracy (PPL)</div>
+        <div class="metric-sub" id="kpiQualitySub">66,048 tokens calibration proves identical/slightly superior perplexity vs Q4_K_M.</div>
+      </div>
+    </div>
+
+    <!-- SECTION 1: THE ORIGIN & PURPOSE -->
+    <section class="section-wrap" id="origin">
+      <div class="section-header">
+        <div class="section-tag" id="tagOrigin">Project Genesis & Vision</div>
+        <h2 class="section-title" id="titleOrigin">Why This Fork Was Created</h2>
+        <p class="section-desc" id="descOrigin">
+          What began as a packaging utility for TheTom's TurboQuant fork evolved into a groundbreaking experiment in AI-directed systems programming on AMD hardware.
+        </p>
+      </div>
+
+      <div class="story-grid">
+        <div class="story-card">
+          <h3 id="storyTitle1">&#128736; Phase 1: Automated Cross-Platform ROCm Builds</h3>
+          <p id="storyP1_1">
+            This repository originated with a clear, pragmatic purpose: <strong>to provide a turnkey automated build and CI/CD system for TheTom's pioneering TurboQuant fork</strong> (<a href="https://github.com/TheTom/llama-cpp-turboquant" target="_blank" style="color: var(--accent-cyan);">TheTom/llama-cpp-turboquant</a>).
+          </p>
+          <p id="storyP1_2">
+            While TurboQuant introduced revolutionary KV cache compression (2 to 3.25 bits/value via Walsh-Hadamard Transform), running and building it on modern AMD ROCm environments was notorious for friction. On Windows 11, lack of pre-built portable binaries, compiler header conflicts between MSVC and Clang/HIP, and the transition to AMD ROCm Core SDK 10 ("TheRock") left AMD GPU users stranded.
+          </p>
+          <p id="storyP1_3">
+            We built automated GitHub Actions CI/CD workflows producing clean, portable fat binaries for both Windows 11 and Ubuntu Linux across modern AMD architectures (`gfx900` to `gfx1201`).
+          </p>
+        </div>
+
+        <div class="story-card featured">
+          <h3 id="storyTitle2">&#129302; Phase 2: The AI Engineering Experiment (Gemini 3.8)</h3>
+          <p id="storyP2_1">
+            Once build automation was achieved, the active <code>experiment/rdna-boosts</code> branch embarked on a bolder exploration:
+            <br>
+            <em>How far can an advanced AI coding model (Gemini 3.8) autonomously diagnose, optimize, and push low-level GPU systems code beyond traditional hand-tuned performance limits?</em>
+          </p>
+          <p id="storyP2_2">
+            Rather than trivial refactoring, Gemini was tasked with deep systems engineering:
+          </p>
+          <ul style="margin-left: 1.5rem; margin-bottom: 1rem; line-height: 1.7; font-size: 0.92rem; color: #cbd5e1;">
+            <li>Diagnosing hardware execution bottlenecks on AMD RDNA 3 and RDNA 4 (<code>gfx1100</code>, <code>gfx1200</code>).</li>
+            <li>Eliminating branch divergence with constant 256-entry scale lookup tables in L1 cache.</li>
+            <li>Overcoming workgroup occupancy starvation by expanding MMVQ allocations from 1 warp to 8 warps (256 threads).</li>
+            <li>Fusing multi-pass warp reductions to cut shuffle barriers by 50% in the Walsh-Hadamard transform.</li>
+            <li>Protecting Windows systems from catastrophic WDDM paging latency collapse.</li>
+          </ul>
+          <p id="storyP2_3">
+            The outcome: <strong>a 2.60x speedup in autoregressive decode throughput</strong> on 27B models, <strong>+103.5% faster prompt prefill</strong> over Vulkan, and complete on-device 110k context support with zero precision degradation.
+          </p>
+        </div>
+      </div>
+
+      <!-- COLLABORATIVE ECOSYSTEM -->
+      <div style="margin-top: 2.5rem;">
+        <h3 style="color: #ffffff; font-size: 1.25rem; font-weight: 700; margin-bottom: 0.75rem;" id="titleEco">
+          The Multi-Fork Innovation Bridge
+        </h3>
+        <p style="color: var(--text-muted); font-size: 0.94rem; margin-bottom: 1.25rem;" id="descEco">
+          Our experimental build unites and harmonizes the finest specialized innovations across the open-source LLM community:
+        </p>
+
+        <div class="ecosystem-grid">
+          <div class="eco-item">
+            <h4>TheTom / TurboQuant</h4>
+            <span class="eco-author">Upstream TurboQuant Fork</span>
+            <p>The foundational 128x128 orthonormal Walsh-Hadamard Transform (WHT) KV cache codec (turbo2, turbo3, turbo4) and Lloyd-Max rotated weight types (TQ3_1S, TQ4_1S).</p>
+          </div>
+
+          <div class="eco-item">
+            <h4>stew675 / RDNA Boosts</h4>
+            <span class="eco-author">Stew Forster</span>
+            <p>Native-BF16 Flash Attention, RDNA4 WMMA acceleration, fused Gated-Delta-Net chunking, and fused MoE gate+up GLU MMQ/mmvq kernels.</p>
+          </div>
+
+          <div class="eco-item">
+            <h4>charlie12345 / ROCmFPX</h4>
+            <span class="eco-author">Charlie</span>
+            <p>Hardware-aligned sub-byte floating point quantization recipes: Q4_0_ROCMFP4, ROCmFP4-FAST, Q2_0_ROCMFPX, and agent-level precision routing.</p>
+          </div>
+
+          <div class="eco-item">
+            <h4>Niko1221 / Strata</h4>
+            <span class="eco-author">Strata Engine</span>
+            <p>Online learned MoE profile auto-saving, coupled speculative drafting with Gumbel-Max sampling, and Windows WDDM paging reserve guards.</p>
+          </div>
+
+          <div class="eco-item">
+            <h4>warpfront / hipfire</h4>
+            <span class="eco-author">hipfire Project</span>
+            <p>Prompt whitespace/newline normalization pipelines, dynamic cumulative log-probability cutoff pruning, and RDNA Wave32 launch bounds tuning.</p>
+          </div>
+
+          <div class="eco-item">
+            <h4>Unsloth AI</h4>
+            <span class="eco-author">Unsloth AI Fork</span>
+            <p>Virtual memory readahead batching, contiguous run virtual memory mapping, iGPU buffer safeguards, and MTP shared tensor borrowing.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: SPECIAL FEATURES & HOW TO USE THEM -->
+    <section class="section-wrap" id="features">
+      <div class="section-header">
+        <div class="section-tag" id="tagFeatures">Engine Capabilities</div>
+        <h2 class="section-title" id="titleFeatures">Unique Features & Usage Guide</h2>
+        <p class="section-desc" id="descFeatures">
+          Comprehensive documentation of features present exclusively in this fork, along with practical CLI arguments, environment variables, and usage recipes.
+        </p>
+      </div>
+
+      <!-- FEATURE 1: TURBOQUANT KV CACHE -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f1Title">&#128190; 1. TurboQuant Ultra-Compressed KV Cache & Weights</h3>
+            <div class="feature-summary" id="f1Sum">Shrink KV cache VRAM by up to 8x using Walsh-Hadamard orthonormal rotation before quantization.</div>
+          </div>
+          <span class="feature-badge">TheTom + RDNA Tuned</span>
+        </div>
+        <div class="feature-body" id="f1Body">
+          TurboQuant applies a fixed 128x128 orthonormal Walsh-Hadamard rotation (<code>GGML_OP_TURBO_WHT</code>) to key/value cache vectors before quantization. This Gaussianizes outlier channels, enabling ultra-low bit quantization without quality loss:
+          <ul class="feature-bullets">
+            <li><strong><code>turbo2</code> (<code>GGML_TYPE_TURBO2_0</code>)</strong>: 2.0 bits per value for KV cache (extreme compression).</li>
+            <li><strong><code>turbo3</code> (<code>GGML_TYPE_TURBO3_0</code>)</strong>: 3.25 bits per value for KV cache (recommended balance).</li>
+            <li><strong><code>turbo4</code> (<code>GGML_TYPE_TURBO4_0</code>)</strong>: 4.25 bits per value for KV cache (near-lossless fidelity).</li>
+            <li><strong><code>TQ3_1S</code> / <code>TQ4_1S</code></strong>: 3-bit and 4-bit Lloyd-Max rotated weight types supported in <code>llama-quantize</code>.</li>
+          </ul>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell / Bash</span>
+            <span>Inference with TurboQuant KV Cache</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Run large 65k context on a 16GB GPU with TurboQuant KV cache</span>
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+          <span class="code-param">-c</span> <span class="code-val">65536</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">99</span> \
+          <span class="code-param">--cache-type-k</span> <span class="code-val">q8_0</span> \
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo3</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span>
+          </div>
+        </div>
+
+        <div class="callout green">
+          <h5>&#128161; Environment Tuning Knobs</h5>
+          <p>
+            <code>TURBO_LAYER_ADAPTIVE=7</code>: Boundary-layer precision allocation (preserves standard q8_0 precision on input/output boundary layers while utilizing turbo in the deep middle layers).<br>
+            <code>TURBO_AUTO_ASYMMETRIC=1</code>: Automatically pairs higher-precision K cache with compressed V cache for models with high GQA ratios.
+          </p>
+        </div>
+      </div>
+
+      <!-- FEATURE 2: ROCMFPX QUANTIZATION FAMILY -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f2Title">&#9889; 2. Native ROCmFPX / ROCmFP4 Quantization Family</h3>
+            <div class="feature-summary" id="f2Sum">Sub-byte floating point formats tailored specifically for AMD RDNA and CDNA hardware.</div>
+          </div>
+          <span class="feature-badge">Charlie + RDNA Boosts</span>
+        </div>
+        <div class="feature-body" id="f2Body">
+          Unlike generic integer K-quants designed for CPU/NVIDIA instruction sets, ROCmFPX uses micro-scaled floating point formats (UE4M3) that execute natively on AMD Compute Units:
+          <ul class="feature-bullets">
+            <li><strong><code>Q4_0_ROCMFP4_FAST</code></strong>: Sub-byte 4-bit format accelerated by a 256-entry branchless scale LUT. Delivers <strong>2.60x faster decode (17.77 t/s)</strong> on RX 9060 XT with 2.1 GB weight VRAM reduction.</li>
+            <li><strong><code>Q2_0_ROCMFPX_AGENT</code></strong>: 2.75 bpw agent quantization that preserves Q6_K on attention heads and token embeddings while routing bulk feed-forward layers to 2-bit ROCmFP, keeping reasoning stable.</li>
+            <li><strong><code>Q1_0_ROCMFPX_AGENT</code></strong>: Experimental 1.50 bpw prototype utilizing dual UE4M3 micro-scales.</li>
+          </ul>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell / Bash</span>
+            <span>Creating ROCmFP4 Models & Launching GUI</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># 1. Quantize a model directly with llama-quantize</span>
+llama-quantize models/Qwen3.8-27B-F16.gguf models/Qwen3.8-27B-ROCMFP4.gguf <span class="code-val">Q4_0_ROCMFP4_FAST</span>
+
+<span class="code-comment"># 2. Or launch our native PowerShell WPF GUI with live GPU telemetry</span>
+powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 3: RDNA 3/4 KERNEL OPTIMIZATIONS -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f3Title">&#9881; 3. Gemini-Engineered RDNA 3 & RDNA 4 Kernel Suite</h3>
+            <div class="feature-summary" id="f3Sum">Deep hardware-level HIP and assembly optimizations eliminating GPU execution stalls.</div>
+          </div>
+          <span class="feature-badge">Gemini 3.8 Boosts</span>
+        </div>
+        <div class="feature-body" id="f3Body">
+          Our fork includes 5 core kernel optimizations in the <code>experiment/rdna-boosts</code> branch designed specifically for AMD RDNA 3 (<code>gfx1100</code>) and RDNA 4 (<code>gfx1200</code>):
+          <ul class="feature-bullets">
+            <li><strong>Branchless 256-Entry Scale LUT (<code>rocmfp4_hip_scale.cuh</code>)</strong>: Replaces IEEE-754 exponent bitfield extraction and conditional branches with a 1-cycle constant memory scalar broadcast load instruction.</li>
+            <li><strong>8-Warp Wave-Cooperative MMVQ (<code>mmvq.cu</code>)</strong>: Expands workgroup allocation from 1 warp (32 threads) to 8 warps (256 threads) under RDNA 3 and 4, preventing Dual Compute Unit starvation during decode.</li>
+            <li><strong>Fused WHT Prerotate Reductions (<code>mmvq-tq.cu</code>)</strong>: Merges sequential <code>amax</code> and <code>sum</code> shuffle loops into a single unrolled 5-step reduction, halving warp synchronization latency.</li>
+            <li><strong>Native Wave-32 Hardware Ballot (<code>set-rows.cu</code>)</strong>: Uses hardware <code>__ballot</code> instructions to gather wave-wide sign bits in a single cycle for Turbo3 packing.</li>
+            <li><strong>Non-Temporal Streaming Stores (<code>ggml_cuda_stcs</code>)</strong>: Bypasses L1 cache pollution during KV cache insertion to keep critical model weights in cache.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- FEATURE 4: SPECULATIVE DECODING & REASONING -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f4Title">&#128640; 4. Speculative Decoding & MoE Reasoning Accelerators</h3>
+            <div class="feature-summary" id="f4Sum">Integrated advancements from Strata and Hipfire for high-speed multi-token generation.</div>
+          </div>
+          <span class="feature-badge">Strata + Hipfire</span>
+        </div>
+        <div class="feature-body" id="f4Body">
+          State-of-the-art speculative drafting and Mixture-of-Experts inference controls:
+          <ul class="feature-bullets">
+            <li><strong>Coupled Speculative Drafting with Gumbel-Max Sampling (<code>--spec-gumbel</code>)</strong>: Couples pseudo-random SplitMix64 Gumbel noise across target and draft models, keeping acceptance rates high during temperature-based creative sampling.</li>
+            <li><strong>Online Learned MoE Profile Auto-Saving (<code>--moe-expert-profile-save</code>)</strong>: Dynamically records expert activation hits during runtime and writes a binary profile on context free, eliminating offline profiling steps.</li>
+            <li><strong>Dynamic Cumulative Log-Probability Pruning (<code>--draft-cutoff-logw</code>)</strong>: Prunes speculative draft proposals early when branch confidence drops below a threshold (e.g. -4.0), preventing wasted target verification compute.</li>
+            <li><strong>Prompt Normalization Pipeline (<code>--prompt-normalize</code>)</strong>: Strips runaway newlines, trailing whitespace, and non-breaking spaces to stop BPE token fragmentation that hurts draft acceptance rates by up to 24%.</li>
+            <li><strong>MTP Draft Vocabulary Subsetting (<code>--draft-vocab</code>)</strong>: Limits multi-token prediction heads to the top-N active vocabulary items.</li>
+          </ul>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell / Bash</span>
+            <span>Accelerated Speculative Inference</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Run speculative drafting with coupled Gumbel sampling, prompt normalization, and cutoff pruning</span>
+llama-cli <span class="code-param">-m</span> models/Target-27B.gguf \
+          <span class="code-param">-md</span> models/Draft-1.5B.gguf \
+          <span class="code-param">--spec-gumbel</span> <span class="code-val">1</span> \
+          <span class="code-param">--temp</span> <span class="code-val">0.7</span> \
+          <span class="code-param">--prompt-normalize</span> \
+          <span class="code-param">--draft-cutoff-logw</span> <span class="code-val">-4.0</span> \
+          <span class="code-param">--draft-vocab</span> <span class="code-val">4096</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 5: WINDOWS WDDM PROTECTION -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f5Title">&#128737; 5. Windows WDDM Paging Protection & Memory Safeguards</h3>
+            <div class="feature-summary" id="f5Sum">Prevent catastrophic 7-10x decode latency collapse on Windows 11 systems.</div>
+          </div>
+          <span class="feature-badge">Strata + Unsloth</span>
+        </div>
+        <div class="feature-body" id="f5Body">
+          On Windows 11, when GPU allocations approach total VRAM, the Windows Display Driver Model (WDDM) silently pages tensors into system RAM. This causes an invisible <strong>7x to 10x latency collapse</strong>. Our fork introduces active safeguards:
+          <ul class="feature-bullets">
+            <li><strong>WDDM Safety Reserve Guard (<code>--vram-reserve-mib 512</code>)</strong>: Enforces a dedicated discrete GPU headroom reserve, warning prominently before transparent paging begins.</li>
+            <li><strong>MTP Draft Compute-Buffer Capping (<code>MTP_DRAFT_N_UBATCH=512</code>)</strong>: Prevents draft models from pre-allocating gigabytes of encoder buffer space for the full target ubatch.</li>
+            <li><strong>Unsloth Contiguous Run Virtual Memory Mapping</strong>: Eliminates fragmentation and accelerates initial tensor mapping on SSDs.</li>
+          </ul>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell / Bash</span>
+            <span>Safeguarding VRAM Headroom</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Enforce a 512 MiB discrete GPU headroom reserve</span>
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
+          <span class="code-param">-c</span> <span class="code-val">16384</span> \
+          <span class="code-param">--vram-reserve-mib</span> <span class="code-val">512</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: EMPIRICAL PERFORMANCE MATRIX -->
+    <section class="section-wrap" id="benchmarks">
+      <div class="section-header">
+        <div class="section-tag" id="tagMatrix">Verified Results</div>
+        <h2 class="section-title" id="titleMatrix">Empirical 4-Way Performance Matrix</h2>
+        <p class="section-desc" id="descMatrix">
+          Head-to-head empirical results on AMD Radeon RX 9060 XT (16,304 MiB, gfx1200) running Qwen 3.8 27B across ROCm Upstream, Vulkan Upstream, Experimental Fork (stock weights), and our optimized ROCmFP4-FAST engine.
+        </p>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Evaluation Metric</th>
+              <th>Config 1: ROCm Upstream</th>
+              <th>Config 2: Vulkan Upstream</th>
+              <th>Config 3: Exp Q4_K_M</th>
+              <th>Config 4: Exp ROCmFP4_FAST</th>
+              <th>Speedup vs ROCm</th>
+              <th>Speedup vs Vulkan</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Autoregressive Decode (n=128)</strong></td>
+              <td>6.83 t/s (146.3 ms)</td>
+              <td>7.75 t/s (129.0 ms)</td>
+              <td>7.20 t/s (138.9 ms)</td>
+              <td><strong style="color: var(--accent-cyan);">17.77 t/s (56.3 ms)</strong></td>
+              <td><span class="badge-speed">2.60x Faster</span></td>
+              <td><span class="badge-speed">2.29x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Prompt Prefill (p=512)</strong></td>
+              <td>213.4 t/s</td>
+              <td>142.4 t/s</td>
+              <td>167.6 t/s</td>
+              <td><strong style="color: var(--accent-cyan);">289.8 t/s</strong></td>
+              <td><span class="badge-speed">+35.8%</span></td>
+              <td><span class="badge-speed">+103.5%</span></td>
+            </tr>
+            <tr>
+              <td><strong>Interactive Prompt Eval</strong></td>
+              <td>88 - 102 t/s</td>
+              <td>65 - 83 t/s</td>
+              <td>75 - 90 t/s</td>
+              <td><strong style="color: var(--accent-cyan);">132 - 141 t/s</strong></td>
+              <td><span class="badge-speed">+32% to +48%</span></td>
+              <td><span class="badge-speed">+65% to +103%</span></td>
+            </tr>
+            <tr>
+              <td><strong>Model Weight VRAM</strong></td>
+              <td>15,088 MiB</td>
+              <td>15,088 MiB</td>
+              <td>15,088 MiB</td>
+              <td><strong style="color: var(--accent-cyan);">12,991 MiB</strong></td>
+              <td><span class="badge-speed">-2,097 MiB</span></td>
+              <td><span class="badge-speed">-2,097 MiB</span></td>
+            </tr>
+            <tr>
+              <td><strong>Mathematical Perplexity (66k Tokens)</strong></td>
+              <td>7.8806 (+/- 0.1129)</td>
+              <td>7.8806 (+/- 0.1129)</td>
+              <td>7.8806 (+/- 0.1129)</td>
+              <td><strong style="color: var(--accent-cyan);">7.8766 (+/- 0.1120)</strong></td>
+              <td><span class="badge-speed">Zero Loss (-0.05%)</span></td>
+              <td><span class="badge-speed">Zero Loss (-0.05%)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Eval Pass Time (WDDM Pressure)</strong></td>
+              <td>12.46 s</td>
+              <td>12.46 s</td>
+              <td>12.46 s</td>
+              <td><strong style="color: var(--accent-cyan);">8.08 s</strong></td>
+              <td><span class="badge-speed">1.54x Faster</span></td>
+              <td><span class="badge-speed">1.54x Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Max Safe Context (16GB VRAM)</strong></td>
+              <td>14,848 Tokens</td>
+              <td>14,848 Tokens</td>
+              <td>35,840 Tokens (TQ-KV)</td>
+              <td><strong style="color: var(--accent-cyan);">110,592 Tokens (TQ-KV)</strong></td>
+              <td><span class="badge-speed">7.45x Capacity</span></td>
+              <td><span class="badge-speed">7.45x Capacity</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top: 1.5rem; text-align: center;">
+        <a href="benchmark-results-3way.html" class="btn-primary" style="display: inline-flex;">
+          <span>&#128202;</span> <span id="btnViewFullDash">View Full Interactive Dashboard & 10 Charts</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- SECTION 4: GETTING STARTED -->
+    <section class="section-wrap" id="start">
+      <div class="section-header">
+        <div class="section-tag" id="tagStart">Quickstart</div>
+        <h2 class="section-title" id="titleStart">Getting Started & Installation</h2>
+        <p class="section-desc" id="descStart">
+          Deploying this fork on Windows 11 and Ubuntu Linux is streamlined through pre-built releases and native build scripts.
+        </p>
+      </div>
+
+      <div class="story-grid">
+        <div class="story-card">
+          <h3 id="startTitle1">&#128230; 1. Download Pre-Built Releases</h3>
+          <p id="startP1">
+            Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable DLLs, <code>llama-cli</code>, <code>llama-server</code>, <code>llama-quantize</code>, and GUI scripts:
+          </p>
+          <div style="margin-top: 1rem;">
+            <a href="https://github.com/adromir/llama-cpp-turboquant/releases" target="_blank" class="btn-secondary" style="display: inline-flex;">
+              <span>&#128230;</span> Browse GitHub Releases
+            </a>
+          </div>
+        </div>
+
+        <div class="story-card">
+          <h3 id="startTitle2">&#9881; 2. Building from Source (CMake & Ninja)</h3>
+          <p id="startP2">
+            Build natively using AMD ROCm 10 / 10.1 (TheRock) and CMake:
+          </p>
+          <div class="code-box">
+            <div class="code-header">
+              <span>CMake / Ninja (ROCm TheRock)</span>
+              <span>Native Build</span>
+            </div>
+            <div class="code-content">
+<span class="code-comment"># Native build targeting AMD RDNA4 (gfx1200)</span>
+cmake -B build -G "Ninja" -DGGML_HIP=ON -DAMDGPU_TARGETS="gfx1200" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+      <p id="footerText">
+        Developed & Maintained by <a href="https://github.com/adromir" target="_blank">Adromir</a> | Based on <a href="https://github.com/TheTom/llama-cpp-turboquant" target="_blank">TheTom/llama-cpp-turboquant</a> and <a href="https://github.com/ggml-org/llama.cpp" target="_blank">ggml-org/llama.cpp</a> | AI Systems Engineering by Gemini 3.8
+      </p>
+    </footer>
+  </div>
+
+  <!-- BILINGUAL SCRIPT -->
+  <script>
+    var currentLang = 'en';
+    var translations = {
+      de: {
+        langBtnText: "Zu Englisch wechseln",
+        navTextBench: "4-Wege Benchmarks",
+        navTextAbout: "Über den Experimentellen Fork",
+        heroTitle: "Der Experimentelle TurboQuant + ROCm Fork",
+        heroSubtitle: "Vom automatisierten Build-System zur hochmodernen KI-gesteuerten GPU-Optimierung: Erfahren Sie, warum dieser Fork entstand, wie Gemini 3.8 seine Low-Level-Kernelarchitektur optimierte und wie Sie seine einzigartigen Funktionen nutzen.",
+        btnExploreText: "Spezielle Funktionen erkunden",
+        btnBenchText: "Live 4-Wege Benchmark-Ergebnisse",
+        btnViewFullDash: "Vollständiges Dashboard & 10 Diagramme ansehen",
+        kpiDecodeLbl: "Autoregressiver Decode (27B)",
+        kpiDecodeSub: "2.60x schneller als ROCm Upstream (6.83 t/s) und 2.29x schneller als Vulkan (7.75 t/s).",
+        kpiPrefillLbl: "Prompt-Prefill Durchsatz",
+        kpiPrefillSub: "+35.8% über ROCm Upstream und +103.5% über Vulkan auf AMD RDNA 4.",
+        kpiContextLbl: "Max. Sicherer Kontext (16GB VRAM)",
+        kpiContextSub: "7.45x Kontexterweiterung vs 14.848 Tokens im Upstream; TurboQuant KV benötigt nur 2.660 MiB für 110k Tokens.",
+        kpiQualityLbl: "Mathematische Genauigkeit (PPL)",
+        kpiQualitySub: "66.048 Tokens Kalibrierung beweisen identische/leicht überlegene Perplexität vs Q4_K_M.",
+        tagOrigin: "Projekt-Genesis & Vision",
+        titleOrigin: "Warum dieser Fork geschaffen wurde",
+        descOrigin: "Was als Build- und Verpackungswerkzeug für TheToms TurboQuant-Fork begann, entwickelte sich zu einem bahnbrechenden Experiment in KI-gesteuerter Systemprogrammierung auf AMD-Hardware.",
+        storyTitle1: "Phase 1: Automatisierte Plattformübergreifende ROCm-Builds",
+        storyP1_1: "Dieses Repository entstand mit einem klaren, pragmatischen Ziel: ein schlüsselfertiges automatisiertes Build- und CI/CD-System für TheToms bahnbrechenden TurboQuant-Fork bereitzustellen.",
+        storyP1_2: "Während TurboQuant revolutionäre KV-Cache-Kompression (2 bis 3.25 Bits/Wert mittels Walsh-Hadamard-Transformation) einführte, war das Erstellen und Ausführen auf modernen AMD ROCm-Umgebungen sehr mühsam. Unter Windows 11 fehlten portable Binaries und Compiler-Konflikte hemmten Anwender.",
+        storyP1_3: "Wir bauten automatisierte GitHub Actions CI/CD-Pipelines, die saubere, portable Fat-Binaries für Windows 11 und Ubuntu Linux über moderne AMD-Architekturen erzeugen.",
+        storyTitle2: "Phase 2: Das KI-Engineering-Experiment (Gemini 3.8)",
+        storyP2_1: "Nachdem die Build-Automatisierung stand, widmete sich der aktive experiment/rdna-boosts Zweig einer mutigen Forschungsfrage: Wie weit kann ein hochentwickeltes KI-Modell (Gemini 3.8) eigenständig Low-Level-GPU-Code diagnostizieren, modernisieren und über traditionelle Grenzen hinaus optimieren?",
+        storyP2_2: "Statt oberflächlichem Refactoring meisterte Gemini tiefes Systems-Engineering:",
+        storyP2_3: "Das Resultat: 2.60x Beschleunigung im autoregressiven Decode bei 27B-Modellen, +103.5% schnelleres Prompt-Prefill gegenüber Vulkan und voller 110k-Kontext ohne Qualitätsverlust.",
+        titleEco: "Die Multi-Fork Innovations-Brücke",
+        descEco: "Unser experimenteller Build vereint und harmonisiert die besten Spezialentwicklungen der Open-Source-LLM-Community:",
+        tagFeatures: "Engine-Fähigkeiten",
+        titleFeatures: "Einzigartige Funktionen & Nutzungsanleitung",
+        descFeatures: "Vollständige Dokumentation aller exklusiven Features dieses Forks inklusive konkreter CLI-Befehle, Umgebungsvariablen und Praxis-Beispielen.",
+        f1Title: "1. TurboQuant Ultra-Komprimierter KV-Cache & Gewichte",
+        f1Sum: "Reduzieren Sie den KV-Cache VRAM-Bedarf um bis zu 8x durch orthonormale Walsh-Hadamard-Rotation vor der Quantisierung.",
+        f2Title: "2. Native ROCmFPX / ROCmFP4 Quantisierungs-Familie",
+        f2Sum: "Sub-Byte Gleitkommaformate, die speziell für AMD RDNA- und CDNA-Hardwarearchitekturen maßgeschneidert sind.",
+        f3Title: "3. Gemini-Optimierte RDNA 3 & RDNA 4 Kernel-Suite",
+        f3Sum: "Tiefgreifende HIP- und Assembler-Optimierungen auf Hardware-Ebene zur Beseitigung von GPU-Ausführungsengpässen.",
+        f4Title: "4. Spekulative Dekodierung & MoE Reasoning-Beschleuniger",
+        f4Sum: "Integrierte Fortschritte aus Strata und Hipfire für hochfrequente Multi-Token-Generierung.",
+        f5Title: "5. Windows WDDM Paging-Schutz & Speicher-Sicherheitsbarrieren",
+        f5Sum: "Verhindern Sie katastrophale 7-10x Latenz-Zusammenbrüche durch transparentes Windows 11 RAM-Paging.",
+        tagMatrix: "Verifizierte Messwerte",
+        titleMatrix: "Empirische 4-Wege Performance-Matrix",
+        descMatrix: "Direkte empirische Messwerte auf AMD Radeon RX 9060 XT (16.304 MiB, gfx1200) mit Qwen 3.8 27B im Vergleich.",
+        tagStart: "Schnellstart",
+        titleStart: "Erste Schritte & Installation",
+        descStart: "Die Inbetriebnahme auf Windows 11 und Ubuntu Linux ist dank vorkompilierter Releases und nativer Build-Skripte denkbar einfach.",
+        startTitle1: "1. Vorkompilierte Releases herunterladen",
+        startP1: "Laden Sie fertige Release-Pakete von unserer GitHub Releases-Seite herunter. Jedes Paket enthält alle DLLs, CLI-Tools und GUI-Skripte.",
+        startTitle2: "2. Aus dem Quellcode bauen (CMake & Ninja)",
+        startP2: "Bauen Sie nativ mit AMD ROCm 10 / 10.1 (TheRock) und CMake:"
+      },
+      en: {
+        langBtnText: "Switch to Deutsch",
+        navTextBench: "4-Way Benchmarks",
+        navTextAbout: "About Experimental Fork",
+        heroTitle: "The Experimental TurboQuant + ROCm Fork",
+        heroSubtitle: "From automated cross-platform builds to state-of-the-art AI-directed GPU engineering: Discover why this fork was created, how Gemini 3.8 optimized its low-level kernel architecture, and how to harness its unique capabilities.",
+        btnExploreText: "Explore Special Features",
+        btnBenchText: "Live 4-Way Benchmark Results",
+        btnViewFullDash: "View Full Interactive Dashboard & 10 Charts",
+        kpiDecodeLbl: "Autoregressive Decode (27B)",
+        kpiDecodeSub: "2.60x faster than ROCm Upstream (6.83 t/s) and 2.29x faster than Vulkan (7.75 t/s).",
+        kpiPrefillLbl: "Prompt Prefill Throughput",
+        kpiPrefillSub: "+35.8% over ROCm Upstream and +103.5% over Vulkan on AMD RDNA 4.",
+        kpiContextLbl: "Max Safe Context on 16GB VRAM",
+        kpiContextSub: "7.45x context expansion vs 14,848 tokens stock limit; TurboQuant KV consumes only 2,660 MiB for 110k tokens.",
+        kpiQualityLbl: "Mathematical Accuracy (PPL)",
+        kpiQualitySub: "66,048 tokens calibration proves identical/slightly superior perplexity vs Q4_K_M.",
+        tagOrigin: "Project Genesis & Vision",
+        titleOrigin: "Why This Fork Was Created",
+        descOrigin: "What began as a packaging utility for TheTom's TurboQuant fork evolved into a groundbreaking experiment in AI-directed systems programming on AMD hardware.",
+        storyTitle1: "Phase 1: Automated Cross-Platform ROCm Builds",
+        storyP1_1: "This repository originated with a clear, pragmatic purpose: to provide a turnkey automated build and CI/CD system for TheTom's pioneering TurboQuant fork.",
+        storyP1_2: "While TurboQuant introduced revolutionary KV cache compression (2 to 3.25 bits/value via Walsh-Hadamard Transform), running and building it on modern AMD ROCm environments was notorious for friction. On Windows 11, lack of pre-built portable binaries, compiler header conflicts, and ROCm 10 toolchain shifts presented steep hurdles.",
+        storyP1_3: "We built automated GitHub Actions CI/CD pipelines producing clean, portable fat binaries for both Windows 11 and Ubuntu Linux across modern AMD architectures.",
+        storyTitle2: "Phase 2: The AI Engineering Experiment (Gemini 3.8)",
+        storyP2_1: "Once build automation was achieved, the active experiment/rdna-boosts branch embarked on a bolder exploration: How far can an advanced AI coding model (Gemini 3.8) autonomously diagnose, optimize, and push low-level GPU systems code beyond traditional hand-tuned performance limits?",
+        storyP2_2: "Rather than trivial refactoring, Gemini was tasked with deep systems engineering:",
+        storyP2_3: "The outcome: a 2.60x speedup in autoregressive decode throughput on 27B models, +103.5% faster prompt prefill over Vulkan, and complete on-device 110k context support with zero precision degradation.",
+        titleEco: "The Multi-Fork Innovation Bridge",
+        descEco: "Our experimental build unites and harmonizes the finest specialized innovations across the open-source LLM community:",
+        tagFeatures: "Engine Capabilities",
+        titleFeatures: "Unique Features & Usage Guide",
+        descFeatures: "Comprehensive documentation of features present exclusively in this fork, along with practical CLI arguments, environment variables, and usage recipes.",
+        f1Title: "1. TurboQuant Ultra-Compressed KV Cache & Weights",
+        f1Sum: "Shrink KV cache VRAM by up to 8x using Walsh-Hadamard orthonormal rotation before quantization.",
+        f2Title: "2. Native ROCmFPX / ROCmFP4 Quantization Family",
+        f2Sum: "Sub-byte floating point formats tailored specifically for AMD RDNA and CDNA hardware.",
+        f3Title: "3. Gemini-Engineered RDNA 3 & RDNA 4 Kernel Suite",
+        f3Sum: "Deep hardware-level HIP and assembly optimizations eliminating GPU execution stalls.",
+        f4Title: "4. Speculative Decoding & MoE Reasoning Accelerators",
+        f4Sum: "Integrated advancements from Strata and Hipfire for high-speed multi-token generation.",
+        f5Title: "5. Windows WDDM Paging Protection & Memory Safeguards",
+        f5Sum: "Prevent catastrophic 7-10x decode latency collapse on Windows 11 systems.",
+        tagMatrix: "Verified Results",
+        titleMatrix: "Empirical 4-Way Performance Matrix",
+        descMatrix: "Head-to-head empirical results on AMD Radeon RX 9060 XT (16,304 MiB, gfx1200) running Qwen 3.8 27B across configurations.",
+        tagStart: "Quickstart",
+        titleStart: "Getting Started & Installation",
+        descStart: "Deploying this fork on Windows 11 and Ubuntu Linux is streamlined through pre-built releases and native build scripts.",
+        startTitle1: "1. Download Pre-Built Releases",
+        startP1: "Grab ready-to-run release packages from our GitHub Releases page. Each release contains all portable DLLs, llama-cli, llama-server, llama-quantize, and GUI scripts.",
+        startTitle2: "2. Building from Source (CMake & Ninja)",
+        startP2: "Build natively using AMD ROCm 10 / 10.1 (TheRock) and CMake:"
+      }
+    };
+
+    function toggleLanguage() {
+      currentLang = currentLang === 'en' ? 'de' : 'en';
+      var t = translations[currentLang];
+      for (var key in t) {
+        var el = document.getElementById(key);
+        if (el) {
+          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            el.value = t[key];
+          } else {
+            el.innerText = t[key];
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
