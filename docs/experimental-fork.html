@@ -880,7 +880,9 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAS
           <h5>&#128161; Environment Tuning Knobs</h5>
           <p>
             <code>TURBO_LAYER_ADAPTIVE=7</code>: Boundary-layer precision allocation (preserves standard q8_0 precision on input/output boundary layers while utilizing turbo in the deep middle layers).<br>
-            <code>TURBO_AUTO_ASYMMETRIC=1</code>: Automatically pairs higher-precision K cache with compressed V cache for models with high GQA ratios.
+            <code>TURBO_AUTO_ASYMMETRIC=1</code>: Automatically pairs higher-precision K cache with compressed V cache for models with high GQA ratios.<br>
+            <code>TURBO_SPARSE_V=1</code>: Skips sparse-V dequantization in Flash Attention for additional memory latency savings.<br>
+            <code>GGML_TQ_NATIVE=1</code>: Uses fused native TQ dp4a kernels without load-time conversion, cutting decode-heavy VRAM overhead.
           </p>
         </div>
       </div>
@@ -895,24 +897,97 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAS
           <span class="feature-badge">Charlie + RDNA Boosts</span>
         </div>
         <div class="feature-body" id="f2Body">
-          Unlike generic integer K-quants designed for CPU/NVIDIA instruction sets, ROCmFPX uses micro-scaled floating point formats (UE4M3) that execute natively on AMD Compute Units:
+          Unlike generic integer K-quants designed for CPU/NVIDIA instruction sets, ROCmFPX uses micro-scaled floating point formats (UE4M3) and native signed nibbles that execute natively on AMD Compute Units and WMMA matrix cores:
+
+          <div class="table-wrap" style="margin: 1.25rem 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Format</th>
+                  <th>Precision</th>
+                  <th>Effective BPW</th>
+                  <th>Hardware Characteristics & Target Use Case</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong><code>Q4_0_ROCMFP4</code></strong></td>
+                  <td>4-bit Float (E2M1)</td>
+                  <td>~4.50</td>
+                  <td>Standard 4-bit float format with dual UE4M3 micro-scales; high perplexity retention.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q4_0_ROCMFP4_FAST</code></strong></td>
+                  <td>4-bit Float (E2M1)</td>
+                  <td>~4.50</td>
+                  <td>Single-scale speed layout accelerated by a 256-entry branchless LUT. Delivers <strong>2.60x faster decode (17.77 t/s)</strong> on RX 9060 XT with 2.1 GB VRAM savings.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q3_0_ROCMFPX</code></strong></td>
+                  <td>3-bit Float (FP3)</td>
+                  <td>~3.30</td>
+                  <td>Ultra-compact 3-bit weights for running 27B-70B models on tight VRAM envelopes.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q2_0_ROCMFPX</code></strong></td>
+                  <td>2-bit Float (S40)</td>
+                  <td>~2.50</td>
+                  <td>Extreme low-bit S40 codebook layout with dual UE4M3 scales for consumer GPUs and APUs.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q1_0_ROCMFPX</code></strong></td>
+                  <td>1-bit Float (Sign)</td>
+                  <td>~1.25</td>
+                  <td>Experimental 1-bit sign layout utilizing dual UE4M3 micro-scales.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q6_0_ROCMFPX</code></strong></td>
+                  <td>6-bit Float (E3M2)</td>
+                  <td>~6.50</td>
+                  <td>Near-F16 accuracy with 25% memory savings compared to Q8_0.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q8_0_ROCMFPX</code></strong></td>
+                  <td>8-bit Float (FP8)</td>
+                  <td>~8.50</td>
+                  <td>Reference-grade precision for base models and sensitive calibration layers.</td>
+                </tr>
+                <tr>
+                  <td><strong><code>Q4_0_ROCMI4</code></strong></td>
+                  <td>4-bit Int (W4A4)</td>
+                  <td>~4.00</td>
+                  <td>Native signed-nibble integer MMQ acceleration without codebook overhead.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4 style="color: #ffffff; margin: 1.25rem 0 0.5rem 0; font-size: 1.05rem;">Agent, Coherent & Hardware-Tuned Presets</h4>
           <ul class="feature-bullets">
-            <li><strong><code>Q4_0_ROCMFP4_FAST</code></strong>: Sub-byte 4-bit format accelerated by a 256-entry branchless scale LUT. Delivers <strong>2.60x faster decode (17.77 t/s)</strong> on RX 9060 XT with 2.1 GB weight VRAM reduction.</li>
-            <li><strong><code>Q2_0_ROCMFPX_AGENT</code></strong>: 2.75 bpw agent quantization that preserves Q6_K on attention heads and token embeddings while routing bulk feed-forward layers to 2-bit ROCmFP, keeping reasoning stable.</li>
-            <li><strong><code>Q1_0_ROCMFPX_AGENT</code></strong>: Experimental 1.50 bpw prototype utilizing dual UE4M3 micro-scales.</li>
+            <li><strong>Agent Routing Presets (<code>Q1_0/Q2_0/Q3_0/Q6_0/Q8_0_ROCMFPX_AGENT</code>)</strong>: Selective precision routing for production agents. Preserves <code>Q6_K</code> / <code>Q8_0</code> precision on token embeddings, output heads, and critical attention layers while driving bulk MLP feed-forward weights into sub-byte ROCmFP, preventing syntax breakdowns during complex JSON and tool calling.</li>
+            <li><strong>Coherent Presets (<code>Q4_0_ROCMFP4_COHERENT</code> & <code>_FAST_COHERENT</code>)</strong>: Combines high-speed ROCmFP4 execution with <code>Q6_K</code> embeddings for pristine reasoning coherence.</li>
+            <li><strong>Lean Presets (<code>Q4_0_ROCMFP4_LEAN</code> & <code>Q6_0_ROCMFPX_LEAN</code>)</strong>: Employs <code>Q5_K</code> embeddings to minimize VRAM overhead on memory-constrained systems.</li>
+            <li><strong>AMD Strix Halo APU Presets (<code>Q4_0_ROCMFP4_STRIX</code> & <code>_STRIX_LEAN</code>)</strong>: Tailored specifically for Strix Halo unified LPDDR5X memory, optimizing memory bus utilization and CU occupancy.</li>
           </ul>
         </div>
 
         <div class="code-box">
           <div class="code-header">
             <span>PowerShell / Bash</span>
-            <span>Creating ROCmFP4 Models & Launching GUI</span>
+            <span>Quantizing with llama-quantize & GUI Helper</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># 1. Quantize a model directly with llama-quantize</span>
+<span class="code-comment"># 1. Quantize directly to recommended high-speed ROCmFP4</span>
 llama-quantize models/Qwen3.8-27B-F16.gguf models/Qwen3.8-27B-ROCMFP4.gguf <span class="code-val">Q4_0_ROCMFP4_FAST</span>
 
-<span class="code-comment"># 2. Or launch our native PowerShell WPF GUI with live GPU telemetry</span>
+<span class="code-comment"># 2. Quantize with 2-bit or 3-bit Agent routing (preserves syntax & reasoning)</span>
+llama-quantize models/Qwen3.8-27B-F16.gguf models/Qwen3.8-27B-FP2-Agent.gguf <span class="code-val">Q2_0_ROCMFPX_AGENT</span>
+llama-quantize models/Qwen3.8-27B-F16.gguf models/Qwen3.8-27B-FP3-Agent.gguf <span class="code-val">Q3_0_ROCMFPX_AGENT</span>
+
+<span class="code-comment"># 3. Quantize with Strix Halo APU unified memory profile</span>
+llama-quantize models/Qwen3.8-27B-F16.gguf models/Qwen3.8-27B-Strix.gguf <span class="code-val">Q4_0_ROCMFP4_STRIX</span>
+
+<span class="code-comment"># 4. Or launch our native PowerShell WPF GUI with live GPU telemetry</span>
 powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
           </div>
         </div>
@@ -943,16 +1018,18 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
       <div class="feature-card">
         <div class="feature-header">
           <div class="feature-title-wrap">
-            <h3 id="f4Title">&#128640; 4. Speculative Decoding & MoE Reasoning Accelerators</h3>
-            <div class="feature-summary" id="f4Sum">Integrated advancements from Strata and Hipfire for high-speed multi-token generation.</div>
+            <h3 id="f4Title">&#128640; 4. Speculative Decoding & DFlash2 Diffusion Accelerators</h3>
+            <div class="feature-summary" id="f4Sum">Integrated advancements from DFlash2, Strata, and Hipfire for high-speed multi-token generation.</div>
           </div>
-          <span class="feature-badge">Strata + Hipfire</span>
+          <span class="feature-badge">DFlash2 + Strata</span>
         </div>
         <div class="feature-body" id="f4Body">
-          State-of-the-art speculative drafting and Mixture-of-Experts inference controls:
+          State-of-the-art speculative drafting and block-diffusion accelerators:
           <ul class="feature-bullets">
+            <li><strong>DFlash2 Block Diffusion Speculative Sidecar</strong>: Generates candidate blocks ($n=3$ to $7$ tokens) in parallel from intermediate target layers using a lightweight 1.03 GB diffusion network (<code>Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf</code>). Ported upstream PRs #27310 & #30196 fuse the encoder directly into KV decode and bundle sampling outputs into a single GPU synchronization pass, eliminating intermediate D2H copy stalls.</li>
+            <li><strong>Confidence-Gated Speculative Early Stopping (<code>--spec-draft-p-min 0.6</code>)</strong>: Prunes low-confidence speculative candidates when model confidence drops below 60%, boosting draft acceptance rates from ~25% to <strong>50.0% - 71.2%</strong> and cutting discarded tokens by half.</li>
+            <li><strong>Discrete GPU Sweet Spot (<code>--spec-draft-max 3</code>)</strong>: On consumer GPUs with a 128-bit memory bus (e.g. RX 9060 XT), short draft depths eliminate graph dispatch stalls, pushing peak code generation up to <strong>21.57 t/s</strong> (+17.2% vs bare decode).</li>
             <li><strong>Coupled Speculative Drafting with Gumbel-Max Sampling (<code>--spec-gumbel</code>)</strong>: Couples pseudo-random SplitMix64 Gumbel noise across target and draft models, keeping acceptance rates high during temperature-based creative sampling.</li>
-            <li><strong>Online Learned MoE Profile Auto-Saving (<code>--moe-expert-profile-save</code>)</strong>: Dynamically records expert activation hits during runtime and writes a binary profile on context free, eliminating offline profiling steps.</li>
             <li><strong>Dynamic Cumulative Log-Probability Pruning (<code>--draft-cutoff-logw</code>)</strong>: Prunes speculative draft proposals early when branch confidence drops below a threshold (e.g. -4.0), preventing wasted target verification compute.</li>
             <li><strong>Prompt Normalization Pipeline (<code>--prompt-normalize</code>)</strong>: Strips runaway newlines, trailing whitespace, and non-breaking spaces to stop BPE token fragmentation that hurts draft acceptance rates by up to 24%.</li>
             <li><strong>MTP Draft Vocabulary Subsetting (<code>--draft-vocab</code>)</strong>: Limits multi-token prediction heads to the top-N active vocabulary items.</li>
@@ -965,14 +1042,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
             <span>Accelerated Speculative Inference</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># Run speculative drafting with coupled Gumbel sampling, prompt normalization, and cutoff pruning</span>
+<span class="code-comment"># 1. Run DFlash2 Block Diffusion Speculative Decoding (Fastest on Discrete GPUs)</span>
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+          <span class="code-param">-md</span> models/Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf \
+          <span class="code-param">-c</span> <span class="code-val">8192</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">99</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">--spec-draft-max</span> <span class="code-val">3</span> \
+          <span class="code-param">--spec-draft-p-min</span> <span class="code-val">0.6</span>
+
+<span class="code-comment"># 2. Or run standard draft model with coupled Gumbel sampling & normalization</span>
 llama-cli <span class="code-param">-m</span> models/Target-27B.gguf \
           <span class="code-param">-md</span> models/Draft-1.5B.gguf \
           <span class="code-param">--spec-gumbel</span> <span class="code-val">1</span> \
           <span class="code-param">--temp</span> <span class="code-val">0.7</span> \
           <span class="code-param">--prompt-normalize</span> \
-          <span class="code-param">--draft-cutoff-logw</span> <span class="code-val">-4.0</span> \
-          <span class="code-param">--draft-vocab</span> <span class="code-val">4096</span>
+          <span class="code-param">--draft-cutoff-logw</span> <span class="code-val">-4.0</span>
           </div>
         </div>
       </div>
@@ -1005,6 +1090,82 @@ llama-cli <span class="code-param">-m</span> models/Target-27B.gguf \
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
           <span class="code-param">-c</span> <span class="code-val">16384</span> \
           <span class="code-param">--vram-reserve-mib</span> <span class="code-val">512</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 6: STRATA MOE EXPERT CACHE & PRE-SEEDING -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f6Title">&#129504; 6. Strata MoE Expert Cache & Startup Profile Pre-Seeding</h3>
+            <div class="feature-summary" id="f6Sum">Dynamic MoE memory tiering with instant ~70%+ cache hit rate and 4 GiB host RAM safety guard.</div>
+          </div>
+          <span class="feature-badge">Strata Engine</span>
+        </div>
+        <div class="feature-body" id="f6Body">
+          Mixture-of-Experts (MoE) architectures (such as Qwen 3.8 Next, Mixtral, and DeepSeek) route each token through a small subset of expert layers. Offloading all expert weights onto consumer GPUs often exceeds VRAM capacity:
+          <ul class="feature-bullets">
+            <li><strong>Instant Cache Warmup via Expert Profiles (<code>--moe-expert-profile</code>)</strong>: Standard LRU caches experience 100% cache misses during initial token generation. By pre-seeding hot experts from a binary profile (<code>data/expert-profile.bin</code> in STRP format) at startup, cache hit rates immediately start at <strong>~70%+</strong>, eliminating sluggish warmup delays.</li>
+            <li><strong>Safe Host Memory Pinning Guard (<code>--moe-cache-pin</code>)</strong>: Direct DMA transfers across PCIe stream cold experts without CPU copy overhead. Our memory guard dynamically queries total and free physical RAM (via <code>GlobalMemoryStatusEx</code> on Windows and <code>sysinfo</code> on Linux), guaranteeing a strict <strong>4 GiB unpinned physical RAM margin</strong> to prevent OS thrashing and system lockups.</li>
+            <li><strong>Online Learned Profile Saving (<code>--moe-expert-profile-save</code>)</strong>: Dynamically records expert activation hits during runtime and writes a binary profile on context free, eliminating manual offline profiling steps.</li>
+            <li><strong>Custom Profile Tooling</strong>: Generate custom activation profiles from recorded traces using <code>tools/make_profile.py</code>.</li>
+          </ul>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell / Bash</span>
+            <span>Running MoE with Expert Cache & Pre-Seeded Profiles</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Run MoE model with 24GB GPU expert cache, profile pre-seeding, and safe host pinning</span>
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-Next-MoE-Q4_K_M.gguf \
+          <span class="code-param">-c</span> <span class="code-val">32768</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">99</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">--cache-type-k</span> <span class="code-val">turbo3</span> \
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo3</span> \
+          <span class="code-param">--moe-expert-cache</span> <span class="code-val">24576M</span> \
+          <span class="code-param">--moe-expert-profile</span> <span class="code-val">data/expert-profile.bin</span> \
+          <span class="code-param">--moe-cache-pin</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEATURE 7: AVX-512 SIMD & HYBRID OFFLOADING -->
+      <div class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-wrap">
+            <h3 id="f7Title">&#9889; 7. Specialized AVX-512 SIMD Acceleration & Hybrid Offloading</h3>
+            <div class="feature-summary" id="f7Sum">Maximum CPU dot-product throughput and 2x-3x faster quantization on AMD Zen 4/5 and modern Intel CPUs.</div>
+          </div>
+          <span class="feature-badge">Zen 4/5 & Intel SIMD</span>
+        </div>
+        <div class="feature-body" id="f7Body">
+          While GPU offloading handles primary inference, modern high-parameter models (such as Qwen 3.8 Flash-Next 51B, Llama-3.3-70B, and deep MoE architectures) often exceed discrete GPU VRAM envelopes, requiring hybrid CPU+GPU offloading:
+          <ul class="feature-bullets">
+            <li><strong>Native 512-bit SIMD Execution (AVX512F, VBMI, VNNI, BF16)</strong>: Specialized builds leverage full 512-bit vector registers and hardware integer dot-product instructions on AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7950X, 9900X) and modern Intel CPUs, delivering up to <strong>2.5x higher CPU compute throughput</strong> compared to baseline AVX2.</li>
+            <li><strong>Accelerated Hybrid Offloading (<code>-ngl &lt;N&gt;</code>)</strong>: When partitioning layers across GPU and CPU, the AVX-512 backend drastically reduces CPU execution bottlenecks on non-offloaded layers, preventing CPU stall bubbles on large context evaluations.</li>
+            <li><strong>2x-3x Faster Model Quantization</strong>: Running CPU-bound quantization passes in <code>llama-quantize</code> (including ROCmFPX, TQ Lloyd-Max, and k-quants) completes in a fraction of the time with native SIMD acceleration.</li>
+            <li><strong>Dedicated Release Packages</strong>: Available directly as <code>llama-rocm-experimental-avx512-windows.zip</code> and <code>llama-rocm-experimental-avx512-linux.zip</code>, or built locally with <code>.\build.ps1 -Avx512</code>.</li>
+          </ul>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell / Bash</span>
+            <span>Hybrid Offloading with Specialized AVX-512 Build</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Run large 51B model with hybrid offload (45 layers on 16GB GPU, remaining on AVX-512 CPU)</span>
+llama-cli <span class="code-param">-m</span> models/Qwen3.8-Flash-Next-51B-Q4_K_M.gguf \
+          <span class="code-param">-c</span> <span class="code-val">16384</span> \
+          <span class="code-param">-ngl</span> <span class="code-val">45</span> \
+          <span class="code-param">-t</span> <span class="code-val">16</span> \
+          <span class="code-param">-fa</span> <span class="code-val">1</span> \
+          <span class="code-param">--cache-type-k</span> <span class="code-val">turbo3</span> \
+          <span class="code-param">--cache-type-v</span> <span class="code-val">turbo3</span>
           </div>
         </div>
       </div>
@@ -1128,6 +1289,9 @@ llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B.gguf \
             <li id="startLiAvx2"><strong>Universal AVX2 Builds</strong> (<code>llama-rocm-experimental-windows.zip</code> / <code>-linux.zip</code>): Standard compatibility across all modern x86-64 CPUs.</li>
             <li id="startLiAvx512"><strong>Specialized AVX-512 Builds</strong> (<code>llama-rocm-experimental-avx512-windows.zip</code> / <code>-linux.zip</code>): Compiled with AVX512F, VBMI, VNNI, and BF16 for AMD Zen 4 / Zen 5 (e.g. Ryzen 9 9950X3D, 7000/9000 series) and modern Intel CPUs. Accelerates <strong>hybrid CPU+GPU offloading</strong> (e.g. Qwen 3.8 Flash-Next 51B, 70B+ models exceeding VRAM) and speeds up model quantization by 2x-3x!</li>
           </ul>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.5rem;">
+            <strong>Multi-GPU / iGPU Tip:</strong> If your machine has both an integrated APU GPU and a discrete AMD GPU (e.g. Ryzen 9950X3D + RX 9060 XT), set your active device via <code>$env:HIP_VISIBLE_DEVICES="1"</code> (PowerShell) or <code>export HIP_VISIBLE_DEVICES=1</code> (Linux).
+          </p>
           <div style="margin-top: 1rem;">
             <a href="https://github.com/adromir/llama-cpp-turboquant/releases" target="_blank" class="btn-secondary" style="display: inline-flex;">
               <span>&#128230;</span> Browse GitHub Releases
@@ -1212,10 +1376,14 @@ cmake --build build --config Release
         f2Sum: "Sub-Byte Gleitkommaformate, die speziell für AMD RDNA- und CDNA-Hardwarearchitekturen maßgeschneidert sind.",
         f3Title: "3. Gemini-Optimierte RDNA 3 & RDNA 4 Kernel-Suite",
         f3Sum: "Tiefgreifende HIP- und Assembler-Optimierungen auf Hardware-Ebene zur Beseitigung von GPU-Ausführungsengpässen.",
-        f4Title: "4. Spekulative Dekodierung & MoE Reasoning-Beschleuniger",
-        f4Sum: "Integrierte Fortschritte aus Strata und Hipfire für hochfrequente Multi-Token-Generierung.",
+        f4Title: "4. Spekulative Dekodierung & DFlash2 Diffusions-Beschleuniger",
+        f4Sum: "Integrierte Fortschritte aus DFlash2, Strata und Hipfire für hochfrequente Multi-Token-Generierung.",
         f5Title: "5. Windows WDDM Paging-Schutz & Speicher-Sicherheitsbarrieren",
         f5Sum: "Verhindern Sie katastrophale 7-10x Latenz-Zusammenbrüche durch transparentes Windows 11 RAM-Paging.",
+        f6Title: "6. Strata MoE Expert-Cache & Startup Profil-Pre-Seeding",
+        f6Sum: "Dynamisches MoE-Speicher-Tiering mit sofortiger ~70%+ Cache-Hit-Rate und 4 GiB Wirts-RAM Schutzbarriere.",
+        f7Title: "7. Spezialisierte AVX-512 SIMD-Beschleunigung & Hybrides Offloading",
+        f7Sum: "Maximaler CPU-Durchsatz und 2-3x schnellere Modellquantisierung auf AMD Zen 4/5 und modernen Intel-CPUs.",
         tagMatrix: "Verifizierte Messwerte",
         titleMatrix: "Empirische 5-Wege Performance-Matrix",
         descMatrix: "Direkte empirische Messwerte auf AMD Radeon RX 9060 XT (16.304 MiB, gfx1200) mit Qwen 3.8 27B im Vergleich.",
@@ -1268,10 +1436,14 @@ cmake --build build --config Release
         f2Sum: "Sub-byte floating point formats tailored specifically for AMD RDNA and CDNA hardware.",
         f3Title: "3. Gemini-Engineered RDNA 3 & RDNA 4 Kernel Suite",
         f3Sum: "Deep hardware-level HIP and assembly optimizations eliminating GPU execution stalls.",
-        f4Title: "4. Speculative Decoding & MoE Reasoning Accelerators",
-        f4Sum: "Integrated advancements from Strata and Hipfire for high-speed multi-token generation.",
+        f4Title: "4. Speculative Decoding & DFlash2 Diffusion Accelerators",
+        f4Sum: "Integrated advancements from DFlash2, Strata, and Hipfire for high-speed multi-token generation.",
         f5Title: "5. Windows WDDM Paging Protection & Memory Safeguards",
         f5Sum: "Prevent catastrophic 7-10x decode latency collapse on Windows 11 systems.",
+        f6Title: "6. Strata MoE Expert Cache & Startup Profile Pre-Seeding",
+        f6Sum: "Dynamic MoE memory tiering with instant ~70%+ cache hit rate and 4 GiB host RAM safety guard.",
+        f7Title: "7. Specialized AVX-512 SIMD Acceleration & Hybrid Offloading",
+        f7Sum: "Maximum CPU dot-product throughput and 2x-3x faster quantization on AMD Zen 4/5 and modern Intel CPUs.",
         tagMatrix: "Verified Results",
         titleMatrix: "Empirical 5-Way Performance Matrix",
         descMatrix: "Head-to-head empirical results on AMD Radeon RX 9060 XT (16,304 MiB, gfx1200) running Qwen 3.8 27B across configurations.",

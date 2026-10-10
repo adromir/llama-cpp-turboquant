@@ -73,19 +73,36 @@ Unlike conventional integer k-quants (`Q4_K_M`, `Q5_K_M`), ROCmFPX formats use n
 
 | Format | GGML Type | Precision | Effective BPW | Target Use Case & Characteristics |
 | :--- | :--- | :--- | :--- | :--- |
-| `Q4_0_ROCMFP4` | `GGML_TYPE_Q4_0_ROCMFP4` | 4-bit Float (E2M1) | ~4.50 | Standard 4-bit float format with balanced perplexity |
-| `Q4_0_ROCMFP4_FAST` | `GGML_TYPE_Q4_0_ROCMFP4_FAST` | 4-bit Float (E2M1) | ~4.50 | Maximum decode tok/s on AMD RDNA GPUs (recommended FP4) |
+| `Q4_0_ROCMFP4` | `GGML_TYPE_Q4_0_ROCMFP4` | 4-bit Float (E2M1) | ~4.50 | Standard 4-bit float format with dual UE4M3 micro-scales |
+| `Q4_0_ROCMFP4_FAST` | `GGML_TYPE_Q4_0_ROCMFP4_FAST` | 4-bit Float (E2M1) | ~4.50 | Single-scale speed layout; maximum decode tok/s on AMD RDNA GPUs |
 | `Q3_0_ROCMFPX` | `GGML_TYPE_Q3_0_ROCMFPX` | 3-bit Float (FP3) | ~3.30 | Ultra-compact 3-bit weights for large models on smaller VRAM |
+| `Q2_0_ROCMFPX` | `GGML_TYPE_Q2_0_ROCMFPX` | 2-bit Float (S40) | ~2.50 | Ultra-low 2-bit S40 codebook layout with dual UE4M3 scales |
+| `Q1_0_ROCMFPX` | `GGML_TYPE_Q1_0_ROCMFPX` | 1-bit Float (Sign) | ~1.25 | Experimental 1-bit sign layout with dual UE4M3 micro-scales |
 | `Q6_0_ROCMFPX` | `GGML_TYPE_Q6_0_ROCMFPX` | 6-bit Float (E3M2) | ~6.50 | Near-F16 accuracy with 25% memory savings compared to Q8_0 |
 | `Q8_0_ROCMFPX` | `GGML_TYPE_Q8_0_ROCMFPX` | 8-bit Float (FP8) | ~8.50 | Reference-grade precision for base models and critical layers |
-| `Q4_0_ROCMI4` | `GGML_TYPE_Q4_0_ROCMI4` | 4-bit Int (W4A4) | ~4.00 | Experimental W4A4 integer MMQ acceleration on RDNA3.5/RDNA4 |
+| `Q4_0_ROCMI4` | `GGML_TYPE_Q4_0_ROCMI4` | 4-bit Int (W4A4) | ~4.00 | Native signed-nibble integer MMQ acceleration without codebook |
 
-### Agent & Coherent Presets
+### Agent, Coherent & Hardware-Tuned Presets
 
-For production agents requiring strict JSON formatting, tool calling, or complex reasoning, standard aggressive quantization can cause occasional syntax errors. ROCmFPX provides **Agent / Coherent presets**:
-- `Q4_0_ROCMFP4_COHERENT`: Keeps output layers, embeddings, and sensitive attention heads at `Q6_K` / `Q8_0` while quantizing dense MLP weights to ROCmFP4.
-- `Q3_0_ROCMFPX_AGENT`: Coherent 3-bit quantization preserving JSON syntax tracking.
-- `Q6_0_ROCMFPX_AGENT`: Near-lossless agent execution with high context stability.
+Standard uniform quantization can impair syntax tracking, tool-calling precision, or JSON structure in autonomous agents. ROCmFPX introduces layer-selective routing presets that preserve critical attention and embedding precision while aggressively compressing bulk MLP feeds:
+
+- **Agent Routing Presets** (Optimized for JSON, function calling & reasoning):
+  - `Q1_0_ROCMFPX_AGENT`: 1.50 bpw agent routing; guards attention heads while driving MLP weights to 1-bit.
+  - `Q2_0_ROCMFPX_AGENT`: 2.75 bpw agent routing; preserves `Q6_K` on attention heads and token embeddings while routing bulk FFN layers to 2-bit ROCmFP.
+  - `Q3_0_ROCMFPX_AGENT`: Coherent 3-bit quantization preserving JSON syntax tracking and tool calling.
+  - `Q6_0_ROCMFPX_AGENT`: Near-lossless 6-bit agent execution with extreme context stability.
+  - `Q8_0_ROCMFPX_AGENT`: Reference-grade 8-bit agent routing for base models.
+
+- **Coherent & Lean Presets**:
+  - `Q4_0_ROCMFP4_COHERENT`: Dual-scale ROCmFP4 keeping output layers, embeddings, and sensitive heads at `Q6_K`.
+  - `Q4_0_ROCMFP4_FAST_COHERENT`: Single-scale fast ROCmFP4 layout paired with `Q6_K` embeddings for speed + reasoning fidelity.
+  - `Q4_0_ROCMFP4_LEAN`: ROCmFP4 with `Q5_K` token embeddings for tighter VRAM constraints.
+  - `Q6_0_ROCMFPX_LEAN`: 6-bit size/speed-biased routing.
+  - `Q6_0_ROCMFPX_AGENT_LEAN`: 6-bit agent routing without heavy Q8 layer boosts.
+
+- **AMD Strix Halo APU Presets**:
+  - `Q4_0_ROCMFP4_STRIX`: Tailored for AMD Strix Halo unified memory; optimizes memory bus bandwidth and compute occupancy.
+  - `Q4_0_ROCMFP4_STRIX_LEAN`: Strix Halo size-biased K/V recipe for maximum context expansion on shared system RAM.
 
 ---
 
@@ -153,9 +170,29 @@ llama-cli.exe -m models/Qwen3.8-Next-MoE-Q4_K_M.gguf \
 
 ---
 
+## DFlash2 Speculative Decoding Sidecar
+
+Our experimental distribution features native integration for **DFlash2 Block Diffusion Speculative Decoding** ([DFlash](https://github.com/DFlash-AI/dflash)):
+- **Non-Autoregressive Block Diffusion**: Rather than predicting draft tokens auto-regressively one token at a time, DFlash2 uses a lightweight 1.03 GB sidecar diffusion network to generate candidate blocks ($n=3$ to $7$ tokens) in parallel from intermediate target model layers.
+- **Fused Encoder & Single-Sync Pipeline**: Redundant host/device memory transfers are eliminated by fusing the encoder directly into KV decode injection and bundling sampling outputs into a single stream synchronization.
+- **Confidence-Gated Early Stopping (`--spec-draft-p-min 0.6`)**: Prunes low-confidence speculative candidates when model confidence drops below 60%, boosting draft acceptance rates up to **71.2%**.
+- **Discrete GPU Optimization**: On discrete GPUs with a 128-bit memory bus (e.g. RX 9060 XT), short draft depths (`--spec-draft-max 3` or `--spec-draft-adaptive`) represent the optimal sweet spot, delivering up to **21.57 t/s** (+17.2%) on structured coding and technical prose without memory bus stalls.
+
+### Running with DFlash2 Speculative Decoding
+
+```bash
+llama-cli.exe -m models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
+  -md models/Qwen3.8-27B-DFlash2-Q4_0_ROCMFP4_FAST.gguf \
+  -c 8192 -ngl 99 -fa 1 \
+  --spec-draft-max 3 \
+  --spec-draft-p-min 0.6
+```
+
+---
+
 ## Benchmark Results
 
-A comprehensive 3-way benchmark evaluation was conducted on AMD RDNA 4 hardware comparing upstream `llama.cpp` against this experimental distribution across **prefill throughput**, **decode speed**, **Multi-Token Prediction (MTP) acceptance rate**, **VRAM utilization**, and **maximum viable context length**.
+A comprehensive 5-way benchmark evaluation was conducted on AMD RDNA 4 hardware comparing upstream `llama.cpp` (ROCm & Vulkan) against this experimental distribution across **prefill throughput**, **decode speed**, **DFlash2 & MTP speculative acceptance rates**, **VRAM utilization**, and **maximum viable context length**.
 
 > [!TIP]
 > **Live Interactive Benchmark Dashboard (GitHub Pages)**:
@@ -211,16 +248,24 @@ You can quantize any model from standard BF16/F16 GGUF weights or requantize fro
 # 1. Quantize from BF16/F16 to ROCmFP4 (Fast)
 llama-quantize models/model-BF16.gguf models/model-ROCmFP4.gguf Q4_0_ROCMFP4_FAST
 
-# 2. Quantize to 3-bit ROCmFP3
-llama-quantize models/model-BF16.gguf models/model-ROCmFP3.gguf Q3_0_ROCMFPX
+# 2. Quantize to Coherent Fast ROCmFP4 (Q6_K token embeddings for reasoning fidelity)
+llama-quantize models/model-BF16.gguf models/model-ROCmFP4-Coherent.gguf Q4_0_ROCMFP4_FAST_COHERENT
 
-# 3. Quantize to TurboQuant WHT-Rotated Weights
+# 3. Quantize with AMD Strix Halo APU recipe
+llama-quantize models/model-BF16.gguf models/model-Strix.gguf Q4_0_ROCMFP4_STRIX
+
+# 4. Quantize to 3-bit / 2-bit / 1-bit Agent routing presets (preserves syntax & reasoning)
+llama-quantize models/model-BF16.gguf models/model-FP3-Agent.gguf Q3_0_ROCMFPX_AGENT
+llama-quantize models/model-BF16.gguf models/model-FP2-Agent.gguf Q2_0_ROCMFPX_AGENT
+llama-quantize models/model-BF16.gguf models/model-FP1-Agent.gguf Q1_0_ROCMFPX_AGENT
+
+# 5. Quantize to TurboQuant WHT-Rotated Weights
 llama-quantize models/model-BF16.gguf models/model-TQ4.gguf tq4_1s
 
-# 4. Requantize from an existing Q8_0 or Q4_K_M GGUF (add --allow-requantize)
+# 6. Requantize from an existing Q8_0 or Q4_K_M GGUF (add --allow-requantize)
 llama-quantize --allow-requantize models/model-Q8_0.gguf models/model-ROCmFP4.gguf Q4_0_ROCMFP4_FAST
 
-# 5. Using an Importance Matrix (Imatrix) for superior quality at low bitrates
+# 7. Using an Importance Matrix (Imatrix) for superior quality at low bitrates
 llama-quantize --imatrix imatrix.gguf models/model-BF16.gguf models/model-ROCmFP3-imatrix.gguf Q3_0_ROCMFPX
 ```
 
