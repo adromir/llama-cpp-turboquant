@@ -934,7 +934,6 @@
           </div>
           <div class="code-content">
 <span class="code-comment"># 1. Extended 32k context with Asymmetric TurboQuant (178.4 t/s prefill, 18.2 t/s decode)</span>
-$env:GGML_CUDA_FA_WMMA_256 = "0"
 $env:TURBO_SPARSE_V = "1"
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-c</span> <span class="code-val">32768</span> \
@@ -1238,8 +1237,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
           <ul class="feature-bullets">
             <li><strong>Tuned Micro-Batching Sweet Spot (<code>-b 512 -ub 256</code>)</strong>: Restricting micro-batching to 128-256 tokens drops GPU scratch memory allocations by 4x. On 128-bit memory bus architectures (e.g. RX 9060 XT), this prevents GPU L2/Infinity Cache thrashing during multi-token verification passes ($n_q = 2$), surging generation throughput up to <strong>25.17 t/s avg</strong> and peaking at <strong>25.75 t/s on C++ code</strong> (prompt prefill up to 177.7 t/s).</li>
             <li><strong>Discrete GPU Draft Depth (<code>--spec-draft-n-max 1</code>)</strong>: Drafting 1 token converts over 62% of cycles into 2-token outputs with negligible verification overhead. Deeper unconstrained drafting ($n \ge 3$) causes memory bus saturation during parallel verification, dropping throughput down to 13.59 t/s.</li>
-            <li><strong>KV Cache Constraint with MTP (FP16 Required)</strong>: Internal MTP heads require uncompressed FP16 KV cache (omitting <code>-ctk/-ctv</code> flags). Quantized KV caches (<code>q8_0</code>, <code>turbo3</code>) introduce dequantization attention drift that causes exact verification to reject valid draft tokens. For ultra-long contexts (>16k-110k) where TurboQuant KV is required to fit in VRAM, deploy <strong>DFlash2 Block Diffusion</strong> (which pairs seamlessly with TurboQuant KV, achieving up to <strong>21.57 t/s</strong>).</li>
-            <li><strong>Critical RDNA4 Flash Attention Setting (<code>GGML_CUDA_FA_WMMA_256=0</code>)</strong>: For models with head dimension 256 (such as Qwen 3.8 27B), disabling WMMA kernel dispatch ensures bit-identical tile kernel execution across decode and verification batches, completely preventing draft verification rejection.</li>
+            <li><strong>KV Cache Quantization with Tolerant Verification (<code>--spec-draft-tol 0.05</code>)</strong>: While strict verification previously required uncompressed FP16 KV cache to prevent rejection from dequantization rounding drift, the newly integrated <code>--spec-draft-tol 0.05</code> (or <code>LLAMA_SPEC_TOL_LOGIT=0.05</code>) allows MTP to maintain high acceptance (~55-65%) even with compressed KV caches (<code>q8_0</code>, <code>turbo3</code>). For ultra-long contexts (>16k-110k), pair with TurboQuant KV or deploy <strong>DFlash2 Block Diffusion</strong> (up to <strong>21.57 t/s</strong>).</li>
+            <li><strong>Automated RDNA4 Flash Attention Auto-Resolution</strong>: Verification batches (<code>Q-&gt;ne[1] &lt;= 8</code>) now automatically select the bit-identical Tile kernel on RDNA4 to match single decode (<code>Q-&gt;ne[1] == 1</code>), eliminating numerical drift and removing the previous requirement to manually set <code>GGML_CUDA_FA_WMMA_256=0</code>.</li>
             <li><strong>Split CPU Thread Allocation (<code>-t 8 -tb 16</code>)</strong>: Maximizes prompt chunking efficiency on all physical cores while preventing scheduler contention during token-by-token decode.</li>
             <li><strong>Prompt Normalization (<code>--prompt-normalize</code>)</strong>: Eliminates trailing whitespace and newline fragmentation that degrades draft acceptance by up to 24%.</li>
           </ul>
@@ -1251,8 +1250,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\quantize-rocmfpx-gui.ps1
             <span>Accelerated Speculative Execution Recipes</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># 1. Run Qwen 27B with Optimal MTP Launch Parameters (Peak 25.75 t/s on RX 9060 XT)</span>
-$env:GGML_CUDA_FA_WMMA_256 = "0"
+<span class="code-comment"># 1. Run Qwen 27B with Optimal MTP Launch Parameters (Peak 25.75 t/s on RX 9060 XT - FA auto-resolved)</span>
 llama-cli <span class="code-param">-m</span> models/Qwen3.8-27B-Q4_0_ROCMFP4_FAST.gguf \
           <span class="code-param">-c</span> <span class="code-val">8192</span> \
           <span class="code-param">-ngl</span> <span class="code-val">999</span> \

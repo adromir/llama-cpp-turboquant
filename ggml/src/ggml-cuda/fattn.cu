@@ -3309,7 +3309,9 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
         while (gqa_ratio % (2*gqa_ratio_eff_rdna4) == 0 && gqa_ratio_eff_rdna4 < ncols2_max_rdna4) {
             gqa_ratio_eff_rdna4 *= 2;
         }
-        if (Q->ne[1] * gqa_ratio_eff_rdna4 <= 8) {
+        // Speculative verify batches (Q->ne[1] <= 8) must stay on the tile kernel to match
+        // single decode (Q->ne[1] == 1) bit-identically on RDNA4, preventing draft rejection.
+        if (Q->ne[1] <= 8 || Q->ne[1] * gqa_ratio_eff_rdna4 <= 8) {
             return BEST_FATTN_KERNEL_TILE;
         }
         return BEST_FATTN_KERNEL_MMA_F16;

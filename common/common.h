@@ -253,6 +253,7 @@ struct common_params_sampling {
     bool    ignore_eos         = false;
     bool    no_perf            = false;  // disable performance metrics
     bool    timing_per_token   = false;
+    float   spec_draft_tol     = 0.0f;   // speculative verification logit tolerance (0.0 = strict top-1 match)
 
     uint64_t user_sampling_config = 0; // bitfield to track user-specified samplers
 
@@ -360,6 +361,7 @@ struct common_params_speculative_draft {
     int32_t n_ubatch              = 0;     // physical maximum batch size for the draft context (0 = inherit target ubatch)
     int32_t draft_vocab           = 0;     // limit speculative draft vocabulary to top N tokens (0 = full vocab)
     float   draft_cutoff_logw     = 0.0f;  // cumulative log-probability cutoff for speculative drafting (0.0 = disabled, negative = active threshold)
+    float   draft_tol_logit       = 0.0f;  // logit tolerance for speculative verification (0.0 = disabled, e.g. 0.05 allows quantized KV cache drafting)
 };
 
 struct common_params_speculative_ngram_mod {

@@ -4362,6 +4362,15 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_DRAFT_CUTOFF_LOGW"));
     add_opt(common_arg(
+        {"--spec-draft-tol", "--draft-tol", "--spec-tol-logit"}, "TOL",
+        string_format("speculative verification logit tolerance margin (default: %.2f = strict match)",
+            (double)params.sampling.spec_draft_tol),
+        [](common_params & params, const std::string & value) {
+            params.sampling.spec_draft_tol = std::stof(value);
+            params.speculative.draft.draft_tol_logit = params.sampling.spec_draft_tol;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_SPEC_TOL_LOGIT"));
+    add_opt(common_arg(
         {"--spec-gumbel"},
         string_format("couple speculative draft and target sampling via Gumbel-Max noise sharing (default: %s)",
             params.sampling.spec_gumbel ? "true" : "false"),

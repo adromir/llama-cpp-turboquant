@@ -662,9 +662,32 @@ std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sample
     std::vector<llama_token> result;
     result.reserve(idxs.size());
 
+    static const float spec_tol_env = []() {
+        const char * env = getenv("LLAMA_SPEC_TOL_LOGIT");
+        return env ? (float)atof(env) : 0.0f;
+    }();
+    const float tol = std::max(spec_tol_env, gsmpl->params.spec_draft_tol);
+
     size_t i = 0;
     for (; i < draft.size(); i++) {
-        const llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
+        llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
+
+        if (draft[i] != id && tol > 0.0f) {
+            const auto & cur_p = gsmpl->cur_p;
+            float top_logit = -INFINITY;
+            float draft_logit = -INFINITY;
+            for (size_t k = 0; k < cur_p.size; ++k) {
+                if (cur_p.data[k].id == id) {
+                    top_logit = cur_p.data[k].logit;
+                }
+                if (cur_p.data[k].id == draft[i]) {
+                    draft_logit = cur_p.data[k].logit;
+                }
+            }
+            if (draft_logit != -INFINITY && (top_logit - draft_logit) <= tol) {
+                id = draft[i];
+            }
+        }
 
         common_sampler_accept(gsmpl, id, true);
 

@@ -1901,7 +1901,7 @@ static inline bool ggml_cuda_fattn_band_wmma_applies(const int cc, const ggml_te
     const bool kv_ok    = kv_quant || kv_f16;
 
     return gqa_opt && Q->ne[1] <= 8 && Q->ne[3] == 1 && Q->ne[0] == 256 && V->ne[0] == 256 &&
-           gqa_ratio > 4 && gqa_ratio <= 8 && logit_softcap == 0.0f && kv_ok;
+           gqa_ratio > 4 && gqa_ratio <= 12 && logit_softcap == 0.0f && kv_ok;
 }
 
 template <int DV, int ncols1, int ncols2>

@@ -178,9 +178,9 @@ static __global__ void k_turbo_wht_fast(const T * __restrict__ src,
         v = *((const float4 *) (src + base) + lane);
     } else {
         const half2 * h2_src = (const half2 *) (src + base) + 2 * lane;
-        half2 h01 = h2_src[0];
-        half2 h23 = h2_src[1];
-        v = make_float4(__low2float(h01), __high2float(h01), __low2float(h23), __high2float(h23));
+        const float2 f01 = __half22float2(h2_src[0]);
+        const float2 f23 = __half22float2(h2_src[1]);
+        v = make_float4(f01.x, f01.y, f23.x, f23.y);
     }
 
     // InnerQ forward: scale before signs+WHT, as in the original kernel.
@@ -249,8 +249,8 @@ static __global__ void k_turbo_wht_fast(const T * __restrict__ src,
         *((float4 *) (dst + base) + lane) = v;
     } else {
         half2 * h2_dst = (half2 *) (dst + base) + 2 * lane;
-        h2_dst[0] = make_half2(__float2half(v.x), __float2half(v.y));
-        h2_dst[1] = make_half2(__float2half(v.z), __float2half(v.w));
+        h2_dst[0] = __float22half2_rn(make_float2(v.x, v.y));
+        h2_dst[1] = __float22half2_rn(make_float2(v.z, v.w));
     }
 }
 

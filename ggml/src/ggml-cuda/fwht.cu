@@ -40,18 +40,32 @@ __global__ void fwht_cuda(const T * src, float * dst, const int64_t n_rows, cons
         }
     }
 
-#pragma unroll
-    for (int h = warp_size; h < N; h *= 2) {
-        const int step = h / warp_size;
-#pragma unroll
-        for (int j = 0; j < el_w; j += 2 * step) {
-#pragma unroll
-            for (int k = 0; k < step; k++) {
-                const float x = reg[j + k];
-                const float y = reg[j + k + step];
+    if constexpr (N == 128 && el_w == 4) {
+        // Stage h = 32
+        const float x0 = reg[0], y0 = reg[1];
+        reg[0] = x0 + y0; reg[1] = x0 - y0;
+        const float x1 = reg[2], y1 = reg[3];
+        reg[2] = x1 + y1; reg[3] = x1 - y1;
 
-                reg[j + k]        = x + y;
-                reg[j + k + step] = x - y;
+        // Stage h = 64
+        const float a0 = reg[0], b0 = reg[2];
+        reg[0] = a0 + b0; reg[2] = a0 - b0;
+        const float a1 = reg[1], b1 = reg[3];
+        reg[1] = a1 + b1; reg[3] = a1 - b1;
+    } else {
+#pragma unroll
+        for (int h = warp_size; h < N; h *= 2) {
+            const int step = h / warp_size;
+#pragma unroll
+            for (int j = 0; j < el_w; j += 2 * step) {
+#pragma unroll
+                for (int k = 0; k < step; k++) {
+                    const float x = reg[j + k];
+                    const float y = reg[j + k + step];
+
+                    reg[j + k]        = x + y;
+                    reg[j + k + step] = x - y;
+                }
             }
         }
     }
