@@ -134,6 +134,42 @@ static __device__ void cpy_blck_turbo5_0_f32(const char * cxi, char * cdsti) {
     }
 }
 
+static __device__ void cpy_blck_turbo4_0_f32(const char * cxi, char * cdsti) {
+    float * cdstf = (float *)(cdsti);
+
+#pragma unroll
+    for (int j = 0; j < QK_TURBO4; j += 2) {
+        float2 dq;
+        dequantize_turbo4_0(cxi, 0, j, dq);
+        *(cdstf + j) = dq.x;
+        *(cdstf + j + 1) = dq.y;
+    }
+}
+
+static __device__ void cpy_blck_turbo3_0_f32(const char * cxi, char * cdsti) {
+    float * cdstf = (float *)(cdsti);
+
+#pragma unroll
+    for (int j = 0; j < QK_TURBO3; j += 2) {
+        float2 dq;
+        dequantize_turbo3_0(cxi, 0, j, dq);
+        *(cdstf + j) = dq.x;
+        *(cdstf + j + 1) = dq.y;
+    }
+}
+
+static __device__ void cpy_blck_turbo2_0_f32(const char * cxi, char * cdsti) {
+    float * cdstf = (float *)(cdsti);
+
+#pragma unroll
+    for (int j = 0; j < QK_TURBO2; j += 2) {
+        float2 dq;
+        dequantize_turbo2_0(cxi, 0, j, dq);
+        *(cdstf + j) = dq.x;
+        *(cdstf + j + 1) = dq.y;
+    }
+}
+
 template<dequantize_kernel_t dequant, int qk>
 static __device__ void cpy_blck_q_f32(const char * cxi, char * cdsti) {
     float * cdstf = (float *)(cdsti);
@@ -145,6 +181,10 @@ static __device__ void cpy_blck_q_f32(const char * cxi, char * cdsti) {
         *(cdstf + j) = dq.x;
         *(cdstf + j + qk/2) = dq.y;
     }
+}
+
+static __device__ void cpy_blck_rocmi4_f32(const char * cxi, char * cdsti) {
+    cpy_blck_q_f32<dequantize_rocmi4, QK_ROCMI4>(cxi, cdsti);
 }
 
 template <cpy_kernel_t cpy_blck, int qk>
@@ -314,6 +354,39 @@ static void ggml_cpy_turbo5_0_f32_cuda(
     const int64_t num_blocks = (ne/QK_TURBO5 + CUDA_CPY_BLOCK_SIZE - 1) / CUDA_CPY_BLOCK_SIZE;
     GGML_ASSERT(num_blocks <= INT_MAX);
     cpy_q_f32<cpy_blck_turbo5_0_f32, QK_TURBO5><<<num_blocks, CUDA_CPY_BLOCK_SIZE, 0, stream>>>
+        (cx, cdst, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13);
+}
+
+static void ggml_cpy_turbo4_0_f32_cuda(
+    const char * cx, char * cdst, const int64_t ne,
+    const int64_t ne00, const int64_t ne01, const int64_t ne02, const int64_t nb00, const int64_t nb01, const int64_t nb02,
+    const int64_t nb03, const int64_t ne10, const int64_t ne11, const int64_t ne12, const int64_t nb10, const int64_t nb11, const int64_t nb12, const int64_t nb13, cudaStream_t stream) {
+
+    const int64_t num_blocks = (ne/QK_TURBO4 + CUDA_CPY_BLOCK_SIZE - 1) / CUDA_CPY_BLOCK_SIZE;
+    GGML_ASSERT(num_blocks <= INT_MAX);
+    cpy_q_f32<cpy_blck_turbo4_0_f32, QK_TURBO4><<<num_blocks, CUDA_CPY_BLOCK_SIZE, 0, stream>>>
+        (cx, cdst, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13);
+}
+
+static void ggml_cpy_turbo3_0_f32_cuda(
+    const char * cx, char * cdst, const int64_t ne,
+    const int64_t ne00, const int64_t ne01, const int64_t ne02, const int64_t nb00, const int64_t nb01, const int64_t nb02,
+    const int64_t nb03, const int64_t ne10, const int64_t ne11, const int64_t ne12, const int64_t nb10, const int64_t nb11, const int64_t nb12, const int64_t nb13, cudaStream_t stream) {
+
+    const int64_t num_blocks = (ne/QK_TURBO3 + CUDA_CPY_BLOCK_SIZE - 1) / CUDA_CPY_BLOCK_SIZE;
+    GGML_ASSERT(num_blocks <= INT_MAX);
+    cpy_q_f32<cpy_blck_turbo3_0_f32, QK_TURBO3><<<num_blocks, CUDA_CPY_BLOCK_SIZE, 0, stream>>>
+        (cx, cdst, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13);
+}
+
+static void ggml_cpy_turbo2_0_f32_cuda(
+    const char * cx, char * cdst, const int64_t ne,
+    const int64_t ne00, const int64_t ne01, const int64_t ne02, const int64_t nb00, const int64_t nb01, const int64_t nb02,
+    const int64_t nb03, const int64_t ne10, const int64_t ne11, const int64_t ne12, const int64_t nb10, const int64_t nb11, const int64_t nb12, const int64_t nb13, cudaStream_t stream) {
+
+    const int64_t num_blocks = (ne/QK_TURBO2 + CUDA_CPY_BLOCK_SIZE - 1) / CUDA_CPY_BLOCK_SIZE;
+    GGML_ASSERT(num_blocks <= INT_MAX);
+    cpy_q_f32<cpy_blck_turbo2_0_f32, QK_TURBO2><<<num_blocks, CUDA_CPY_BLOCK_SIZE, 0, stream>>>
         (cx, cdst, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13);
 }
 
@@ -878,6 +951,22 @@ static void ggml_cpy_rocmfpx_fp8_f32_contiguous_hip(
             (const block_rocmfp8 *) cx, (float *) cdst, ne);
 }
 
+static void ggml_cpy_rocmi4_f32_hip(
+    const char * cx, char * cdst, const int64_t ne,
+    const int64_t ne00, const int64_t ne01, const int64_t ne02,
+    const int64_t nb00, const int64_t nb01, const int64_t nb02,
+    const int64_t nb03, const int64_t ne10, const int64_t ne11, const int64_t ne12,
+    const int64_t nb10, const int64_t nb11, const int64_t nb12, const int64_t nb13,
+    cudaStream_t stream) {
+    GGML_ASSERT(ne % QK_ROCMI4 == 0);
+    const int64_t num_qblocks = ne / QK_ROCMI4;
+    const int64_t num_blocks = (num_qblocks + CUDA_CPY_BLOCK_SIZE - 1) / CUDA_CPY_BLOCK_SIZE;
+    GGML_ASSERT(num_blocks < UINT_MAX);
+    cpy_q_f32<cpy_blck_rocmi4_f32, QK_ROCMI4><<<num_blocks, CUDA_CPY_BLOCK_SIZE, 0, stream>>>(
+        cx, cdst, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03,
+        ne10, ne11, ne12, nb10, nb11, nb12, nb13);
+}
+
 template <int block_bytes>
 static void ggml_cpy_rocmfp4_rocmfp4_hip(
     const char * cx, char * cdst, const int64_t ne,
@@ -1067,6 +1156,9 @@ void ggml_cuda_cpy(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, gg
     } else if (src0->type == GGML_TYPE_Q8_0_ROCMFPX && src1->type == GGML_TYPE_Q8_0_ROCMFPX) {
         ggml_cpy_rocmfp4_rocmfp4_hip<sizeof(block_rocmfp8)>
                 (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
+    } else if (src0->type == GGML_TYPE_Q4_0_ROCMI4 && src1->type == GGML_TYPE_Q4_0_ROCMI4) {
+        ggml_cpy_rocmfp4_rocmfp4_hip<sizeof(block_rocmi4)>
+                (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
     } else if (ggml_cuda_cpy_as_memcpy_2d(src0, src1, mc_width, mc_height, mc_spitch, mc_dpitch)) {
         CUDA_CHECK(cudaMemcpy2DAsync(src1_ddc, mc_dpitch, src0_ddc, mc_spitch,
                                      mc_width, mc_height, cudaMemcpyDefault, main_stream));
@@ -1105,6 +1197,15 @@ void ggml_cuda_cpy(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, gg
                 (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
     } else if (src0->type == GGML_TYPE_TURBO5_0 && src1->type == GGML_TYPE_F32) {
         ggml_cpy_turbo5_0_f32_cuda
+                (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
+    } else if (src0->type == GGML_TYPE_TURBO4_0 && src1->type == GGML_TYPE_F32) {
+        ggml_cpy_turbo4_0_f32_cuda
+                (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
+    } else if (src0->type == GGML_TYPE_TURBO3_0 && src1->type == GGML_TYPE_F32) {
+        ggml_cpy_turbo3_0_f32_cuda
+                (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
+    } else if (src0->type == GGML_TYPE_TURBO2_0 && src1->type == GGML_TYPE_F32) {
+        ggml_cpy_turbo2_0_f32_cuda
                 (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
     } else if (src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_Q4_0) {
         ggml_cpy_f32_q4_0_cuda
@@ -1198,6 +1299,9 @@ void ggml_cuda_cpy(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, gg
             ggml_cpy_rocmfpx_fp8_f32_hip
                     (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
         }
+    } else if (src0->type == GGML_TYPE_Q4_0_ROCMI4 && src1->type == GGML_TYPE_F32) {
+        ggml_cpy_rocmi4_f32_hip
+                (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
     } else if (src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_Q5_0) {
         ggml_cpy_f32_q5_0_cuda
                 (src0_ddc, src1_ddc, ne, ne00, ne01, ne02, nb00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb13, main_stream);
