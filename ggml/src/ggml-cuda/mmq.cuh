@@ -1803,6 +1803,24 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, 
         }
     }
 
+    // A weight that fits a few row tiles (the 48-row ssm_alpha/ssm_beta of a gated delta net) gets only a few tiles at
+    // the widest J and leaves most of the GPU idle. On RDNA4 the narrowest tile is then 2-3x faster (512 columns).
+    // Each output still sums its K blocks in the same order, so the result does not change.
+    if (GGML_CUDA_CC_IS_RDNA4(cc) && args.expert_bounds == nullptr) {
+        const int nsm = ggml_cuda_info().devices[id].nsm;
+        const ggml_cuda_mmq_config config_best = ggml_cuda_mmq_get_config(type, J_best, fallback, cc);
+        const int64_t ntiles = (args.nrows_x + config_best.I - 1)/config_best.I * ((args.ncols_x + J_best - 1)/J_best) * args.nchannels_x * args.nslices_x;
+        if (4*ntiles < nsm) {
+            for (int J = 8; J < J_best; J += 8) {
+                const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc);
+                if (config.type != GGML_TYPE_COUNT && mmq_get_nbytes_shared(config, cc) <= smpbo) {
+                    J_best = J;
+                    break;
+                }
+            }
+        }
+    }
+
     switch (J_best) {
         case   8:
             launch_mul_mat_q<type,   8, fallback, has_gate>(ctx, args, stream);
