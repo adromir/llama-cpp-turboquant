@@ -124,7 +124,20 @@ else()
         ../ggml-cuda/template-instances/fattn-vec-instance-q4_0_rocmfp4_fast-q4_0_rocmfp4_fast.cu
         ../ggml-cuda/template-instances/fattn-vec-instance-q3_0_rocmfpx-q3_0_rocmfpx.cu
         ../ggml-cuda/template-instances/fattn-vec-instance-q6_0_rocmfpx-q6_0_rocmfpx.cu
-        ../ggml-cuda/template-instances/fattn-vec-instance-q8_0_rocmfpx-q8_0_rocmfpx.cu)
+        ../ggml-cuda/template-instances/fattn-vec-instance-q8_0_rocmfpx-q8_0_rocmfpx.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo6_0-turbo6_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo6_0-turbo3_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo6_0-turbo4_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo6_0-q8_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo6_0-f16.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo6_0-turbo5_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q8_0-turbo6_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo5_0-turbo5_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo5_0-turbo3_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo5_0-turbo4_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo5_0-q8_0.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-turbo5_0-f16.cu
+        ../ggml-cuda/template-instances/fattn-vec-instance-q8_0-turbo5_0.cu)
 endif()
 
 list(APPEND GGML_SOURCES_ROCM ../../rocmfp4/rocmfp4_hip.cu)
