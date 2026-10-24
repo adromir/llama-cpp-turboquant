@@ -766,8 +766,8 @@ protected:
     std::unique_ptr<impl> pimpl;
 };
 
-llama_model * llama_model_create(llm_arch arch, const llama_model_params & params);
-llama_model * llama_model_create(llama_model_loader & ml, const llama_model_params & params);
+LLAMA_API llama_model * llama_model_create(llm_arch arch, const llama_model_params & params);
+LLAMA_API llama_model * llama_model_create(llama_model_loader & ml, const llama_model_params & params);
 
 // model must inherit from this
 struct llama_model_base : public llama_model {

@@ -868,7 +868,7 @@ llama_dsv4_comp_state::llama_dsv4_comp_state(
         auto it = ctx_map.find(buft);
         if (it == ctx_map.end()) {
             ggml_init_params params = {
-                /*.mem_size   =*/ size_t(2u*(1 + n_stream)*hparams.n_layer()*ggml_tensor_overhead()),
+                /*.mem_size   =*/ size_t(2)*(1 + size_t(n_stream))*hparams.n_layer()*ggml_tensor_overhead(),
                 /*.mem_buffer =*/ NULL,
                 /*.no_alloc   =*/ true,
             };

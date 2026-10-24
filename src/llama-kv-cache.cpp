@@ -259,7 +259,7 @@ llama_kv_cache::llama_kv_cache(
                 // Size this for the actual layer loop below. Some models expose extra
                 // KV-bearing layers through n_layer_all, and under-reserving tensor
                 // metadata corrupts later KV/checkpoint operations.
-                /*.mem_size   =*/ size_t((3u*(1 + n_stream)*n_layer + 3)*ggml_tensor_overhead()),
+                /*.mem_size   =*/ (size_t(3)*(1 + size_t(n_stream))*n_layer + 3)*ggml_tensor_overhead(),
                 /*.mem_buffer =*/ NULL,
                 /*.no_alloc   =*/ true,
             };
