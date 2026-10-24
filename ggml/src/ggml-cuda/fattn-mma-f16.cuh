@@ -1291,7 +1291,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
             if (use_cp_async) {
                 cp_async_wait_all();
             }
-            __syncthreads();
+            ggml_cuda_syncthreads_lds();
         }
 
         // Calculate tile of KQ:
@@ -1347,7 +1347,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         }
 
         if constexpr (nstages <= 1) {
-            __syncthreads(); // Only needed if tile_K == tile_V.
+            ggml_cuda_syncthreads_lds(); // Only needed if tile_K == tile_V.
         }
     }
 
@@ -1678,7 +1678,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
                 if (use_cp_async) {
                     cp_async_wait_all();
                 }
-                __syncthreads();
+                ggml_cuda_syncthreads_lds();
             }
         }
         const half2 * tile_V_i = !V_is_K_view || i0_stop > 2*nbatch_K2 ? tile_V : tile_V + i0_start/2;
@@ -1725,7 +1725,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
 #endif // defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE)
 
         if constexpr (nstages <= 1) {
-            __syncthreads(); // Only needed if tile_K == tile_V.
+            ggml_cuda_syncthreads_lds(); // Only needed if tile_K == tile_V.
         }
     }
 #else
