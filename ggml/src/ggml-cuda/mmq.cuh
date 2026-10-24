@@ -1809,7 +1809,7 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, 
     if (GGML_CUDA_CC_IS_RDNA4(cc) && args.expert_bounds == nullptr) {
         const int nsm = ggml_cuda_info().devices[id].nsm;
         const ggml_cuda_mmq_config config_best = ggml_cuda_mmq_get_config(type, J_best, fallback, cc);
-        const int64_t ntiles = (args.nrows_x + config_best.I - 1)/config_best.I * ((args.ncols_x + J_best - 1)/J_best) * args.nchannels_x * args.nslices_x;
+        const int64_t ntiles = (args.nrows_x + config_best.I - 1)/config_best.I * ((args.ncols_x + J_best - 1)/J_best) * args.nchannels_x * args.nsamples_x;
         if (4*ntiles < nsm) {
             for (int J = 8; J < J_best; J += 8) {
                 const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc);
