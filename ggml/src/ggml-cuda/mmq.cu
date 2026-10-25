@@ -234,6 +234,11 @@ void ggml_cuda_mul_mat_q(
                 quantize_mmq_fp4_cuda(src1_d, nullptr, src1_q8_1_ptr, src1_scale.ptr, src0->type, use_aligned_float8, ne10, s11, s12, s13, ne10_padded,
                                         ne11, ne12, ne13, stream);
 
+            } else if (ne11 > 8) {
+                src1_q8_1_pool.alloc(ctx.pool(), nbytes_src1_q8_1);
+                src1_q8_1_ptr = src1_q8_1_pool.get();
+                quantize_mmq_q8_1_cuda(src1_d, nullptr, src1_q8_1_ptr, src0->type, ne10, s11, s12, s13, ne10_padded,
+                                       ne11, ne12, ne13, stream);
             } else {
                 const ggml_tensor * src1_key = src1;
                 while (src1_key->view_src != nullptr) {

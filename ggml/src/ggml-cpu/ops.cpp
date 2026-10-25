@@ -5189,7 +5189,7 @@ static void ggml_compute_forward_set_rows_impl(
         dst->type == GGML_TYPE_TURBO5_0 || dst->type == GGML_TYPE_TURBO6_0) {
         int gs = 0;
         memcpy(&gs, dst->op_params, sizeof(int));
-        turbo3_cpu_wht_group_size = (gs == 64 || gs == 128) ? gs : 0;
+        turbo3_cpu_wht_group_size = (gs == 64 || gs == 128) ? gs : 128;
     }
 
     for (int64_t i03 = 0; i03 < ne03; ++i03) {

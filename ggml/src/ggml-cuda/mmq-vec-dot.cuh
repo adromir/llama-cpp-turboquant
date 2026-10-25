@@ -633,12 +633,14 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
 #pragma unroll
             for (int n = 0; n < ntx; ++n) {
                 tile_C C[2];
+                ggml_cuda_mmq_acc_init(C[0]);
+                ggml_cuda_mmq_acc_init(C[1]);
                 mma(C[0], A[n][k01/4 + 0], B[0]);
                 mma(C[1], A[n][k01/4 + 1], B[1]);
 
 #pragma unroll
                 for (int l = 0; l < tile_C::ne; ++l) {
-                    sum[(j0/tile_C::J + n)*tile_C::ne + l] += dB[l%2]*(C[0].x[l]*dA[n][l/2][k01/4 + 0] + C[1].x[l]*dA[n][l/2][k01/4 + 1]);
+                    sum[(j0/tile_C::J + n)*tile_C::ne + l] += dB[l%2]*(ggml_cuda_mmq_acc_f32(C[0].x[l])*dA[n][l/2][k01/4 + 0] + ggml_cuda_mmq_acc_f32(C[1].x[l])*dA[n][l/2][k01/4 + 1]);
                 }
             }
         }
@@ -1222,12 +1224,14 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
 #pragma unroll
             for (int n = 0; n < ntx; ++n) {
                 tile_C C[2];
+                ggml_cuda_mmq_acc_init(C[0]);
+                ggml_cuda_mmq_acc_init(C[1]);
                 mma(C[0], A[n][k01/4 + 0], B[0]);
                 mma(C[1], A[n][k01/4 + 1], B[1]);
 
 #pragma unroll
                 for (int l = 0; l < tile_C::ne; ++l) {
-                    tmp[n][l] += (C[0].x[l]*scA[n][l/2][k01/4 + 0] + C[1].x[l]*scA[n][l/2][k01/4 + 1])*dB[l%2];
+                    tmp[n][l] += (ggml_cuda_mmq_acc_f32(C[0].x[l])*scA[n][l/2][k01/4 + 0] + ggml_cuda_mmq_acc_f32(C[1].x[l])*scA[n][l/2][k01/4 + 1])*dB[l%2];
                 }
             }
         }

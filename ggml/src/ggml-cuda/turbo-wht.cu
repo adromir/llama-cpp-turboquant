@@ -315,7 +315,7 @@ static void launch_turbo_wht(ggml_backend_cuda_context & ctx, ggml_tensor * dst)
         if (fast_ok) {
             // 1 warp per block underfeeds the SMs; 2 and up saturate.
             constexpr int warps = 4;
-            const int64_t n_blocks = (n_groups + warps - 1) / warps;
+            const int64_t n_blocks = ggml_cuda_nblocks_past_cliff((n_groups + warps - 1) / warps, warps * 32);
             if (direction == 0) {
                 k_turbo_wht_fast<0, warps, T><<<(int) n_blocks, warps*32, 0, stream>>>(src_ptr, dst_ptr, scale_inv_ptr, n_groups, head_dim, groups_per_head);
             } else {

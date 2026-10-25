@@ -1343,7 +1343,7 @@ static __global__ void k_set_rows_turbo6(
     const uint8_t my_high   = (idx >> 4) & 0x3;
     const uint8_t partner_nibble = __shfl_sync(0xffffffff, my_nibble, lane ^ 1, WARP_SIZE);
     if (j % 2 == 0) {
-        blk->qs[j / 2] = my_nibble | (partner_nibble << 4);
+        ggml_cuda_stcs(&blk->qs[j / 2], (uint8_t)(my_nibble | (partner_nibble << 4)));
     }
 
     const int quad = lane & ~3;
@@ -1352,7 +1352,7 @@ static __global__ void k_set_rows_turbo6(
     const uint8_t h2 = __shfl_sync(0xffffffff, my_high, quad + 2, WARP_SIZE);
     const uint8_t h3 = __shfl_sync(0xffffffff, my_high, quad + 3, WARP_SIZE);
     if (j % 4 == 0) {
-        blk->qh[j / 4] = h0 | (h1 << 2) | (h2 << 4) | (h3 << 6);
+        ggml_cuda_stcs(&blk->qh[j / 4], (uint8_t)(h0 | (h1 << 2) | (h2 << 4) | (h3 << 6)));
     }
 
     // ---- Step 7: Reconstruction norm (parallel) ----
@@ -1376,7 +1376,7 @@ static __global__ void k_set_rows_turbo6(
 
     // ---- Step 8: Write corrected norm (one thread) ----
     if (j == 0) {
-        blk->norm  = __float2half(corrected_norm);
+        ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
     }
 
     GGML_UNUSED(ne10);
@@ -1522,16 +1522,17 @@ static __global__ void k_set_rows_turbo5(
     const uint8_t my_high   = turbo5_code_to_neg(idx);
     const uint8_t partner_nibble = __shfl_sync(0xffffffff, my_nibble, lane ^ 1, WARP_SIZE);
     if (j % 2 == 0) {
-        blk->qs[j / 2] = my_nibble | (partner_nibble << 4);
+        ggml_cuda_stcs(&blk->qs[j / 2], (uint8_t)(my_nibble | (partner_nibble << 4)));
     }
 
-    uint8_t qh_byte = 0;
-#pragma unroll
-    for (int sb = 0; sb < 8; sb++) {
-        qh_byte |= (uint8_t)(__shfl_sync(0xffffffff, my_high, (lane & ~7) + sb, WARP_SIZE) << sb);
-    }
+#if defined(GGML_USE_HIP)
+    const uint64_t qh_ballot = __ballot(my_high);
+#else
+    const uint32_t qh_ballot = __ballot_sync(0xffffffff, my_high);
+#endif
     if (lane % 8 == 0) {
-        blk->qh[j / 8] = qh_byte;
+        const uint8_t qh_byte = (uint8_t)((qh_ballot >> (lane & ~7)) & 0xFF);
+        ggml_cuda_stcs(&blk->qh[j / 8], qh_byte);
     }
 
     // ---- Step 7: Reconstruction norm (parallel) ----
@@ -1555,7 +1556,7 @@ static __global__ void k_set_rows_turbo5(
 
     // ---- Step 8: Write corrected norm (one thread) ----
     if (j == 0) {
-        blk->norm  = __float2half(corrected_norm);
+        ggml_cuda_stcs(&blk->norm, __float2half(corrected_norm));
     }
 
     GGML_UNUSED(ne10);

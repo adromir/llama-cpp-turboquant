@@ -1221,15 +1221,15 @@ static __device__ __forceinline__ void dequantize_V_turbo4_0(const void * __rest
 
     const int64_t ib   = i0 / QK_TURBO4;
     const int     j0   = i0 % QK_TURBO4;
-    const float   norm = __half2float(x[ib].norm);
+    const float   norm = __half2float(ggml_cuda_ldcs(&x[ib].norm));
 
     static_assert(ne == 2 || ne == 4 || ne == 8, "bad ne");
 
     if constexpr (ne == 4) {
         // j0 is always a multiple of 4 from the VEC kernel access pattern.
         // 4 consecutive elements span 2 qs bytes: j0/2 and j0/2+1.
-        const uint8_t qs_byte0 = x[ib].qs[j0 / 2];      // elements j0, j0+1
-        const uint8_t qs_byte1 = x[ib].qs[j0 / 2 + 1];  // elements j0+2, j0+3
+        const uint8_t qs_byte0 = ggml_cuda_ldcs(&x[ib].qs[j0 / 2]);      // elements j0, j0+1
+        const uint8_t qs_byte1 = ggml_cuda_ldcs(&x[ib].qs[j0 / 2 + 1]);  // elements j0+2, j0+3
 
         const uint8_t idx0 = (qs_byte0 >> 0) & 0xF;
         const uint8_t idx1 = (qs_byte0 >> 4) & 0xF;
@@ -1259,10 +1259,10 @@ static __device__ __forceinline__ void dequantize_V_turbo4_0(const void * __rest
     } else if constexpr (ne == 8) {
         // j0 is always a multiple of 8 from the VEC kernel access pattern.
         // 8 consecutive elements span 4 qs bytes: j0/2 .. j0/2+3.
-        const uint8_t qs_byte0 = x[ib].qs[j0 / 2];
-        const uint8_t qs_byte1 = x[ib].qs[j0 / 2 + 1];
-        const uint8_t qs_byte2 = x[ib].qs[j0 / 2 + 2];
-        const uint8_t qs_byte3 = x[ib].qs[j0 / 2 + 3];
+        const uint8_t qs_byte0 = ggml_cuda_ldcs(&x[ib].qs[j0 / 2]);
+        const uint8_t qs_byte1 = ggml_cuda_ldcs(&x[ib].qs[j0 / 2 + 1]);
+        const uint8_t qs_byte2 = ggml_cuda_ldcs(&x[ib].qs[j0 / 2 + 2]);
+        const uint8_t qs_byte3 = ggml_cuda_ldcs(&x[ib].qs[j0 / 2 + 3]);
 
         const uint8_t idx0 = (qs_byte0 >> 0) & 0xF;
         const uint8_t idx1 = (qs_byte0 >> 4) & 0xF;
@@ -1420,7 +1420,7 @@ static __device__ __forceinline__ void dequantize_V_turbo5_0(const void * __rest
 
     const int64_t ib   = i0 / QK_TURBO5;
     const int     j0   = i0 % QK_TURBO5;
-    const float   norm = __half2float(x[ib].norm);
+    const float   norm = __half2float(ggml_cuda_ldcs(&x[ib].norm));
 
     static_assert(ne == 2 || ne == 4 || ne == 8, "bad ne");
 
@@ -1457,7 +1457,7 @@ static __device__ __forceinline__ void dequantize_V_turbo6_0(const void * __rest
 
     const int64_t ib   = i0 / QK_TURBO6;
     const int     j0   = i0 % QK_TURBO6;
-    const float   norm = __half2float(x[ib].norm);
+    const float   norm = __half2float(ggml_cuda_ldcs(&x[ib].norm));
 
     static_assert(ne == 2 || ne == 4 || ne == 8, "bad ne");
 
@@ -1978,13 +1978,17 @@ static __global__ void flash_attn_combine_results(
     float VKQ_numerator   = 0.0f;
     float VKQ_denominator = 0.0f;
     for (int l = 0; l < parallel_blocks; ++l) {
-        const float KQ_max_scale = expf(meta[l].x - kqmax);
+        const float diff = meta[l].x - kqmax;
+        if (diff < SOFTMAX_FTZ_THRESHOLD || meta[l].y <= 0.0f) {
+            continue;
+        }
+        const float KQ_max_scale = expf(diff);
 
         VKQ_numerator   += KQ_max_scale * VKQ_parts[l*D + tid];
         VKQ_denominator += KQ_max_scale * meta[l].y;
     }
 
-    dst[tid] = VKQ_numerator / VKQ_denominator;
+    dst[tid] = VKQ_denominator > 0.0f ? (VKQ_numerator / VKQ_denominator) : 0.0f;
 }
 
 // Decode/verify band (n_q <= 8) on RDNA4: the whole GQA group is folded into one block
@@ -1994,16 +1998,17 @@ static __global__ void flash_attn_combine_results(
 // band keeps a single kernel config, and launch_fattn fixes the round-robin KV split per output tile
 // (see there), so n_q = 1 and every verify width reduce identically (GREEDY-PURITY band invariant).
 // GGML_HIP_FA_BAND_WMMA=0 disables the band, 2/4 force ncols1 (any other non-zero value means 4).
+// Default is 0 (opt-in) until RDNA4 band stream-k fixup metadata is verified.
 static inline int ggml_cuda_fattn_band_wmma_ncols1_env() {
     static const int v = []() {
         const char * env = getenv("GGML_HIP_FA_BAND_WMMA");
-        return env != nullptr ? atoi(env) : -1;
+        return env != nullptr ? atoi(env) : 0;
     }();
-    return v; // -1 = unset, 0 = disabled, otherwise the forced value
+    return v; // 0 = disabled (default), otherwise the forced value
 }
 
 static inline bool ggml_cuda_fattn_band_wmma_enabled() {
-    return ggml_cuda_fattn_band_wmma_ncols1_env() != 0;
+    return ggml_cuda_fattn_band_wmma_ncols1_env() > 0;
 }
 
 // The 2-byte K/V types share the band's light per-iteration variant (see the ncols1 and split

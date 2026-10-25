@@ -47,22 +47,10 @@
 #if defined(__AMDGCN__)
 template <typename T>
 static __device__ __forceinline__ T __hip_shfl_xor_fast(T var, int laneMask, int width) {
-    if constexpr (sizeof(T) == 4) {
-        if (width >= 32) {
-            switch (laneMask) {
-                case 1:  return __builtin_bit_cast(T, __builtin_amdgcn_ds_swizzle(__builtin_bit_cast(int, var), 0x041F));
-                case 2:  return __builtin_bit_cast(T, __builtin_amdgcn_ds_swizzle(__builtin_bit_cast(int, var), 0x081F));
-                case 4:  return __builtin_bit_cast(T, __builtin_amdgcn_ds_swizzle(__builtin_bit_cast(int, var), 0x101F));
-                case 8:  return __builtin_bit_cast(T, __builtin_amdgcn_ds_swizzle(__builtin_bit_cast(int, var), 0x201F));
-                case 16: return __builtin_bit_cast(T, __builtin_amdgcn_ds_swizzle(__builtin_bit_cast(int, var), 0x401F));
-                default: break;
-            }
-        }
-    }
     return __shfl_xor(var, laneMask, width);
 }
-#define __SHFL_XOR_SYNC_3(mask, var, laneMask)        __hip_shfl_xor_fast(var, laneMask, warpSize)
-#define __SHFL_XOR_SYNC_4(mask, var, laneMask, width) __hip_shfl_xor_fast(var, laneMask, width)
+#define __SHFL_XOR_SYNC_3(mask, var, laneMask)        __shfl_xor(var, laneMask, warpSize)
+#define __SHFL_XOR_SYNC_4(mask, var, laneMask, width) __shfl_xor(var, laneMask, width)
 #else
 // __shfl_xor_sync: support 3-arg and 4-arg calls (HIP ignores mask)
 #define __SHFL_XOR_SYNC_3(mask, var, laneMask)        __shfl_xor(var, laneMask, warpSize)
@@ -204,7 +192,11 @@ static inline hipError_t ggml_hip_host_malloc(void ** ptr, size_t size) {
 #define cudaStreamDestroy hipStreamDestroy
 #define cudaStreamFireAndForget hipStreamFireAndForget
 #define cudaStreamNonBlocking hipStreamNonBlocking
+#if defined(_WIN32)
+#define cudaStreamPerThread 0
+#else
 #define cudaStreamPerThread hipStreamPerThread
+#endif
 #define cudaStreamSynchronize hipStreamSynchronize
 #define cudaStreamWaitEvent hipStreamWaitEvent
 #define cudaMemcpyToSymbol hipMemcpyToSymbol

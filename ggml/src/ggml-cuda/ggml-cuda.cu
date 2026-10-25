@@ -113,6 +113,9 @@ void ggml_cuda_error(const char * stmt, const char * func, const char * file, in
     int id = -1; // in case cudaGetDevice fails
     (void)cudaGetDevice(&id);
 
+    fprintf(stderr, "%s error: %s\n  current device: %d, in function %s at %s:%d\n  %s\n",
+            GGML_CUDA_NAME, msg, id, func, file, line, stmt);
+    fflush(stderr);
     GGML_LOG_ERROR(GGML_CUDA_NAME " error: %s\n", msg);
     GGML_LOG_ERROR("  current device: %d, in function %s at %s:%d\n", id, func, file, line);
     GGML_LOG_ERROR("  %s\n", stmt);
@@ -811,9 +814,18 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     if (q8_1_arena != nullptr) {
         CUDA_CHECK(cudaFree(q8_1_arena));
     }
+    for (char * ptr : q8_1_retired) {
+        CUDA_CHECK(cudaFree(ptr));
+    }
+    q8_1_retired.clear();
+
     if (mmq_q8_1_arena != nullptr) {
         CUDA_CHECK(cudaFree(mmq_q8_1_arena));
     }
+    for (char * ptr : mmq_q8_1_retired) {
+        CUDA_CHECK(cudaFree(ptr));
+    }
+    mmq_q8_1_retired.clear();
 
     if (copy_event != nullptr) {
         CUDA_CHECK(cudaEventDestroy(copy_event));
@@ -925,9 +937,14 @@ static bool ggml_tq_convert_q8() {
 }
 
 static void ggml_backend_cuda_buffer_set_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
+    if (size == 0) {
+        return;
+    }
+
     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
 
     ggml_cuda_set_device(ctx->device);
+
     // TQ4_1S → q8_0 load-time conversion (opt-in: GGML_TQ_CONVERT_Q8=1)
     if (ggml_tq_convert_q8() && tensor->type == GGML_TYPE_TQ4_1S && offset == 0 && size == ggml_nbytes(tensor)) {
         const int64_t n_elements = ggml_nelements(tensor);
@@ -954,11 +971,19 @@ static void ggml_backend_cuda_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
         return;
     }
 
-    CUDA_CHECK(cudaMemcpyAsync((char *) tensor->data + offset, data, size, cudaMemcpyHostToDevice, cudaStreamPerThread));
-    CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+    cudaError_t cpy_err = cudaMemcpy((char *) tensor->data + offset, data, size, cudaMemcpyDefault);
+    if (cpy_err != cudaSuccess) {
+        fprintf(stderr, "BUFFER_SET_TENSOR FAILED: name=%s, err=%s\n", tensor->name, cudaGetErrorString(cpy_err));
+        fflush(stderr);
+    }
+    CUDA_CHECK(cpy_err);
 }
 
 static void ggml_backend_cuda_buffer_get_tensor(ggml_backend_buffer_t buffer, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    if (size == 0) {
+        return;
+    }
+
     ggml_backend_cuda_buffer_context * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
 
     ggml_cuda_set_device(ctx->device);
@@ -4090,6 +4115,10 @@ static void ggml_backend_cuda_set_tensor_async(ggml_backend_t backend, ggml_tens
 }
 
 static void ggml_backend_cuda_get_tensor_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    if (size == 0) {
+        return;
+    }
+
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
     ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
 
@@ -7104,23 +7133,11 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 }
 
 #ifndef NDEBUG
-                // On integrated GPUs (APUs, e.g. RDNA3.5) the scheduler may place a
-                // node's output on the host-visible buffer, which the compute path
-                // handles. Allow that here, mirroring the src-tensor check below.
-                //
-                // ggml_backend_buft_is_cuda/_is_cuda_kv_stream only check that a
-                // buft belongs to *some* CUDA device's family, not this one - the
-                // original assert here compared against
-                // ggml_backend_cuda_buffer_type(cuda_ctx->device) directly, which
-                // also catches a node scheduled against the wrong GPU in a
-                // multi-GPU setup. Restore that identity check for both buffer
-                // families (kv-stream buffer types carry a device the same way
-                // ordinary CUDA ones do).
                 const ggml_backend_dev_t expected_dev =
                     ggml_backend_reg_dev_get(ggml_backend_cuda_reg(), cuda_ctx->device);
                 assert(((ggml_backend_buft_is_cuda(node->buffer->buft) ||
                          ggml_backend_buft_is_cuda_kv_stream(node->buffer->buft)) &&
-                        node->buffer->buft->device == expected_dev) ||
+                         node->buffer->buft->device == expected_dev) ||
                        ((integrated || ggml_cuda_host_weights_enabled()) &&
                         ggml_backend_buft_is_cuda_host(node->buffer->buft)));
                 for (int j = 0; j < GGML_MAX_SRC; j++) {
@@ -7128,9 +7145,9 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                         assert(node->src[j]->buffer);
                         assert(((ggml_backend_buft_is_cuda(node->src[j]->buffer->buft) ||
                                  ggml_backend_buft_is_cuda_kv_stream(node->src[j]->buffer->buft)) &&
-                                node->src[j]->buffer->buft->device == expected_dev) ||
+                                 node->src[j]->buffer->buft->device == expected_dev) ||
                                ((integrated || ggml_cuda_host_weights_enabled()) &&
-                                ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
+                                 ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
                     }
                 }
 #else
@@ -7154,7 +7171,14 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
 
                 if (!is_concurrent_event_active) {
                     try_launch_concurrent_event(node);
-               }
+                }
+
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+                // ROCm on Windows WDDM: periodic sync prevents ring buffer command overflow (skip during graph capture)
+                if (!use_cuda_graph && ((i & 63) == 63 || (node->name && (strncmp(node->name, "l_out-", 6) == 0 || strcmp(node->name, "result_output") == 0)))) {
+                    CUDA_CHECK(cudaStreamSynchronize(cuda_ctx->stream()));
+                }
+#endif
             }
             for (auto * runtime : kv_stream_runtimes) {
                 ggml_cuda_kv_stream_graph_end(runtime->transfer_ring, cuda_ctx->stream());
@@ -7458,6 +7482,10 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
 
     ggml_cuda_mmb_compute_done();
+
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    CUDA_CHECK(cudaStreamSynchronize(cuda_ctx->stream()));
+#endif
 
     return GGML_STATUS_SUCCESS;
 }

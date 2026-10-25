@@ -870,17 +870,10 @@ static __device__ __forceinline__ void flash_attn_ext_turbo6_load_tile(
             // qs offset in_blk/2 is a multiple of 8 and qh offset in_blk/4 a multiple of 4 -> 16-bit aligned
             const uint16_t * qsp = (const uint16_t *) (blk->qs + in_blk/2);
             const uint16_t * qhp = (const uint16_t *) (blk->qh + in_blk/4);
-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-            norm = __half2float(__ldcs((const half *) &blk->norm));
-            qs0  = __byte_perm((uint32_t) __ldcs(qsp + 0), (uint32_t) __ldcs(qsp + 1), 0x5410); // low nibbles, values 0..7
-            qs1  = __byte_perm((uint32_t) __ldcs(qsp + 2), (uint32_t) __ldcs(qsp + 3), 0x5410); // low nibbles, values 8..15
-            qh   = __byte_perm((uint32_t) __ldcs(qhp + 0), (uint32_t) __ldcs(qhp + 1), 0x5410); // high 2 bits, 2 per value
-#else
-            norm = __half2float(blk->norm);
-            qs0  = __byte_perm((uint32_t) qsp[0], (uint32_t) qsp[1], 0x5410);
-            qs1  = __byte_perm((uint32_t) qsp[2], (uint32_t) qsp[3], 0x5410);
-            qh   = __byte_perm((uint32_t) qhp[0], (uint32_t) qhp[1], 0x5410);
-#endif
+            norm = __half2float(ggml_cuda_ldcs((const half *) &blk->norm));
+            qs0  = __byte_perm((uint32_t) ggml_cuda_ldcs(qsp + 0), (uint32_t) ggml_cuda_ldcs(qsp + 1), 0x5410); // low nibbles, values 0..7
+            qs1  = __byte_perm((uint32_t) ggml_cuda_ldcs(qsp + 2), (uint32_t) ggml_cuda_ldcs(qsp + 3), 0x5410); // low nibbles, values 8..15
+            qh   = __byte_perm((uint32_t) ggml_cuda_ldcs(qhp + 0), (uint32_t) ggml_cuda_ldcs(qhp + 1), 0x5410); // high 2 bits, 2 per value
         }
 
         uint4 decoded[2];
@@ -944,21 +937,12 @@ static __device__ __forceinline__ void flash_attn_ext_turbo5_load_tile(
         const uint16_t * qsp = (const uint16_t *) (blk->qs + in_blk/2);
         const uint16_t * qhp = (const uint16_t *) (blk->qh + in_blk/8);
         float norm; uint32_t qs[4]; uint32_t qh;             // qs[w] nibble k = magnitude index of value 8w+k; qh bit v = 1: value v negative
-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-        norm = __half2float(__ldcs((const half *) &blk->norm));
+        norm = __half2float(ggml_cuda_ldcs((const half *) &blk->norm));
 #pragma unroll
         for (int w = 0; w < 4; ++w) {
-            qs[w] = __byte_perm((uint32_t) __ldcs(qsp + 2*w), (uint32_t) __ldcs(qsp + 2*w + 1), 0x5410);
+            qs[w] = __byte_perm((uint32_t) ggml_cuda_ldcs(qsp + 2*w), (uint32_t) ggml_cuda_ldcs(qsp + 2*w + 1), 0x5410);
         }
-        qh = __byte_perm((uint32_t) __ldcs(qhp), (uint32_t) __ldcs(qhp + 1), 0x5410);
-#else
-        norm = __half2float(blk->norm);
-#pragma unroll
-        for (int w = 0; w < 4; ++w) {
-            qs[w] = __byte_perm((uint32_t) qsp[2*w], (uint32_t) qsp[2*w + 1], 0x5410);
-        }
-        qh = __byte_perm((uint32_t) qhp[0], (uint32_t) qhp[1], 0x5410);
-#endif
+        qh = __byte_perm((uint32_t) ggml_cuda_ldcs(qhp), (uint32_t) ggml_cuda_ldcs(qhp + 1), 0x5410);
 
         // fp16 magnitude table T[m] = rn(c[16+m] * norm), m = 0..15 (TURBO5_CENTROIDS[16..31]), as byte planes
         const uint32_t W0 = ggml_cuda_half2_as_u32(__floats2half2_rn(TURBO5_CENTROIDS[16] * norm, TURBO5_CENTROIDS[17] * norm));

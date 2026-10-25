@@ -3474,7 +3474,7 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
     // the WMMA path off for heads > 128 (e.g. to compare against the tile kernel), or
     // GGML_CUDA_FA_WMMA_MAX_HEAD to override the cap.
     const char * wmma_256_env = getenv("GGML_CUDA_FA_WMMA_256");
-    const bool wmma_256 = wmma_256_env == nullptr || std::atoi(wmma_256_env) != 0;
+    const bool wmma_256 = wmma_256_env != nullptr && std::atoi(wmma_256_env) != 0;
     // GGML_CUDA_FA_WMMA_MAX_HEAD overrides the per-arch cap (experiment/escape hatch).
     const char * wmma_max_env = getenv("GGML_CUDA_FA_WMMA_MAX_HEAD");
     const int wmma_max_head = wmma_max_env ? std::atoi(wmma_max_env) : (wmma_256 && GGML_CUDA_CC_IS_RDNA4(cc) ? 576 : wmma_256 && GGML_CUDA_CC_IS_RDNA3_0(cc) ? 576 : wmma_256 && GGML_CUDA_CC_IS_RDNA3_5(cc) ? 320 : 128);

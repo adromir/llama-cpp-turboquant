@@ -34,6 +34,9 @@
 #include <unordered_map>
 #include <vector>
 
+extern const ggml_tensor * g_current_cuda_node;
+extern int g_current_cuda_node_i;
+
 #ifndef GGML_ROCMFP6_EXPANDED_DEVICE
 #define GGML_ROCMFP6_EXPANDED_DEVICE 0
 #endif
@@ -119,7 +122,7 @@ using block_rocmfp6_device = block_rocmfp6;
 #define GGML_CUDA_CC_IS_CDNA4(cc)   (cc >= GGML_CUDA_CC_CDNA4 && cc < GGML_CUDA_CC_RDNA1)
 
 #if defined(GGML_USE_HIP) && defined(__has_attribute)
-#  if __has_attribute(amdgpu_waves_per_eu)
+#  if 0 // __has_attribute(amdgpu_waves_per_eu)
 #    define GGML_AMDGPU_WAVES_PER_EU(min_waves, max_waves) __attribute__((amdgpu_waves_per_eu(min_waves, max_waves)))
 #  else
 #    define GGML_AMDGPU_WAVES_PER_EU(min_waves, max_waves)
@@ -1659,6 +1662,12 @@ struct ggml_cuda_graph {
     std::vector<node_properties> node_props;
 
     bool is_enabled() const {
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        static const bool enable_cuda_graphs_due_to_env = (getenv("GGML_CUDA_ENABLE_GRAPHS") != nullptr);
+        if (!enable_cuda_graphs_due_to_env) {
+            return false;
+        }
+#endif
         static const bool disable_cuda_graphs_due_to_env = (getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr);
         return !(disable_due_to_gpu_arch || disable_cuda_graphs_due_to_env);
     }
@@ -2031,10 +2040,15 @@ struct ggml_backend_cuda_context {
     size_t q8_1_arena_size = 0;
     std::vector<q8_1_cache_entry> q8_1_cache;
     size_t q8_1_arena_pos = 0;
+    std::vector<char *> q8_1_retired;
 
     void q8_1_cache_clear() {
         q8_1_cache.clear();
         q8_1_arena_pos = 0;
+        for (char * ptr : q8_1_retired) {
+            CUDA_CHECK(cudaFree(ptr));
+        }
+        q8_1_retired.clear();
     }
 
     // Returns the cached buffer for (src1, stream_no, layout) if present,
@@ -2047,32 +2061,42 @@ struct ggml_backend_cuda_context {
             const char * env = getenv("GGML_CUDA_Q8CACHE");
             return env == nullptr || strcmp(env, "0") != 0;
         }();
-        if (q8cache_enabled) {
-            for (const auto & e : q8_1_cache) {
-                if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
-                    e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
-                    e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
-                    found = true;
-                    return q8_1_arena + e.offset;
+        if (!q8cache_enabled) {
+            found = false;
+            if (size > q8_1_arena_size) {
+                CUDA_CHECK(cudaStreamSynchronize(stream(device, stream_no)));
+                if (q8_1_arena != nullptr) {
+                    CUDA_CHECK(cudaFree(q8_1_arena));
                 }
+                CUDA_CHECK(cudaMalloc(&q8_1_arena, size));
+                q8_1_arena_size = size;
+            }
+            return q8_1_arena;
+        }
+        for (const auto & e : q8_1_cache) {
+            if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
+                e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
+                e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
+                found = true;
+                return q8_1_arena + e.offset;
             }
         }
         found = false;
         if (q8_1_arena_pos + size > q8_1_arena_size) {
+            CUDA_CHECK(cudaStreamSynchronize(stream(device, stream_no)));
             const size_t new_size = std::max(size_t(1) << 25, 2*(q8_1_arena_pos + size)); // 32 MiB min
             char * new_arena = nullptr;
             CUDA_CHECK(cudaMalloc(&new_arena, new_size));
             if (q8_1_arena != nullptr) {
-                CUDA_CHECK(cudaMemcpy(new_arena, q8_1_arena, q8_1_arena_pos, cudaMemcpyDeviceToDevice));
-                CUDA_CHECK(cudaFree(q8_1_arena));
+                CUDA_CHECK(cudaMemcpyAsync(new_arena, q8_1_arena, q8_1_arena_pos, cudaMemcpyDeviceToDevice, stream(device, stream_no)));
+                CUDA_CHECK(cudaStreamSynchronize(stream(device, stream_no)));
+                q8_1_retired.push_back(q8_1_arena);
             }
             q8_1_arena = new_arena;
             q8_1_arena_size = new_size;
         }
         void * data = q8_1_arena + q8_1_arena_pos;
-        if (q8cache_enabled) {
-            q8_1_cache.push_back({ src1, src1->data, stream_no, ne10, ne11, ne12, ne13, s11, s12, s13, q8_1_arena_pos, size });
-        }
+        q8_1_cache.push_back({ src1, src1->data, stream_no, ne10, ne11, ne12, ne13, s11, s12, s13, q8_1_arena_pos, size });
         q8_1_arena_pos += size;
         return data;
     }
@@ -2096,10 +2120,15 @@ struct ggml_backend_cuda_context {
     size_t mmq_q8_1_arena_size = 0;
     std::vector<mmq_q8_1_cache_entry> mmq_q8_1_cache;
     size_t mmq_q8_1_arena_pos = 0;
+    std::vector<char *> mmq_q8_1_retired;
 
     void mmq_q8_1_cache_clear() {
         mmq_q8_1_cache.clear();
         mmq_q8_1_arena_pos = 0;
+        for (char * ptr : mmq_q8_1_retired) {
+            CUDA_CHECK(cudaFree(ptr));
+        }
+        mmq_q8_1_retired.clear();
     }
 
     void * mmq_q8_1_cache_get(const ggml_tensor * src1, int stream_no, int ds_layout, size_t size,
@@ -2109,33 +2138,43 @@ struct ggml_backend_cuda_context {
             const char * env = getenv("GGML_CUDA_Q8CACHE");
             return env == nullptr || strcmp(env, "0") != 0;
         }();
-        if (q8cache_enabled) {
-            for (const auto & e : mmq_q8_1_cache) {
-                if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
-                    e.ds_layout == ds_layout &&
-                    e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
-                    e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
-                    found = true;
-                    return mmq_q8_1_arena + e.offset;
+        if (!q8cache_enabled) {
+            found = false;
+            if (size > mmq_q8_1_arena_size) {
+                CUDA_CHECK(cudaStreamSynchronize(stream(device, stream_no)));
+                if (mmq_q8_1_arena != nullptr) {
+                    CUDA_CHECK(cudaFree(mmq_q8_1_arena));
                 }
+                CUDA_CHECK(cudaMalloc(&mmq_q8_1_arena, size));
+                mmq_q8_1_arena_size = size;
+            }
+            return mmq_q8_1_arena;
+        }
+        for (const auto & e : mmq_q8_1_cache) {
+            if (e.src1 == src1 && e.data == src1->data && e.stream_no == stream_no &&
+                e.ds_layout == ds_layout &&
+                e.ne10 == ne10 && e.ne11 == ne11 && e.ne12 == ne12 && e.ne13 == ne13 &&
+                e.s11 == s11 && e.s12 == s12 && e.s13 == s13) {
+                found = true;
+                return mmq_q8_1_arena + e.offset;
             }
         }
         found = false;
         if (mmq_q8_1_arena_pos + size > mmq_q8_1_arena_size) {
-            const size_t new_size = std::max(size_t(1) << 25, 2*(mmq_q8_1_arena_pos + size));
+            CUDA_CHECK(cudaStreamSynchronize(stream(device, stream_no)));
+            const size_t new_size = std::max(size_t(1) << 25, 2*(mmq_q8_1_arena_pos + size)); // 32 MiB min
             char * new_arena = nullptr;
             CUDA_CHECK(cudaMalloc(&new_arena, new_size));
             if (mmq_q8_1_arena != nullptr) {
-                CUDA_CHECK(cudaMemcpy(new_arena, mmq_q8_1_arena, mmq_q8_1_arena_pos, cudaMemcpyDeviceToDevice));
-                CUDA_CHECK(cudaFree(mmq_q8_1_arena));
+                CUDA_CHECK(cudaMemcpyAsync(new_arena, mmq_q8_1_arena, mmq_q8_1_arena_pos, cudaMemcpyDeviceToDevice, stream(device, stream_no)));
+                CUDA_CHECK(cudaStreamSynchronize(stream(device, stream_no)));
+                mmq_q8_1_retired.push_back(mmq_q8_1_arena);
             }
             mmq_q8_1_arena = new_arena;
             mmq_q8_1_arena_size = new_size;
         }
         void * data = mmq_q8_1_arena + mmq_q8_1_arena_pos;
-        if (q8cache_enabled) {
-            mmq_q8_1_cache.push_back({ src1, src1->data, stream_no, ds_layout, ne10, ne11, ne12, ne13, s11, s12, s13, mmq_q8_1_arena_pos, size });
-        }
+        mmq_q8_1_cache.push_back({ src1, src1->data, stream_no, ds_layout, ne10, ne11, ne12, ne13, s11, s12, s13, mmq_q8_1_arena_pos, size });
         mmq_q8_1_arena_pos += size;
         return data;
     }
@@ -2474,6 +2513,11 @@ static __inline__ void ggml_cuda_kernel_launch(Kernel kernel, const ggml_cuda_ke
     }
 #endif //defined(GGML_CUDA_USE_PDL)
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    CUDA_CHECK(cudaStreamSynchronize(launch_params.stream));
+#endif
+
     kernel<<<launch_params.block_nums, launch_params.block_dims, launch_params.shmem, launch_params.stream>>>(std::forward<Args>(args)... );
+
     CUDA_CHECK(cudaGetLastError());
 }
